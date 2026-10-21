@@ -30,10 +30,12 @@ export function formatWhen(
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
   return (
     new Intl.DateTimeFormat(language === "it" ? "it-IT" : "en-GB", {
-      timeZone: dateOnly ? "UTC" : "Europe/Rome",
       day: "2-digit",
       month: "short",
-      ...(dateOnly ? {} : { hour: "2-digit", minute: "2-digit" }),
+      // Timestamps use the viewer's own zone; a date alone stays a calendar date.
+      ...(dateOnly
+        ? { timeZone: "UTC" }
+        : { hour: "2-digit", minute: "2-digit" }),
     }).format(new Date(value)) +
     (dateOnly
       ? language === "it"
@@ -58,18 +60,10 @@ export function formatAge(
       ? `${minutes}m`
       : `${Math.floor(minutes / 60)}h`;
 }
-export function validBounds(value: string) {
-  const b = value.split(",").map(Number);
-  return (
-    b.length === 4 &&
-    b.every(Number.isFinite) &&
-    b[0] >= -180 &&
-    b[2] <= 180 &&
-    b[1] >= -90 &&
-    b[3] <= 90 &&
-    b[0] < b[2] &&
-    b[1] < b[3]
-  );
+/** Sound quiet hours, 22:00 to 08:00 in the viewer's time zone. */
+export function quietHour(now = new Date()) {
+  const hour = now.getHours();
+  return hour >= 22 || hour < 8;
 }
 export function readLocal<T>(key: string, fallback: T): T {
   try {
@@ -81,4 +75,10 @@ export function readLocal<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+/** Views saved before the worldwide feed stored the unbounded scope as "Europe". */
+export function readSavedViews() {
+  return readLocal<any[]>("ew-views", []).map((view) =>
+    view?.scope === "Europe" ? { ...view, scope: "World" } : view,
+  );
 }

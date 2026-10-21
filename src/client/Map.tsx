@@ -11,6 +11,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { PublicCamera } from "../shared/media";
 import type { GeoFeature } from "../shared/geospatial";
 import type { IncidentView } from "../shared/contracts";
+import { viewportBounds } from "./bounds";
 export const colors: Record<string, string> = {
   informational: "#73B6E6",
   minor: "#E4D06C",
@@ -19,6 +20,12 @@ export const colors: Record<string, string> = {
   critical: "#C55064",
   unknown: "#9BA9B3",
 };
+// The whole width of the world, clamped short of the polar latitudes that
+// Mercator inflates, so populated land fills the frame on any screen.
+const worldFrame: [[number, number], [number, number]] = [
+  [-180, -58],
+  [180, 78],
+];
 const fallback: StyleSpecification = {
   version: 8,
   sources: {
@@ -161,13 +168,13 @@ export default function WorldMap({
     const m = new maplibregl.Map({
       container: host.current,
       style: structuredClone(fallback),
-      center: [12, 51],
-      zoom: 3.25,
+      center: [0, 20],
+      zoom: 1,
       pitch: 0,
       bearing: 0,
-      minZoom: 1,
+      minZoom: -1,
       maxZoom: 18,
-      renderWorldCopies: false,
+      renderWorldCopies: true,
       attributionControl: { compact: true },
       dragRotate: false,
       pitchWithRotate: false,
@@ -184,21 +191,15 @@ export default function WorldMap({
       "bottom-right",
     );
     const initialFrame = () =>
-      m.fitBounds(
-        [
-          [-15, 34],
-          [39, 69],
-        ],
-        {
-          padding: {
-            left: innerWidth > 760 ? 420 : 24,
-            right: 40,
-            top: 100,
-            bottom: innerWidth > 760 ? 70 : innerHeight * 0.45,
-          },
-          duration: 0,
+      m.fitBounds(worldFrame, {
+        padding: {
+          left: innerWidth > 760 ? 420 : 24,
+          right: 40,
+          top: 100,
+          bottom: innerWidth > 760 ? 70 : innerHeight * 0.45,
         },
-      );
+        duration: 0,
+      });
     const layers = () => {
       if (m.getSource("events")) return;
       m.addSource("events", {
@@ -513,7 +514,7 @@ export default function WorldMap({
         })
         .then((style) => {
           if (!map.current) return;
-          // Provider styles must never reset the user's camera or Europe framing.
+          // Provider styles must never reset the user's camera or world framing.
           const camera = {
             center: m.getCenter(),
             zoom: m.getZoom(),
@@ -583,19 +584,18 @@ export default function WorldMap({
         setReduced(true);
     });
     m.on("moveend", () => {
-      const b = m.getBounds();
-      if (host.current) {
-        host.current.dataset.mapZoom = String(m.getZoom());
-        host.current.dataset.mapBounds = [
+      const b = m.getBounds(),
+        view = viewportBounds(
           b.getWest(),
           b.getSouth(),
           b.getEast(),
           b.getNorth(),
-        ].join(",");
+        );
+      if (host.current) {
+        host.current.dataset.mapZoom = String(m.getZoom());
+        host.current.dataset.mapBounds = view;
       }
-      bounds.current(
-        [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(","),
-      );
+      bounds.current(view);
     });
     m.on("click", "points", (e) => {
       const id = e.features?.[0]?.properties?.id;
@@ -739,7 +739,7 @@ export default function WorldMap({
       <div
         className="map"
         ref={host}
-        aria-label="World map centered on Europe. All mapped events are also available in the feed."
+        aria-label="World map. All mapped events are also available in the feed."
         onPointerDown={() => window.dispatchEvent(new Event("map-manual"))}
       />
       {reduced && (

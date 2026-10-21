@@ -207,7 +207,7 @@ test(
       assert.equal(
         snapshots,
         initial,
-        "Europe viewport motion does not refetch",
+        "world-scope viewport motion does not refetch",
       );
       await page.mouse.move(1400, 20);
       records.dup = incident("dup", 2);

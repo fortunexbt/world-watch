@@ -4,9 +4,13 @@ import {
   formatWhen,
   formatAge,
   eventTime,
-  validBounds,
+  quietHour,
   readLocal,
+  readSavedViews,
 } from "../src/client/time.js";
+import { validBounds, viewportBounds } from "../src/client/bounds.js";
+import { intersectsArea } from "../src/client/alerts.js";
+import type { IncidentView } from "../src/shared/contracts.js";
 import { translate } from "../src/client/locale.js";
 test("date-only events keep unknown hour in both interface languages", () => {
   assert.match(formatWhen("2026-10-25", "en"), /time unknown$/);
@@ -23,12 +27,85 @@ test("correction time accepts real dates and explicit offsets, never guessed loc
   assert.equal(eventTime("2026-04-31"), false);
   assert.equal(eventTime("2026-10-25T25:00Z"), false);
 });
-test("private area bounds reject reversed, empty and nonfinite geography", () => {
+test("timestamps and quiet hours follow the viewer's time zone while dates stay calendar dates", () => {
+  const zone = process.env.TZ;
+  try {
+    process.env.TZ = "America/Toronto";
+    assert.match(formatWhen("2026-10-21T12:00:00Z"), /08:00/);
+    assert.equal(quietHour(new Date("2026-10-22T03:00:00Z")), true);
+    process.env.TZ = "Asia/Tokyo";
+    assert.match(formatWhen("2026-10-21T12:00:00Z"), /21:00/);
+    assert.equal(quietHour(new Date("2026-10-22T03:00:00Z")), false);
+    assert.match(formatWhen("2026-10-25"), /^25 Oct/);
+  } finally {
+    if (zone === undefined) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+});
+test("private area bounds accept antimeridian crossings and reject empty, inverted-latitude and nonfinite geography", () => {
   assert.equal(validBounds("-1,50,1,52"), true);
-  assert.equal(validBounds("1,50,-1,52"), false);
+  assert.equal(validBounds("170,-20,-170,0"), true);
+  assert.equal(validBounds("-180,-90,180,90"), true);
+  assert.equal(validBounds("1,50,1,52"), false);
+  assert.equal(validBounds("180,50,-180,52"), false);
+  assert.equal(validBounds("-1,52,1,50"), false);
   assert.equal(validBounds("-181,50,1,52"), false);
   assert.equal(validBounds("NaN,50,1,52"), false);
   assert.equal(validBounds(""), false);
+});
+test("watch areas across the antimeridian match Pacific events on both sides only", () => {
+  const at = (lon: number) =>
+    ({ location: { lon, lat: -10, radius_km: 10 } }) as IncidentView;
+  const pacific = {
+    id: "p",
+    name: "Pacific",
+    bbox: "170,-20,-170,0",
+    minimum: "all",
+  };
+  assert.equal(intersectsArea(at(178), pacific), true);
+  assert.equal(intersectsArea(at(-175), pacific), true);
+  assert.equal(intersectsArea(at(169.95), pacific), true);
+  assert.equal(intersectsArea(at(0), pacific), false);
+  assert.equal(intersectsArea(at(160), pacific), false);
+  const atlantic = { ...pacific, bbox: "-40,-20,-20,0" };
+  assert.equal(intersectsArea(at(-30), atlantic), true);
+  assert.equal(intersectsArea(at(179), atlantic), false);
+});
+test("viewports on wrapped world copies reduce to valid bounds", () => {
+  assert.equal(viewportBounds(-10, 30, 40, 60), "-10,30,40,60");
+  assert.equal(viewportBounds(160, -30, 200, 10), "160,-30,-160,10");
+  assert.equal(viewportBounds(-200, -30, -150, 10), "160,-30,-150,10");
+  assert.equal(viewportBounds(-10, -30, 180, 10), "-10,-30,180,10");
+  assert.equal(viewportBounds(-300, -95, 200, 95), "-180,-90,180,90");
+  for (const view of [
+    viewportBounds(160, -30, 200, 10),
+    viewportBounds(-300, -95, 200, 95),
+  ])
+    assert.equal(validBounds(view), true);
+});
+test("views saved with the former Europe scope reopen on the world feed", () => {
+  const old = globalThis.localStorage;
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: () =>
+        JSON.stringify([
+          { name: "Old", scope: "Europe" },
+          { name: "Area", scope: "watch:a" },
+        ]),
+    },
+  });
+  try {
+    assert.deepEqual(
+      readSavedViews().map((v) => v.scope),
+      ["World", "watch:a"],
+    );
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: old,
+    });
+  }
 });
 test("malformed local preferences cannot crash restoration; source evidence stays untouched", () => {
   const old = globalThis.localStorage;
