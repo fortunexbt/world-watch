@@ -29,6 +29,13 @@
       "when": 1792585109728,
       "tag": "0003_rolling_brief",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792606828775,
+      "tag": "0004_incident_geography",
+      "breakpoints": true
     }
   ]
 }
