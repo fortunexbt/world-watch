@@ -1,0 +1,286 @@
+# Europe Watch — implementation backlog
+
+**Paused. Unfinished. The current testing experience did not meet the user's usefulness bar.** Do not restart collection, inference, previews, schedules or cloud maintenance while working through this document. Public release of the code does not resume the service.
+
+Read `docs/HANDOFF.md`, `AGENTS.md`, `docs/paused.md` and the product direction in `docs/VISION.md`. The original specification remains the broad aspiration; later user corrections take precedence: useful public activity and source-backed intelligence over incident volume, no passenger-train feed, no institutional-notice wall, and one map/feed/detail surface. The user wants a substantial rethink, not another polished wrapper around the same weak feed.
+
+## How to use this backlog
+
+Every checkbox is work still to accept, even when partial code exists. **P0** blocks a safe restart or useful product experiment; **P1** is needed for the next accepted iteration; **P2** follows evidence of value; **P3** is optional expansion. File pointers name the current implementation, not an instruction to keep its architecture forever. “Done” requires the stated acceptance condition on the exact reviewed revision. Do not satisfy a live-integration task with fixtures, a source-count claim, a screenshot or an untested connector.
+
+Suggested accountable lanes: **Product**, **Sources/Rights**, **Inference/Quality**, **Storage/Runtime**, **Client/Map**, **Verification**. One integrator owns shared contracts, migration journals and large composition files during each change. Dependencies below are gates, not permission to resume paused services.
+
+| Gate                        | Sequence and exit condition                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| G0 — handoff/public release | A01–A10; no private history/configuration, clear code rights, pause retained                                               |
+| G1 — product experiment     | P01–P10 plus S01–S04; owner accepts a useful question set and a small lawful source portfolio                              |
+| G2 — trustworthy processing | B01–B10, Q01–Q06, W01–W05, L01–L05, D01–D05; known waste/data-safety failures closed offline                               |
+| G3 — meaningful real slice  | C01–C06, I01–I06, E01–E05, G01–G06; after explicit resume, one bounded real civilian-useful path passes independent review |
+| G4 — accepted experience    | U01–U10, X01–X06; users can understand what matters, what changed and what is unknown without reading operational noise    |
+| G5 — sustainable operation  | F01–F10, T01–T10, O01–O08; measured capacity, recovery and release gates, not an uptime promise                            |
+| G6 — expansion              | Remaining P2/P3 items only after marginal usefulness and operating cost justify them                                       |
+
+## A — Preserve the pause and make the public handoff safe
+
+- [ ] **A01 · P0 · Runtime:** Audit `src/collector/remote.ts` and `deploy/collector.wrangler.jsonc` pause behavior. Accept when explicit pause returns before any source/API request and the tracked configuration has no active schedule.
+- [ ] **A02 · P0 · Runtime:** Review `src/worker/cli.ts` and `src/worker/supervisor.ts` onboarding paths. Accept when install, documentation and containers cannot silently start a model or a competing supervisor.
+- [ ] **A03 · P0 · Security:** Review `.gitignore`, `scripts/build-sites.mjs` and Git history for private hosting/configuration/runtime artefacts. Accept when a fresh public clone contains no credentials, personal endpoints or private operational receipts.
+- [ ] **A04 · P0 · Maintainer:** Decide application code rights in `package.json` and a root licence file. Accept when public availability and actual reuse permissions agree; data licences remain separately attributed.
+- [ ] **A05 · P0 · Documentation:** Reconcile `README.md`, `docs/HANDOFF.md` and `docs/paused.md`. Accept when a new team can distinguish the paused repository, retained external resources and unshipped changes without private account access.
+- [ ] **A06 · P0 · Runtime:** Remove production identifiers from `wrangler.jsonc`, `deploy/collector.wrangler.jsonc` and packaging defaults. Accept when clone-local commands cannot accidentally target a previous owner's storage or host.
+- [ ] **A07 · P1 · Maintainer:** Define private operator configuration for `src/sites-entry.ts` and `scripts/build-sites.mjs`. Accept when public builds do not require a tracked personal hosting manifest and missing configuration fails clearly.
+- [ ] **A08 · P1 · Documentation:** Add a sanitized, versioned specification to `docs/` and cross-reference `docs/VISION.md`. Accept when later user changes, original aspirations and accepted implementation decisions have explicit precedence.
+- [ ] **A09 · P0 · Verification:** Add a pause regression to `tests/collector-remote.test.ts` and worker lifecycle tests. Accept when every startup route remains inert under the documented pause, including manual invocation and restart.
+- [ ] **A10 · P0 · Maintainer:** Record a resume checklist in `docs/operator.md` tied to G1–G3. Accept when resuming requires owner authorization, current rights/budget review and a bounded verification slice rather than running an old command list.
+
+## P — Rebuild the product around useful intelligence
+
+- [ ] **P01 · P0 · Product:** Define the primary civilian questions in `docs/VISION.md`, informed by `src/client/App.tsx`. Accept when five concrete decisions explain why this product should exist beyond an incident map.
+- [ ] **P02 · P0 · Product:** Document the rejected testing experience in `docs/HANDOFF.md` and `docs/VISION.md`. Accept when wildfire/notices dominance, clunky reading and lack of useful novelty become explicit testable failure modes.
+- [ ] **P03 · P0 · Product/Quality:** Define usefulness labels and a review rubric beside `src/worker/eval.ts`. Accept when relevance, consequence, novelty, locality and uncertainty can be scored independently of item count or dramatic language.
+- [ ] **P04 · P0 · Product/Client:** Prototype distinct information hierarchies around `src/client/App.tsx`, `RollingBrief.tsx` and `Map.tsx`. Accept when a reviewer can compare alternatives using the same lawful, varied corpus and one map/feed/detail constraint.
+- [ ] **P05 · P1 · Product:** Specify a continent-to-local-story workflow in `docs/VISION.md`. Accept when orientation, important changes, evidence inspection and return to context each need an obvious action, without adding dashboard pages.
+- [ ] **P06 · P0 · Product/Sources:** Set a source-portfolio gate in `docs/sources.md`. Accept when one more fire/notices endpoint cannot count as progress toward public-gathering/news coverage and each source has a stated user benefit.
+- [ ] **P07 · P1 · Product/Quality:** Define “nothing useful to report” for `src/client/RollingBrief.tsx` and `src/server/brief.ts`. Accept when silence is preferable to repetitive filler, while missing/stale coverage is visibly different from negative evidence.
+- [ ] **P08 · P1 · Product:** Agree a Pareto budget for experiments in `docs/VISION.md` and `src/worker/budget.ts`. Accept when the team chooses measured quality/cost/latency tradeoffs before increasing inference, source breadth or infrastructure.
+- [ ] **P09 · P1 · Product/Verification:** Run a task-based review of `src/client/App.tsx` after G3. Accept when users can identify the most consequential sourced development and its uncertainty without being coached through the feed.
+- [ ] **P10 · P0 · Maintainer:** Maintain a decision log in `docs/architecture.md` for architecture and UX alternatives. Accept when rejected options, unresolved choices, owners and evidence needed to decide are recorded rather than implied complete.
+
+## B — Stop redundant rolling-brief work before any restart
+
+- [ ] **B01 · P0 · Runtime:** Reproduce the observed redundant bootstrap in `tests/server-brief.test.ts`. Accept when fresh normal work plus older eligible history produces only the normal lease, with no unnecessary bootstrap row or second model call.
+- [ ] **B02 · P0 · Runtime:** Gate bootstrap creation in `src/server/brief.ts` on absence of ready/in-flight normal work. Accept when cold start, concurrent claimers and budget-paused normal work cannot create a competing historical headline job.
+- [ ] **B03 · P0 · Runtime:** Fence `claimBrief` against the newest completed window in `src/server/brief.ts`. Accept when no window at or before a published newer window can be leased, even after restart or an expired lease.
+- [ ] **B04 · P0 · Runtime:** Retire older pending/retrying/analyzing windows in `src/server/brief.ts` using bounded indexed updates. Accept when reason `newer_brief_exists` is explicit, audit/accounting remain, and analysis-report jobs are untouched.
+- [ ] **B05 · P0 · Runtime:** Add a newer-publication fence to `completeBrief` in `src/server/brief.ts`. Accept when an old model result racing a newer publication receives terminal stale rejection and cannot overwrite or waste another catch-up cycle.
+- [ ] **B06 · P0 · Inference:** Extend `tests/worker-brief.test.ts` for B01–B05. Accept when obsolete submission removes only that derivative spool, preserves consumed-call accounting and performs zero replacement model calls for the old window.
+- [ ] **B07 · P1 · Runtime/Quality:** Audit bootstrap and freshness deadlines across `src/server/brief.ts` and `src/shared/brief.ts`. Accept when one dated initial exception is explicit, quota delays become auditable obsolete work, and no perpetual pending state remains.
+- [ ] **B08 · P1 · Quality:** Expand `tests/server-brief.test.ts` for word limits, semantic citations, source-revision races and cancellation. Accept when valid JSON alone cannot publish unsupported urgency, stale evidence or uncited priority pins.
+- [ ] **B09 · P1 · Client:** Refine `src/client/RollingBrief.tsx` after P04. Accept when processing window, older evidence, source uncertainty and priority links are intelligible; ordinary low-impact activity does not become a dramatic headline.
+- [ ] **B10 · P0 · Verification:** After authorization, validate one bounded real brief through `src/worker/brief.ts` and owner `/api/brief`. Accept when one useful cited headline publishes once, no old follow-up call occurs and actual usage is retained without resetting the ledger.
+
+## S — Make permission and source value auditable
+
+- [ ] **S01 · P0 · Sources/Rights:** Review every enabled entry in `src/collector/registry.ts`. Accept when access, storage, AI, display and redistribution each have a specific primary-source basis or are disabled independently.
+- [ ] **S02 · P0 · Sources/Rights:** Separate declared and measured freshness in `src/collector/registry.ts` and source health. Accept when poll interval, publisher cadence, observed delay and last successful check are never conflated.
+- [ ] **S03 · P0 · Sources:** Define actual locality/category coverage in `docs/sources.md`. Accept when endpoint totals, country-advice destinations, healthy-empty feeds and operating local coverage are reported separately.
+- [ ] **S04 · P0 · Sources/Rights:** Review item-level exceptions in `src/collector/adapters/` and source admission. Accept when a restricted record overrides a broad licence, no publisher article is copied under an unrelated dataset grant, and exclusions remain explainable.
+- [ ] **S05 · P1 · Sources:** Add a structured review/change history around `src/collector/registry.ts`. Accept when a permission or status change records reviewer/date/basis and affects pending work, brief inputs, display and exports consistently.
+- [ ] **S06 · P1 · Sources/Rights:** Verify Demos share-alike propagation in `src/collector/adapters/demos.ts` and `src/server/index.ts` exports. Accept when derived factual metadata/analysis keeps attribution, change notice and CC BY-SA conditions per item.
+- [ ] **S07 · P1 · Sources/Rights:** Verify IDMC licence and flow semantics in `src/collector/adapters/idmc.ts`. Accept when daily provisional flow, qualifiers, overlaps and original publisher references survive every summary/export.
+- [ ] **S08 · P1 · Sources/Rights:** Review BBK unchanged-field/AI restrictions in `src/collector/parsers.ts` and registry. Accept when source-only display remains useful without passing restricted text into Luna or derivative brief inputs.
+- [ ] **S09 · P1 · Sources:** Extend `src/collector/discovery.ts` to report capability/rights gaps without activation. Accept when a successful probe cannot silently enable collection, storage or inference and its review result is reproducible.
+- [ ] **S10 · P2 · Sources:** Define suspension and re-verification policy in `docs/sources.md`. Accept when expired permissions, changed terms, permanent404s and repeated failures have accountable owners and a safe disabled state.
+
+## C — Add high-value coverage rather than more volume
+
+- [ ] **C01 · P0 · Sources/Product:** Build a small accepted portfolio in `docs/VISION.md` and `docs/sources.md`. Accept when public gatherings, disruption and displacement have useful original reporting across selected places, instead of another fire-heavy test corpus.
+- [ ] **C02 · P1 · Sources:** Investigate a lawful UK local public-activity path using `src/collector/registry.ts` as the activation gate. Accept when actual event payloads, reuse rights, cadence and place precision are demonstrated; TfL registration remains a named blocker until resolved.
+- [ ] **C03 · P1 · Sources:** Investigate French local gathering/evacuation reporting beyond Paris construction data. Accept when `docs/city-source-catalog.md` records one useful permitted path or a precise access failure; empty traffic feeds do not count as coverage.
+- [ ] **C04 · P1 · Sources:** Strengthen German assembly coverage through `src/collector/adapters/demos.ts`. Accept when metadata provenance, upstream limits and correction gaps are explicit; no article/contact copying is justified by an aggregator's dataset licence.
+- [ ] **C05 · P1 · Sources:** Find Spanish public-activity reporting beyond Catalunya fires. Accept when `docs/city-source-catalog.md` distinguishes a functioning gathering/access source from generic municipal agendas, and activation has independent rights review.
+- [ ] **C06 · P1 · Sources:** Establish a permitted original local-news pilot for `src/collector/registry.ts`. Accept when storage/AI/display terms and actual incident examples are verified, with link-only handling where full-text reuse is unavailable.
+- [ ] **C07 · P2 · Sources:** Evaluate known public expert/journalist feeds through `src/collector/discovery.ts`. Accept when identity, scope, instance/platform rules, deletes and reuse are verified without treating follower count as reliability.
+- [ ] **C08 · P2 · Sources:** Evaluate an approved Bluesky/Mastodon path in `docs/source-expansion.md`. Accept when current protocol/resume/delete behavior, filtering cost and legal scope are demonstrated before a production adapter is enabled.
+- [ ] **C09 · P2 · Sources:** Resolve approved ReliefWeb/ACLED or another humanitarian context source in `docs/source-expansion.md`. Accept when access, update cadence and redistribution limits are real, and periodic context stays separate from live reports.
+- [ ] **C10 · P1 · Product/Sources:** Review marginal usefulness after each source addition using `src/worker/eval.ts`. Accept when useful distinct situations, novelty, uncertainty and cost determine retention; decorative breadth and event volume do not.
+
+## I — Improve acquisition, filtering and correction handling
+
+- [ ] **I01 · P0 · Sources/Runtime:** Preserve source-specific admission before durable ingest in `src/collector/index.ts`. Accept when routine passenger/institutional/archive rows produce aggregate reasons, not observations, jobs or hidden inference calls.
+- [ ] **I02 · P1 · Sources:** Separate high-signal positive recall from exclusion precision in `tests/collector-admission.test.ts`. Accept when peaceful gathering/access signals survive across relevant languages without restoring generic service noise.
+- [ ] **I03 · P1 · Runtime:** Test durable conditional-request checkpoints in `src/collector/index.ts` and `tests/collector.test.ts`. Accept when partial acceptance never advances an incomplete ETag, and replay resumes without losing changed material.
+- [ ] **I04 · P1 · Sources:** Add bounded Demos continuation/tracked-upcoming refresh in `src/collector/adapters/demos.ts` and collector state. Accept when bursts beyond20 and old amendments/deletes have a tested policy within the same explicit request budget.
+- [ ] **I05 · P1 · Sources:** Verify rolling Norway message merge in `src/collector/parsers.ts` and `src/server/index.ts`. Accept when finite-feed disappearance cannot erase prior facts, edits are detected and late corrections retain chronological provenance.
+- [ ] **I06 · P1 · Sources:** Harden IDMC CSV selection in `tests/idmc.test.ts`. Accept when exact native duplicates, multi-place flows, empty figures, overlapping estimates and source edits never create invented totals or historical backfill jobs.
+- [ ] **I07 · P1 · Runtime:** Exercise redirects, DNS checks and size/time budgets in `src/collector/fetch.ts`. Accept when every exception is exact-resource scoped, credentials never reach publishers and decompressed payload limits remain effective.
+- [ ] **I08 · P1 · Runtime:** Make publisher429 and source-specific cooldowns durable in `src/collector/index.ts`. Accept when restart cannot reset a provider backoff or cause repeated whole-feed acquisition.
+- [ ] **I09 · P1 · Sources:** Detect parser/schema drift in `src/collector/adapters/` and health output. Accept when changed required fields create a visible degraded source rather than a silent healthy zero.
+- [ ] **I10 · P2 · Sources/Runtime:** Separate acquisition samples from retained source bodies in `src/collector/discovery.ts`. Accept when review can establish format/rights/value without storing a bulk archive or activating normal inference.
+
+## Q — Prove queue durability and recovery
+
+- [ ] **Q01 · P0 · Runtime:** Re-derive job identity and revision invariants in `src/server/index.ts` and `tests/server.test.ts`. Accept when unchanged ingest is idempotent and substantive changes produce one tracked revision/job identity.
+- [ ] **Q02 · P0 · Runtime:** Stress lease/attempt fencing in `src/server/index.ts`. Accept when simultaneous workers, late completion, renewal races and clock boundaries cannot replace accepted newer work.
+- [ ] **Q03 · P0 · Inference:** Test crash boundaries around fsync/spooling in `src/worker/worker.ts`. Accept when completed output survives restart and failed submission without another model call; unfinished work becomes claimable safely.
+- [ ] **Q04 · P0 · Runtime:** Test sleep/restart/quota recovery across `src/worker/supervisor.ts`, `worker.ts` and server jobs. Accept when every queued item remains accounted for and no wake-up burst bypasses budget or alert silence.
+- [ ] **Q05 · P1 · Runtime:** Audit fair scheduling in `src/server/index.ts`. Accept when a noisy source cannot starve a new high-value source, while older eligible work gets bounded progress without arbitrary deletion.
+- [ ] **Q06 · P1 · Runtime:** Separate auth, quota, isolation, invalid and permanent failures in worker/server state. Accept when transient pauses never count as poison and dead-letter transitions have reproducible reasons.
+- [ ] **Q07 · P1 · Runtime:** Verify operator retry/review endpoints in `src/server/index.ts`. Accept when they are scoped, audited, idempotent and cannot overwrite analyzing leases or silently discard evidence.
+- [ ] **Q08 · P1 · Runtime:** Verify queue capacity/backpressure with `MAX_PENDING_JOBS` and collector checkpoints. Accept when overload retains upstream progress and explicit retry state instead of accepting unbounded work or dropping it silently.
+- [ ] **Q09 · P1 · Runtime:** Review bundle leader replacement in `src/server/bundling.ts` and server jobs. Accept when failed/deleted leaders release eligible siblings without losing per-report provenance or repeatedly inferring identical input.
+- [ ] **Q10 · P2 · Runtime:** Define recovery ownership in `docs/operator.md`. Accept when an on-call engineer can reconcile server jobs, leases, local spools and counters without resetting ledgers or deleting the backlog.
+
+## W — Keep supported inference and cost under control
+
+- [ ] **W01 · P0 · Inference:** Reverify supported model/Fast configuration in `src/worker/adapter.ts` only after resume approval. Accept when the installed client supports exact requested configuration and missing access blocks explicitly rather than selecting another model.
+- [ ] **W02 · P0 · Security/Inference:** Exercise isolation doctor boundaries in `src/worker/adapter.ts`. Accept when direct reads, symlinks, private temporary files, writes, tools and network attempts fail under actual host enforcement.
+- [ ] **W03 · P0 · Inference:** Preserve requested versus effective model/tier audit in `src/shared/contracts.ts` and worker run records. Accept when unknown returned metadata remains unknown throughout status, exports and documentation.
+- [ ] **W04 · P0 · Inference/Runtime:** Audit reservations and actual accounting in `src/worker/budget.ts`. Accept when concurrent attempts, crashes, unattested usage and day rollover cannot erase consumed work or over-reserve silently.
+- [ ] **W05 · P0 · Inference:** Test brief and extraction sharing one budget in `src/worker/worker.ts`. Accept when headline generation cannot consume protected reserves, starve important reports or replay completed output through another model call.
+- [ ] **W06 · P1 · Inference:** Measure compact wire variants in `src/worker/wire.ts` and `brief.ts`. Accept when token savings retain material evidence/corrections and improve workload medians, not merely one flattering example.
+- [ ] **W07 · P1 · Inference:** Replace broad estimates with calibrated input accounting where supported in `budget.ts`. Accept when estimation error is measured and conservative fallback protects the reserve without claiming a provider billing guarantee.
+- [ ] **W08 · P1 · Runtime:** Verify supervisor process/lock behavior in `src/worker/supervisor.ts`. Accept when rapid restarts, stale locks and interrupted installations cannot create concurrent inference workers.
+- [ ] **W09 · P2 · Runtime:** Validate the separately authenticated remote-worker option in `Dockerfile`, `compose.yaml` and `deploy/remote-worker-entrypoint.mjs`. Accept when fresh sign-in, isolation, persistence and doctor pass on that host; never copy subscription credentials.
+- [ ] **W10 · P3 · Product/Runtime:** Decide whether a billed API fallback belongs in `docs/architecture.md`. Accept only after explicit owner cost approval, separate credentials/budgets and failure semantics; absence of this adapter must remain clear meanwhile.
+
+## L — Make model quality measurable
+
+- [ ] **L01 · P0 · Quality:** Create a versioned lawful evaluation corpus around `src/worker/eval.ts`. Accept when important negatives, planned peaceful events, corrections and multilingual ambiguity are represented without committing private source archives.
+- [ ] **L02 · P0 · Quality:** Evaluate relevance separately from impact in `src/worker/analyst.ts`. Accept when a peaceful demonstration remains eligible and routine transport/weather/institutional text does not become an unrest incident.
+- [ ] **L03 · P0 · Quality:** Test severity grounding with `src/shared/contracts.ts` validators and analyst examples. Accept when every promoted level has stated impact evidence and unknown conditions never become minor/severe by default.
+- [ ] **L04 · P0 · Quality:** Test negation, historical footage and correction precedence in `tests/worker.test.ts`. Accept when the final corrected claim wins without discarding earlier evidence or making historical activity current.
+- [ ] **L05 · P0 · Quality:** Test date containment and precision through `src/shared/temporal.ts` and analyst output. Accept when valid structured JSON cannot bypass deterministic temporal interpretation or create missing hours/timezones.
+- [ ] **L06 · P1 · Quality:** Add per-language recall/error reports in `src/worker/eval.ts`. Accept when language support is measured on relevant examples, with observed failure classes rather than one aggregate score.
+- [ ] **L07 · P1 · Quality:** Evaluate claim-to-excerpt semantic support beyond ID membership in `src/shared/contracts.ts`. Accept when valid citation IDs cannot conceal invented impacts, participants, instructions or causality.
+- [ ] **L08 · P1 · Inference:** Validate prompt/schema version transitions in `src/worker/wire.ts` and server job identity. Accept when older spools and results cannot be misread as a new contract, and reanalysis is an explicit audited choice.
+- [ ] **L09 · P1 · Quality:** Calibrate uncertainty/review routing in `src/worker/analyst.ts`. Accept when high-consequence ambiguity receives review without blocking all low-impact reporting or treating confidence as a probability.
+- [ ] **L10 · P2 · Product/Quality:** Compare extraction, deterministic parsing and source-native metadata by task in `docs/VISION.md`. Accept when Luna is reserved for work that improves interpretation, not repeatedly paraphrasing already sufficient structured records.
+
+## E — Build situations without losing provenance
+
+- [ ] **E01 · P0 · Runtime/Quality:** Audit exact reuse anchors in `src/server/bundling.ts`. Accept when missing event/date/location anchors cannot place unrelated reports in a shared unknown bucket.
+- [ ] **E02 · P1 · Quality:** Separate original reporting, official publication, syndication and copied social text in incident provenance. Accept when `src/server/index.ts` never equates source count with independent corroboration.
+- [ ] **E03 · P1 · Runtime:** Define material-change fingerprints in `src/server/bundling.ts` and collector adapters. Accept when metadata churn is cheap, but changed location/time/instruction/correction always receives appropriate tracked evaluation.
+- [ ] **E04 · P1 · Runtime/Quality:** Evaluate cautious cross-report situation matching against `tests/bundling.test.ts`. Accept when matching can explain supporting anchors and contradictory evidence; fuzzy wording alone cannot merge incidents.
+- [ ] **E05 · P1 · Runtime:** Test source-native episode grouping in `tests/server.test.ts`. Accept when provisional official views and later analysis share one situation without withdrawing unchanged authoritative fields on an empty extraction.
+- [ ] **E06 · P1 · Client/Runtime:** Review merge/split controls in `src/client/App.tsx` and server routes. Accept when decisions retain immutable lineage, reason, actor/time and recoverable evidence ownership.
+- [ ] **E07 · P1 · Runtime:** Define retraction/cancellation propagation in `src/server/index.ts`. Accept when feed, map, replay, brief pins and eligible alerts all stop presenting withdrawn claims as current.
+- [ ] **E08 · P1 · Client:** Make source independence visible in the existing detail panel. Accept when `src/client/App.tsx` explains shared origin and unconfirmed publisher-generated material without adding an analytics dashboard.
+- [ ] **E09 · P2 · Quality:** Define adversarial cases for false merging and false splitting in `tests/bundling.test.ts`. Accept when both error rates are reviewed before semantic bundling is enabled for broader sources.
+- [ ] **E10 · P2 · Runtime:** Design a versioned incident reconstruction boundary in `docs/architecture.md`. Accept when source reports, claims, origins and corrections can be rebuilt reproducibly without rewriting history or faking exactly-once inference.
+
+## G — Keep place and time uncertainty honest
+
+- [ ] **G01 · P0 · Quality:** Audit every source-provided geometry in `src/collector/adapters/` and `src/collector/parsers.ts`. Accept when coordinates have explicit issuer/aggregator/centroid/area meaning and no headquarters location becomes an incident point.
+- [ ] **G02 · P0 · Runtime:** Test exact city resolution in `src/server/geo.ts`. Accept when ambiguous names, negated places, parent-city fields and unsupported street names remain correctly approximate or unresolved.
+- [ ] **G03 · P1 · Runtime/Client:** Decide the multi-location contract across `src/shared/contracts.ts`, `src/server/geo.ts` and `src/client/Map.tsx`. Accept when one situation can expose separate supported places without an averaged multicity pin.
+- [ ] **G04 · P1 · Sources/Runtime:** Replace unaudited station/route inference with reviewed crosswalks where needed. Accept when `geo.ts` only resolves exact source identifiers against licensed dated reference data and preserves its precision.
+- [ ] **G05 · P0 · Quality:** Test publication, ingestion, source update, analysis and event clocks separately in `tests/live-window.test.ts`. Accept when none substitutes for an unknown clock or makes an old event newly current.
+- [ ] **G06 · P0 · Client:** Verify date-only and malformed-date display in `src/client/time.ts` and `src/shared/temporal.ts`. Accept when missing hours stay unknown, timezone labels are explicit and invalid calendar dates never normalize into invented dates.
+- [ ] **G07 · P1 · Runtime:** Resolve area/polygon representation in `src/shared/contracts.ts` and `geo.ts`. Accept when area uncertainty survives storage/exports and a centre point is never presented as surveyed danger at that point.
+- [ ] **G08 · P1 · Quality:** Expand the gazetteer with licensed, reproducible provenance in `docs/gazetteer.md`. Accept when additions improve measured resolution of useful reports without introducing fuzzy false positives.
+- [ ] **G09 · P1 · Client:** Test country-level orientation cues in `src/client/Map.tsx`. Accept when approximate reports stay visibly approximate and a local event cannot imply countrywide danger.
+- [ ] **G10 · P2 · Runtime:** Evaluate spatial indexing requirements against measured workloads in `docs/architecture.md`. Accept when a PostGIS/alternative decision follows real geometry/query needs and migration cost, not a blanket platform rewrite.
+
+## U — Replace the clunky primary experience
+
+- [ ] **U01 · P0 · Product/Client:** Rebuild the main reading hierarchy in `src/client/App.tsx` after P04. Accept when the most useful developments are immediately legible and the feed does not dominate or obscure the map.
+- [ ] **U02 · P0 · Client:** Rework feed ranking and grouping with `src/server/index.ts` and `App.tsx`. Accept when relevance/novelty/recency/impact/uncertainty are intelligible, and low-value fire/notices volume cannot win by frequency.
+- [ ] **U03 · P1 · Client:** Revisit brief placement and priority report links in `RollingBrief.tsx`. Accept when the headline helps orientation, important unlocated reports remain inspectable and “pins” never imply fabricated map positions.
+- [ ] **U04 · P1 · Client:** Validate Europe framing against unobscured viewport in `src/client/Map.tsx`. Accept when desktop/mobile first paint is useful, the world remains navigable and a feed/panel change does not unexpectedly move the camera.
+- [ ] **U05 · P1 · Client:** Preserve a person's reading state in `App.tsx`. Accept when live updates, selection, filters and back navigation retain focus/scroll; the new-updates control counts meaningful incident changes rather than raw report churn.
+- [ ] **U06 · P1 · Client:** Simplify incoming-versus-analyzed presentation in `App.tsx`. Accept when source-only, AI-pending, failed, rights-blocked and analyzed items have accurate concise labels without an operational junk wall.
+- [ ] **U07 · P1 · Client:** Redesign empty/loading/error states in `App.tsx` and `RollingBrief.tsx`. Accept when no false zero/offline state appears before data, quota errors stop retry storms and source silence is not framed as safety.
+- [ ] **U08 · P1 · Client:** Reassess the mobile bottom sheet in `src/client/style.css` and `App.tsx`. Accept when compact/reading/detail states have clear affordances, usable map space, safe-area support and44px meaningful targets.
+- [ ] **U09 · P1 · Product/Client:** Make source-linked context useful in the reusable detail panel. Accept when `App.tsx` answers what/where/when/impact/uncertainty/origin with short direct evidence paths instead of repetitive technical prose.
+- [ ] **U10 · P1 · Verification:** Run task-based usability tests on varied current/planned/corrected/unlocated cases. Accept when the chosen design beats the rejected feed in `docs/VISION.md` using recorded observations, not aesthetic approval alone.
+
+## X — Make advanced capability contextual and accessible
+
+- [ ] **X01 · P1 · Client:** Test source/language/evidence/search filters across feed and incoming in `App.tsx`. Accept when saved views persist the real filters and limited results never imply complete retained-history search.
+- [ ] **X02 · P1 · Client/Runtime:** Verify private saved-area semantics in `App.tsx` and watch routes. Accept when panning never changes subscriptions, scope is visible and private coordinates never enter a shareable URL.
+- [ ] **X03 · P1 · Client:** Rework country context in `App.tsx`. Accept when activity, relevant advisories and coverage gaps are useful within the same panel, without promoting weather/advice feeds back into incident coverage.
+- [ ] **X04 · P1 · Client/Quality:** Test replay against `tests/events.test.ts` and `tests/client-sse.test.ts`. Accept when historical knowledge is clear, current state is not rewritten and replay/backlog causes no motion or sound cues.
+- [ ] **X05 · P1 · Client:** Complete keyboard/focus behavior in `App.tsx`, `MediaPanel.tsx` and `GeospatialPanel.tsx`. Accept when Escape/back, focus restoration, disclosure controls and marker selection work without a mouse.
+- [ ] **X06 · P1 · Client:** Audit English/Italian system text in `src/client/locale.ts`. Accept when controls, errors, statuses and accessibility labels translate consistently while source quotations remain original.
+- [ ] **X07 · P1 · Client:** Audit contrast, text scaling and non-colour impact cues in `src/client/style.css`. Accept when labels/symbols remain readable at small sizes and unknown never visually means safe.
+- [ ] **X08 · P1 · Client:** Test reduced motion, follow-live and catch-up silence in `Map.tsx` and `alerts.ts`. Accept when only genuinely new eligible events cue, manual interaction suspends follow and hidden tabs do no unnecessary work.
+- [ ] **X09 · P2 · Client:** Review contextual health controls in `App.tsx`. Accept when collection freshness, AI availability, budget pause and connection health are distinguishable in one compact status surface.
+- [ ] **X10 · P2 · Client/Runtime:** Verify permitted briefs/exports and changes-since-visit paths. Accept when `App.tsx` and server export routes preserve source licensing, dates, uncertainty and privacy without adding a dashboard page.
+
+## M — Keep media and satellite context truthful
+
+- [ ] **M01 · P1 · Sources/Client:** Review camera value against P01 in `src/client/MediaPanel.tsx`. Accept when a selected public camera helps contextual inspection rather than becoming a decorative layer or implied incident verification.
+- [ ] **M02 · P1 · Runtime:** Test `src/server/cameras.ts` catalog/detail caches and provider backoff. Accept when selected browsing respects provider limits, one failure remains visible and no bulk image archive or scan is introduced.
+- [ ] **M03 · P1 · Client:** Verify HLS playback on real supported browsers after authorization. Accept when `MediaPanel.tsx` waits for validated detail, starts manually, handles failure and never claims audio merely because video exists.
+- [ ] **M04 · P1 · Quality:** Test metadata versus capture timestamps in `tests/cameras.test.ts`. Accept when stale/unknown images are labelled honestly and catalog updates never masquerade as image capture times.
+- [ ] **M05 · P1 · Sources:** Audit licences/attribution and declared versus tested camera availability. Accept when `cameras.ts` and UI do not count all source-advertised streams as working individually verified video.
+- [ ] **M06 · P1 · Quality:** Verify FIRMS interpretation in `src/server/geospatial.ts` and `GeospatialPanel.tsx`. Accept when thermal anomalies, acquisition times, confidence and sensor limits remain separate from confirmed fires or severity.
+- [ ] **M07 · P1 · Quality:** Verify Copernicus geometry semantics in `geospatial.ts`. Accept when area-of-interest, mapped products and actual observed extents cannot be mistaken for one another or for evacuation boundaries.
+- [ ] **M08 · P1 · Runtime:** Test geospatial payload/page/geometry budgets in `tests/geospatial.test.ts`. Accept when large geometries, missing detail and provider errors degrade explicitly without excessive main-thread work or storage reads.
+- [ ] **M09 · P2 · Sources/Rights:** Investigate any future public audio source in `docs/source-expansion.md`. Accept only with a genuinely public stream and explicit playback/reuse scope; emergency encryption/private radio is a blocker, never a bypass target.
+- [ ] **M10 · P2 · Product/Quality:** Define whether source-linked media analysis belongs in `docs/VISION.md`. Accept only after permission, privacy, evidence-location/time validation and cost tests; no face recognition, private-person profiling or unsupported crowd inference.
+
+## D — Close privacy, deletion and security gaps
+
+- [ ] **D01 · P0 · Security:** Audit role boundaries in `src/server/index.ts` and `src/sites-entry.ts`. Accept when anonymous, owner, collector and worker callers have distinct tested capabilities and service access never implies owner identity.
+- [ ] **D02 · P0 · Security:** Review same-origin/cookie/token handling and preview proxy in `src/operator/preview.ts`. Accept when no application secret reaches URLs, static assets, public publishers or browser logs.
+- [ ] **D03 · P0 · Runtime/Security:** Re-test source withdrawal/deletion through server tables and outbox. Accept when `tests/server.test.ts` finds no prohibited text in current/historical views, FTS, claims, results, exports or pending jobs.
+- [ ] **D04 · P0 · Inference/Security:** Verify tombstones before budget checks/model calls in `src/worker/worker.ts`. Accept when both report spools and derivative brief spools erase affected content while quota-paused or offline-recovering.
+- [ ] **D05 · P0 · Runtime/Security:** Test brief rights/revision/version publication fences in `tests/server-brief.test.ts`. Accept when revoked or superseded source evidence cannot publish through a race and older derived text has explicit historical handling.
+- [ ] **D06 · P1 · Security:** Audit retention/backups in `deploy/migrations/`, worker storage and operator docs. Accept when expiry is bounded/indexed, backup retention is stated and restore cannot silently reintroduce deleted private material.
+- [ ] **D07 · P1 · Security:** Threat-model source injection across extraction and briefs in `adapter.ts`, `analyst.ts` and `brief.ts`. Accept when malicious evidence cannot obtain tools/files/network privileges or change the trusted instruction contract.
+- [ ] **D08 · P1 · Security:** Review all upstream allowlists in `src/collector/fetch.ts`, `cameras.ts` and `geospatial.ts`. Accept when DNS/redirect/resource exceptions are narrow, size-bounded, credential-free and independently tested.
+- [ ] **D09 · P1 · Maintainer:** Define operational audit/log redaction in `src/server/index.ts` and worker logging. Accept when errors remain actionable without exposing raw source bodies, personal data, secrets or signed download URLs.
+- [ ] **D10 · P1 · Product/Security:** State acceptable civilian scope in `docs/VISION.md` and operator guidance. Accept when political participation is not inferred into dossiers, public reports are not tactical tracking and manual notes have a clear privacy/retention policy.
+
+## F — Measure capacity and cost before claiming continuous service
+
+- [ ] **F01 · P0 · Runtime:** Build a per-route read/write budget around `src/server/index.ts` metrics. Accept when idle, active, burst and reconnect workloads have measured rows/minute and extrapolated limits with uncertainty.
+- [ ] **F02 · P0 · Runtime:** Re-audit indexed retention/counters in `deploy/migrations/0004_read_budget.sql` and `0006_indexed_retention.sql`. Accept when query plans and realistic retained history show no repeated broad scans.
+- [ ] **F03 · P1 · Client/Runtime:** Measure incremental SSE in `tests/client-sse.test.ts` against a local realistic dataset. Accept when deltas fetch bounded compact incidents, hidden tabs stop polling and reconnect does one silent authoritative reconciliation.
+- [ ] **F04 · P1 · Runtime:** Bound SSE connection/replay cost in `src/server/index.ts`. Accept when many idle clients and expired cursors cannot exhaust the database or open unbounded replay work.
+- [ ] **F05 · P1 · Runtime:** Measure registry/checkpoint overhead in `src/collector/index.ts`. Accept when unchanged cycles avoid mass upserts and source/API calls remain within the configured whole-cycle budget.
+- [ ] **F06 · P1 · Inference:** Measure arrivals versus useful accepted analysis in `worker.ts` and budget logs. Accept when a noisy source or revisions cannot produce an unbounded inference deficit disguised as normal catch-up.
+- [ ] **F07 · P1 · Runtime:** Benchmark search/snapshot caps in `src/server/index.ts`. Accept when a large retained corpus preserves explicit limits and p95 latency without claiming complete results from a capped response.
+- [ ] **F08 · P1 · Client:** Capture map/render/scroll traces for `Map.tsx` and the redesigned feed. Accept when desktop and mobile budgets are measured under realistic markers/context layers, not only empty-map screenshots.
+- [ ] **F09 · P1 · Runtime/Product:** Compare the current managed D1 deployment with alternatives in `docs/architecture.md`. Accept when finite quotas, operational effort, privacy, geometry needs and monthly cost are explicit before a migration decision.
+- [ ] **F10 · P1 · Verification:** Define sustainable-service thresholds and stop conditions in `docs/operator.md`. Accept when a failing budget or latency target pauses/degrades safely instead of increasing quotas, dropping work or promising uninterrupted service.
+
+## T — Make verification repeatable for another team
+
+- [ ] **T01 · P0 · Verification:** Rerun `npm run check`, `npm test` and `npm run build` on the sanitized exact revision. Accept when results are reproducible from a clean clone and no private runtime files are necessary.
+- [ ] **T02 · P1 · Verification:** Add offline CI via `package.json` and a new `.github/workflows/` configuration. Accept when untrusted changes run no source/model/cloud operations and tests cannot access developer credentials.
+- [ ] **T03 · P1 · Verification:** Separate fixture, public-fetch, model and hosted end-to-end suites. Accept when `tests/` and docs make permissions/cost prerequisites explicit and ordinary CI cannot accidentally execute paid or private work.
+- [ ] **T04 · P1 · Verification:** Add migration parity checks for `deploy/migrations/` and `drizzle/`. Accept when a fresh database and an upgraded database reach equivalent required schema without editing applied migrations.
+- [ ] **T05 · P1 · Verification:** Add realistic burst/correction/deletion scenarios across source→queue→incident→SSE. Accept when multiple revisions, independent origins and delayed analysis preserve all identities and remove withdrawn views.
+- [ ] **T06 · P1 · Verification:** Test the redesigned experience with Playwright in `tests/browser-verify.ts`. Accept when desktop/mobile interactions, filters, brief links, panel focus and loading states are asserted with varied lawful fixtures.
+- [ ] **T07 · P1 · Verification:** Run an iOS/Safari ladder for `Map.tsx` and `MediaPanel.tsx`. Accept when each result names browser WebKit, simulator or physical-device level and known media/viewport differences are recorded.
+- [ ] **T08 · P1 · Quality:** Maintain an independently reviewed semantic regression set in `tests/worker.test.ts` and `worker/eval.ts`. Accept when changes report relevance/severity/time/place/citation failures separately and do not train to a tiny happy-path fixture.
+- [ ] **T09 · P1 · Verification:** Exercise fault injection for storage quota, publisher429, stale lease, malformed payload and interrupted spool writes. Accept when queues/accounting survive and automatic retries remain bounded.
+- [ ] **T10 · P1 · Maintainer:** Define a release evidence template in `docs/verification.md`. Accept when exact revision, tested scope, fixture/live distinction, blockers and residual risk are reproducible without publishing private operational histories.
+
+## O — Give the next team an operable system
+
+- [ ] **O01 · P0 · Maintainer:** Assign accountable owners and review boundaries in `AGENTS.md` and `docs/HANDOFF.md`. Accept when no source, model, migration, UI or production change lacks an integrating owner and independent reviewer.
+- [ ] **O02 · P1 · Runtime:** Define reproducible fresh-owner provisioning in `deploy/README.md`. Accept when application credentials, supported model sign-in, database creation and hosting configuration are separate steps with no inherited personal identifiers.
+- [ ] **O03 · P1 · Runtime:** Validate private-host identity mapping in `src/sites-entry.ts`. Accept when owner identity is explicit, service credentials are narrowly scoped and public deployment cannot expose owner-only API/state accidentally.
+- [ ] **O04 · P1 · Runtime:** Validate local/Docker deployment in `Dockerfile` and `compose.yaml`. Accept when persistence, startup order, doctor gating, signal handling and a clean stop are actually exercised on a supported host.
+- [ ] **O05 · P1 · Runtime:** Document backup/restore/rollback in `docs/operator.md`. Accept when an isolated restore preserves jobs/revisions/accounting, respects deletions and has measured recovery steps before production use.
+- [ ] **O06 · P1 · Runtime:** Add useful observability to existing source/worker health rather than a KPI wall. Accept when ingestion lag, analysis lag, useful acceptance rate, queue age, rows budget and failure cause are independently actionable.
+- [ ] **O07 · P1 · Runtime:** Define alert ownership and escalation for operational failures in `docs/operator.md`. Accept when a human can distinguish source outage, model quota/auth, storage exhaustion and stalled supervisor without automatic restart storms.
+- [ ] **O08 · P1 · Verification:** After explicit resume, validate an unattended collection interval with local analysis stopped, then recovery. Accept when scheduler evidence is distinct from manual writes and one success is not called continuous-operation proof.
+- [ ] **O09 · P2 · Product/Runtime:** Decide external notification channels in `docs/architecture.md` and `src/server/alerts.ts`. Accept only with explicit destination authorization, delivery idempotency, quiet hours and a useful relevance policy; do not claim unconfigured channels work.
+- [ ] **O10 · P0 · Maintainer/Product:** Hold a G5 release decision using `docs/VISION.md` and `docs/verification.md`. Accept when usefulness, rights, measured quality, sustainable costs and recovery are reviewed together; defer production claims and optional expansion until evidence supports them.
+
+## Decisions and blockers to resolve explicitly
+
+- Is the first accepted audience a local civilian/travel reader, an analyst following selected cities, or another defined user? Which questions are outside scope?
+- Which lawful original sources add novel public-activity information in the first target places? Who owns obtaining approvals and assessing redistribution?
+- Which code licence should a public repository carry? Public hosting alone is not a licence grant.
+- Is the current Worker/D1 architecture worth keeping after a measured workload, or do spatial/query/recovery needs justify a different host/database?
+- What budget is the owner actually willing to allocate, what reserves protect other work, and when should the product choose silence instead of another model call?
+- Should an always-on separately authenticated inference host be supported now, later, or not at all? No subscription credential transfer is implied.
+- What is the acceptable delay and measured quality for each source class? A three-hour calendar and a daily displacement feed cannot meet a live crowd-observation promise.
+- How will a future operator prove deletion across backups, exports, local derivative spools and permitted historical records?
+- What user-observed improvement would justify restarting the service? Source count, marker count and a more polished screenshot are insufficient answers.
+
+## Worldwide expansion gate (new owner direction)
+
+The product direction is worldwide. The runtime remains paused and retains its original European scope until the source gate is reviewed. `research/world-atlas/` records discovery work; it is not an enabled connector registry. The target is 50 useful sources per country (9,750 memberships for 195 target countries), with gaps reported explicitly. Large publisher-directory counts alone do not satisfy the gate.
+
+- [ ] G01 **P0 · acquisition/product** — Confirm the country/territory manifest and what counts as a useful country source in `scripts/atlas.mjs` and the atlas README. Accept when publisher location, event coverage, territorial treatment and multinational providers have separate fields and an operator approves the denominator.
+- [ ] G02 **P0 · acquisition** — Audit catalogue-derived candidates in `research/world-atlas/`: stale publishers, non-news genres, parked domains, redirects and shared network identities. Accept when retained country totals distinguish discovery from verified useful original sources and exclude known inactive entries.
+- [ ] G03 **P0 · rights** — Establish source-specific access/storage/AI/display/redistribution permissions for the first global pilot. Accept when no catalogue licence is inherited as permission over publisher content, and blocked sources remain blocked.
+- [ ] G04 **P0 · quality** — Measure incremental useful-event yield for each source family across held-out days. Accept when at least one original local source and one independent complementary domain contribute useful events to each pilot geography; a 50-URL count cannot substitute.
+- [ ] G05 **P1 · acquisition** — Fill country discovery shortfalls in `research/world-atlas/COVERAGE.md` with actual primary-source research. Accept when every added source has provenance and country-coverage evidence; document countries without 50 genuinely distinct relevant sources rather than duplicating feeds.
+- [ ] G06 **P1 · tooling** — Add bounded access checks with publisher limits, redirect classification and archived metadata receipts. Accept when a homepage HTTP 200 is never labelled a working feed or a content licence, and checks cannot reach private networks or send application credentials.
+- [ ] G07 **P1 · acquisition** — Identify canonical event/feed/API paths for approved publishers. Accept when native IDs, update/deletion semantics, publication delay and historical reach are tested with synthetic fixtures plus one permitted live sample.
+- [ ] G08 **P1 · runtime** — Separate a country pack's permitted source configuration from global discovery data. Accept when importing the atlas cannot activate collection, model use or schedules.
+- [ ] G09 **P1 · quality** — Build multilingual relevance/negation/relationship evaluation for each newly approved language family. Accept when token compaction preserves material corrections and geographic context with measured miss rates.
+- [ ] G10 **P1 · geo** — Evaluate a worldwide gazetteer and uncertainty representation in `src/server/geo.ts`. Accept when a world map can retain broad or ambiguous geography without pretending the existing Europe-specific place extract is global coverage.
+- [ ] G11 **P1 · client/product** — Rename and internationalise the runtime only after source review. Accept when name, map defaults, timezones, scripts, URLs and operator migration are coherent; preserve the one-map/compact-feed/detail-panel constraint.
+- [ ] G12 **P1 · runtime/verification** — Load-test the first approved global portfolio against source, storage and inference budgets. Accept when request and token estimates are based on actual changed-event workloads, with interruption recovery and visible coverage degradation.
+- [ ] G13 **P1 · verification** — Independently sample country/source assignments and provenance from all three Luna research lanes. Accept when misassigned or fabricated URLs are removed, discovery errors are measured, and no per-country minimum is claimed from unreviewed rows.
+- [ ] G14 **P2 · research** — Maintain catalogue snapshots and review deltas without ingesting publisher text. Accept when disappeared entries trigger review rather than deletion/retraction of incidents, metadata provenance is reproducible and country shortfalls remain visible.

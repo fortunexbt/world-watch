@@ -1,0 +1,50 @@
+{
+  "name": "europe-watch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "build": "vite build",
+    "check": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "collect": "tsx src/collector/cli.ts",
+    "worker": "tsx src/worker/cli.ts",
+    "migrate": "wrangler d1 migrations apply europe-watch --local",
+    "preview": "vite --host 127.0.0.1 --port 5173",
+    "open": "tsx src/operator/preview.ts",
+    "test:browser": "tsx tests/browser-verify.ts",
+    "build:sites": "npm run build && node scripts/build-sites.mjs",
+    "audit:public": "node scripts/audit-public.mjs",
+    "atlas:build": "node scripts/atlas.mjs --build",
+    "atlas:check": "node scripts/atlas.mjs --self-test"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "dotenv": "18.0.8",
+    "fast-xml-parser": "5.11.2",
+    "hls.js": "1.7.3",
+    "lucide-react": "1.61.0",
+    "maplibre-gl": "6.15.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "zod": "3.25.76",
+    "zod-to-json-schema": "3.25.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
+    "prettier": "3.9.10",
+    "wrangler": "4.151.3"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.16"
+  }
+}

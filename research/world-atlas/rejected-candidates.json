@@ -1,0 +1,65 @@
+[
+  {
+    "country_code": "BR",
+    "name": "Diário Oficial do Município de Lavras",
+    "url": "https://187.60.128.132/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q124935332",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "FR",
+    "name": "L'Unité",
+    "url": "https://62.210.214.184/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q3204819",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "GH",
+    "name": "Media General Ghana Limited",
+    "url": "https://3news,com/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q100152577",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "ID",
+    "name": "Animonster",
+    "url": "https://web.archive.org.web.20140125120340/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q104086582",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "IR",
+    "name": "Asrar",
+    "url": "https://89.165.118.117/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q17004255",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "NG",
+    "name": "Authority FM, Nnewi",
+    "url": "https://:www.authority919fm.com/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q135657055",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "SA",
+    "name": "Asda' Al Khaleej",
+    "url": "https://www,asda-alkhaleej.com/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q136206486",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "US",
+    "name": "Panzer Digest",
+    "url": "https://minden_games.homestead.com/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q7132015",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  },
+  {
+    "country_code": "US",
+    "name": "KLXI",
+    "url": "https://www/",
+    "provenance_url": "https://www.wikidata.org/wiki/Q6332023",
+    "reason": "unsupported_literal_address_or_invalid_hostname"
+  }
+]

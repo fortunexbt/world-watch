@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1792577915109,
+      "tag": "0000_europe_watch_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792580608712,
+      "tag": "0001_pipeline_trace",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792582413552,
+      "tag": "0002_indexed_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792585109728,
+      "tag": "0003_rolling_brief",
+      "breakpoints": true
+    }
+  ]
+}

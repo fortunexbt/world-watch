@@ -1,0 +1,52 @@
+name: europe-watch
+services:
+  backend:
+    build:
+      context: .
+      target: application
+    init: true
+    ports:
+      - "127.0.0.1:8787:8787"
+    env_file:
+      - .dev.vars
+    environment:
+      PUBLIC_ORIGIN: http://127.0.0.1:8787
+    volumes:
+      - local-d1:/data/wrangler
+    restart: unless-stopped
+  analysis:
+    profiles: [analysis]
+    build:
+      context: .
+      target: analysis
+    init: true
+    env_file:
+      - .worker.env
+    environment:
+      EW_CODEX_BIN: /usr/local/bin/codex
+      EW_WORKER_STATE: /data/worker
+      EW_WORKER_ID: separately-authenticated-container
+    volumes:
+      - worker-state:/data/worker
+      - worker-codex-auth:/home/ew/.codex
+    tmpfs:
+      - /tmp:mode=1777
+    # A failed host isolation probe must stop the service, not loop or relax permissions.
+    restart: "no"
+  analysis-local:
+    extends:
+      service: analysis
+    profiles: [local-analysis]
+    network_mode: "service:backend"
+    depends_on:
+      - backend
+    environment:
+      EW_API_URL: http://127.0.0.1:8787
+      EW_ALLOW_LOCAL_EMULATOR: "true"
+      EW_CODEX_BIN: /usr/local/bin/codex
+      EW_WORKER_STATE: /data/worker
+      EW_WORKER_ID: separately-authenticated-local-container
+volumes:
+  local-d1:
+  worker-state:
+  worker-codex-auth:
