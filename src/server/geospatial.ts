@@ -1,30 +1,81 @@
 import { validEventTime } from "../shared/contracts.js";
 import type {
+  Bbox,
   GeoFeature,
   GeospatialCatalog,
   LayerSourceHealth,
+  ThermalSensorId,
 } from "../shared/geospatial.js";
 export type {
+  Bbox,
   GeoFeature,
   GeospatialCatalog,
   LayerSourceHealth,
 } from "../shared/geospatial.js";
-export const FIRMS_URL =
-  "https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Europe_24h.csv";
-export const CEMS_URL =
-  "https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api/public-activations-info/?limit=5";
+const FIRMS_DATA = "https://firms.modaps.eosdis.nasa.gov/data/active_fire";
+/** Public global 24 h files, one per satellite, so worldwide coverage needs no MAP_KEY. */
+export const FIRMS_SENSORS: readonly {
+  id: ThermalSensorId;
+  satellite: string;
+  label: string;
+  url: string;
+}[] = [
+  {
+    id: "noaa-20-viirs",
+    satellite: "N20",
+    label: "NOAA-20 VIIRS 375 m",
+    url: `${FIRMS_DATA}/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv`,
+  },
+  {
+    id: "noaa-21-viirs",
+    satellite: "N21",
+    label: "NOAA-21 VIIRS 375 m",
+    url: `${FIRMS_DATA}/noaa-21-viirs-c2/csv/J2_VIIRS_C2_Global_24h.csv`,
+  },
+  {
+    id: "snpp-viirs",
+    satellite: "N",
+    label: "Suomi NPP VIIRS 375 m",
+    url: `${FIRMS_DATA}/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Global_24h.csv`,
+  },
+];
+type ThermalSensor = (typeof FIRMS_SENSORS)[number];
+const CEMS_API =
+  "https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api";
+const CEMS_LIST_LIMIT = 25,
+  CEMS_DETAILS = 10,
+  CEMS_AOIS = 100;
+export const CEMS_URL = `${CEMS_API}/public-activations-info/?limit=${CEMS_LIST_LIMIT}`;
+export const WORLD: Bbox = [-180, -90, 180, 90];
+const USER_AGENT =
+  "WorldWatch/1.0 (+https://github.com/fortunexbt/world-watch; public contextual data; attribution retained)";
 const NASA_LICENSE =
   "https://www.earthdata.nasa.gov/engage/open-data-services-software/data-use-policy";
 const CEMS_LICENSE =
   "https://mapping.emergency.copernicus.eu/terms-and-conditions/";
-const NASA_CREDIT =
-  "NASA FIRMS / LANCE / EOSDIS — NOAA-20 VIIRS 375 m thermal anomalies; derived display, no NASA endorsement";
+const firmsCredit = (instrument: string) =>
+  `NASA FIRMS / LANCE / EOSDIS, ${instrument} thermal anomalies; derived display, no NASA endorsement`;
 const CEMS_CREDIT =
-  "Copernicus Emergency Management Service — On-Demand Mapping; European Union; derived display";
-const MAX_BYTES = 2 * 1024 * 1024;
+  "Copernicus Emergency Management Service, On-Demand Mapping; © European Union; derived display";
+const VIIRS_CONFIDENCE = ["low", "nominal", "high"];
+// Measured 2026-10-21: each global VIIRS 24 h file was 8.3 to 9.8 MB.
+const FIRMS_BYTES = 24 * 1024 * 1024,
+  JSON_BYTES = 2 * 1024 * 1024,
+  THERMAL_LIMIT = 2000;
+type Detections = {
+  lon: Float64Array;
+  lat: Float64Array;
+  at: Float64Array;
+  confidence: Uint8Array;
+};
+type Loaded = {
+  checked_at: string;
+  thermal: { sensor: ThermalSensor; data?: Detections; error?: string }[];
+  cems: { features: GeoFeature[]; truncated: boolean; error?: string };
+};
 const cache = new WeakMap<
   typeof fetch,
-  { expires: number; value: Promise<GeospatialCatalog> }
+  { expires: number; value: Promise<Loaded> }
 >();
 const coordinate = (c: unknown): c is [number, number] =>
   Array.isArray(c) &&
@@ -105,52 +156,68 @@ export function parseWktGeometry(text: unknown): GeoFeature["geometry"] | null {
     return null;
   }
 }
-/** RFC4180 quoted cells, including embedded commas/newlines and doubled quotes. */
-export function parseCsv(text: string): string[][] {
-  if (text.length > MAX_BYTES) throw Error("source_byte_limit");
-  const rows: string[][] = [];
+/** RFC4180 quoted cells, including embedded commas/newlines and doubled quotes, fed in chunks of any size. */
+export function csvParser(onRow: (cells: string[]) => void) {
   let row: string[] = [],
     cell = "",
     quoted = false,
-    closed = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          cell += '"';
-          i++;
-        } else {
-          quoted = false;
-          closed = true;
+    closed = false,
+    pending = "";
+  // Only called with text ending in a line feed (or at the end), so lookahead stays in the chunk.
+  const scan = (text: string) => {
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"') {
+          if (text[i + 1] === '"') {
+            cell += '"';
+            i++;
+          } else {
+            quoted = false;
+            closed = true;
+          }
+        } else cell += c;
+      } else if (c === '"') {
+        if (cell || closed) throw Error("invalid_csv");
+        quoted = true;
+      } else if (c === "," || c === "\n" || c === "\r") {
+        row.push(cell);
+        cell = "";
+        closed = false;
+        if (c !== ",") {
+          if (row.some(Boolean)) onRow(row);
+          row = [];
+          if (c === "\r" && text[i + 1] === "\n") i++;
         }
-      } else cell += c;
-    } else if (c === '"') {
-      if (cell || closed) throw Error("invalid_csv");
-      quoted = true;
-    } else if (c === "," || c === "\n" || c === "\r") {
-      row.push(cell);
-      cell = "";
-      closed = false;
-      if (c !== ",") {
-        if (row.some(Boolean)) rows.push(row);
-        row = [];
-        if (c === "\r" && text[i + 1] === "\n") i++;
+      } else {
+        if (closed) throw Error("invalid_csv");
+        cell += c;
       }
-    } else {
-      if (closed) throw Error("invalid_csv");
-      cell += c;
+      if (row.length > 100 || cell.length > 100000)
+        throw Error("csv_record_limit");
     }
-    if (rows.length > 30000 || row.length > 100 || cell.length > 100000)
-      throw Error("csv_record_limit");
-  }
-  if (quoted) throw Error("invalid_csv");
-  row.push(cell);
-  if (row.some(Boolean)) rows.push(row);
-  return rows;
+  };
+  return {
+    push(chunk: string) {
+      const text = pending + chunk,
+        cut = text.lastIndexOf("\n") + 1;
+      pending = text.slice(cut);
+      if (pending.length > 1024 * 1024) throw Error("csv_record_limit");
+      scan(text.slice(0, cut));
+    },
+    end() {
+      scan(pending);
+      pending = "";
+      if (quoted) throw Error("invalid_csv");
+      row.push(cell);
+      if (row.some(Boolean)) onRow(row);
+      row = [];
+      cell = "";
+    },
+  };
 }
-export function parseFirms(text: string, now = Date.now()): GeoFeature[] {
-  const [headers, ...rows] = parseCsv(text);
+/** One sensor's global file: UTC acquisitions within 24 h, newest first, duplicate rows dropped. */
+export function firmsParser(sensor: ThermalSensor, now = Date.now()) {
   const required = [
     "latitude",
     "longitude",
@@ -158,69 +225,77 @@ export function parseFirms(text: string, now = Date.now()): GeoFeature[] {
     "acq_time",
     "satellite",
     "confidence",
-  ];
-  if (!headers || required.some((h) => !headers.includes(h)))
-    throw Error("invalid_firms_columns");
-  const features = new Map<string, GeoFeature>();
-  let knownFormat = 0;
-  for (const cells of rows) {
-    if (cells.length !== headers.length) continue;
-    const r = Object.fromEntries(headers.map((h, i) => [h, cells[i]]));
-    if (
-      r.satellite === "N20" &&
-      ["low", "nominal", "high"].includes(r.confidence)
-    )
-      knownFormat++;
-    if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(r.acq_date) ||
-      !/^\d{1,4}$/.test(r.acq_time) ||
-      r.satellite !== "N20"
-    )
-      continue;
-    const hhmm = r.acq_time.padStart(4, "0");
-    if (+hhmm.slice(0, 2) > 23 || +hhmm.slice(2) > 59) continue;
-    const at = `${r.acq_date}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`,
-      ms = Date.parse(at);
+  ] as const;
+  type Columns = Record<(typeof required)[number], number>;
+  let col: Columns | undefined,
+    width = 0,
+    rows = 0,
+    knownFormat = 0;
+  const lon: number[] = [],
+    lat: number[] = [],
+    at: number[] = [],
+    confidence: number[] = [];
+  const csv = csvParser((cells) => {
+    if (!col) {
+      if (required.some((h) => !cells.includes(h)))
+        throw Error("invalid_firms_columns");
+      col = Object.fromEntries(
+        required.map((h) => [h, cells.indexOf(h)]),
+      ) as Columns;
+      width = cells.length;
+      return;
+    }
+    rows++;
+    if (cells.length !== width || cells[col.satellite] !== sensor.satellite)
+      return;
+    const level = VIIRS_CONFIDENCE.indexOf(cells[col.confidence]);
+    if (level < 0) return;
+    knownFormat++;
+    const date = cells[col.acq_date],
+      time = cells[col.acq_time];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{1,4}$/.test(time)) return;
+    const hhmm = time.padStart(4, "0");
+    if (+hhmm.slice(0, 2) > 23 || +hhmm.slice(2) > 59) return;
+    const ms = Date.parse(`${date}T${hhmm.slice(0, 2)}:${hhmm.slice(2)}:00Z`);
     if (
       !Number.isFinite(ms) ||
-      new Date(ms).toISOString().slice(0, 10) !== r.acq_date ||
+      new Date(ms).toISOString().slice(0, 10) !== date ||
       ms > now ||
       ms < now - 86400000
     )
-      continue;
-    if (!r.longitude.trim() || !r.latitude.trim()) continue;
-    const geometry = {
-      type: "Point" as const,
-      coordinates: [+r.longitude, +r.latitude] as [number, number],
-    };
-    if (
-      !validGeometry(geometry) ||
-      !["low", "nominal", "high"].includes(r.confidence)
-    )
-      continue;
-    const id = `firms:N20:VIIRS:${at}:${geometry.coordinates.join(":")}`;
-    features.set(id, {
-      id,
-      layer: "thermal",
-      geometry,
-      name: "VIIRS thermal anomaly",
-      observed_at: at,
-      source_url: "https://firms.modaps.eosdis.nasa.gov/map/",
-      attribution: NASA_CREDIT,
-      license_url: NASA_LICENSE,
-      properties: {
-        kind: "thermal_detection",
-        sensor: "NOAA-20 VIIRS 375 m",
-        confidence: r.confidence,
-        uncertainty:
-          "Satellite thermal detection, not a confirmed wildfire or human incident. Pixel scale 375 m; other heat sources, cloud cover and observation delay apply. No crowd, injury, cause or evacuation inference.",
-      },
-    });
-  }
-  if (rows.length && !knownFormat) throw Error("invalid_firms_values");
-  return [...features.values()]
-    .sort((a, b) => b.observed_at!.localeCompare(a.observed_at!))
-    .slice(0, 2000);
+      return;
+    const x = cells[col.longitude],
+      y = cells[col.latitude];
+    if (!x.trim() || !y.trim() || !coordinate([+x, +y])) return;
+    lon.push(+x);
+    lat.push(+y);
+    at.push(ms);
+    confidence.push(level);
+  });
+  return {
+    push: csv.push,
+    end(): Detections {
+      csv.end();
+      if (!col) throw Error("invalid_firms_columns");
+      if (rows && !knownFormat) throw Error("invalid_firms_values");
+      const order = [...at.keys()].sort(
+        (a, b) => at[b] - at[a] || lon[a] - lon[b] || lat[a] - lat[b],
+      );
+      const keep = order.filter(
+        (i, k) =>
+          !k ||
+          at[i] !== at[order[k - 1]] ||
+          lon[i] !== lon[order[k - 1]] ||
+          lat[i] !== lat[order[k - 1]],
+      );
+      return {
+        lon: Float64Array.from(keep, (i) => lon[i]),
+        lat: Float64Array.from(keep, (i) => lat[i]),
+        at: Float64Array.from(keep, (i) => at[i]),
+        confidence: Uint8Array.from(keep, (i) => confidence[i]),
+      };
+    },
+  };
 }
 export function parseCemsDetail(
   payload: unknown,
@@ -250,7 +325,7 @@ export function parseCemsDetail(
       ms < now - 30 * 86400000
     )
       continue;
-    for (const area of a.aois.slice(0, 100)) {
+    for (const area of a.aois.slice(0, CEMS_AOIS)) {
       if (!Number.isSafeInteger(area.number) || typeof area.name !== "string")
         continue;
       const geometry = parseWktGeometry(area.extent);
@@ -279,157 +354,285 @@ export function parseCemsDetail(
   }
   return out;
 }
-async function readSource(url: string, fetcher: typeof fetch) {
+async function* readSource(
+  url: string,
+  fetcher: typeof fetch,
+  maxBytes: number,
+  accept: string,
+) {
   const res = await fetcher(url, {
     redirect: "manual",
     signal: AbortSignal.timeout(15000),
-    headers: url.startsWith("https://rapidmapping.emergency.copernicus.eu/")
-      ? {
-          Accept: "application/json",
-          "User-Agent":
-            "EuropeWatch/1.0 (public Copernicus contextual data; attribution retained)",
-        }
-      : { Accept: "text/csv" },
+    headers: { Accept: accept, "User-Agent": USER_AGENT },
   });
   if (!res.ok || res.status >= 300) {
     await res.body?.cancel();
     throw Error(`source_http_${res.status}`);
   }
-  if (Number(res.headers.get("content-length")) > MAX_BYTES) {
+  if (Number(res.headers.get("content-length")) > maxBytes) {
     await res.body?.cancel();
     throw Error("source_byte_limit");
   }
   const reader = res.body?.getReader();
   if (!reader) throw Error("source_empty_response");
-  const chunks: Uint8Array[] = [];
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   let size = 0;
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > MAX_BYTES) throw Error("source_byte_limit");
-      chunks.push(value);
+    for (let r = await reader.read(); !r.done; r = await reader.read()) {
+      if ((size += r.value.length) > maxBytes) throw Error("source_byte_limit");
+      yield decoder.decode(r.value, { stream: true });
     }
-  } catch (error) {
+    yield decoder.decode();
+  } finally {
     await reader.cancel();
-    throw error;
   }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
-async function load(fetcher: typeof fetch): Promise<GeospatialCatalog> {
-  const now = Date.now(),
-    checked_at = new Date(now).toISOString();
-  const sources: LayerSourceHealth[] = [],
-    features: GeoFeature[] = [];
-  await Promise.all([
-    (async () => {
-      let count = 0,
-        error: string | undefined;
-      try {
-        const rows = parseFirms(await readSource(FIRMS_URL, fetcher), now);
-        count = rows.length;
-        features.push(...rows);
-      } catch (e) {
-        error =
-          e instanceof Error && /^(source_|invalid_|csv_)/.test(e.message)
-            ? e.message
-            : "source_unavailable";
-      }
-      sources.push({
-        id: "firms",
-        status: error ? "error" : "ok",
-        checked_at,
-        cadence_seconds: 600,
-        features_count: count,
-        source_url: FIRMS_URL,
-        attribution: NASA_CREDIT,
-        license_url: NASA_LICENSE,
-        ...(error ? { error } : {}),
-      });
-    })(),
-    (async () => {
-      let count = 0,
-        error: string | undefined;
-      try {
-        const list = JSON.parse(await readSource(CEMS_URL, fetcher));
-        if (!Array.isArray(list?.results)) throw Error("invalid_cems_response");
-        let details = 0;
-        for (const a of list.results.slice(0, 5)) {
-          const date =
-            typeof a.eventTime === "string"
-              ? Date.parse(
-                  a.eventTime +
-                    (/Z$|[+-]\d\d:\d\d$/.test(a.eventTime) ? "" : "Z"),
-                )
-              : NaN;
-          if (
-            !/^EMSR\d+$/.test(a.code) ||
-            !Number.isFinite(date) ||
-            date > now ||
-            date < now - 30 * 86400000 ||
-            a.sensitive === true
-          )
-            continue;
-          if (details++ === 2) break;
-          const rows = parseCemsDetail(
-            JSON.parse(
-              await readSource(
-                `https://rapidmapping.emergency.copernicus.eu/backend/dashboard-api/public-activations/?code=${a.code}`,
-                fetcher,
-              ),
-            ),
-            now,
-          );
-          count += rows.length;
-          features.push(...rows);
+async function readJson(url: string, fetcher: typeof fetch) {
+  let text = "";
+  for await (const chunk of readSource(
+    url,
+    fetcher,
+    JSON_BYTES,
+    "application/json",
+  ))
+    text += chunk;
+  return JSON.parse(text);
+}
+const sourceError = (e: unknown) =>
+  e instanceof Error && /^(source_|invalid_|csv_)/.test(e.message)
+    ? e.message
+    : "source_unavailable";
+async function loadCems(
+  fetcher: typeof fetch,
+  now: number,
+): Promise<Loaded["cems"]> {
+  try {
+    const list = await readJson(CEMS_URL, fetcher);
+    if (!Array.isArray(list?.results)) throw Error("invalid_cems_response");
+    const listed = list.results.slice(0, CEMS_LIST_LIMIT);
+    const recent = listed.filter((a: any) => {
+      const date =
+        typeof a.eventTime === "string"
+          ? Date.parse(
+              a.eventTime + (/Z$|[+-]\d\d:\d\d$/.test(a.eventTime) ? "" : "Z"),
+            )
+          : NaN;
+      return (
+        /^EMSR\d+$/.test(a.code) &&
+        Number.isFinite(date) &&
+        date <= now &&
+        date >= now - 30 * 86400000 &&
+        a.sensitive !== true
+      );
+    });
+    const fetched = recent.slice(0, CEMS_DETAILS);
+    const details = await Promise.all(
+      fetched.map(async (a: any) =>
+        parseCemsDetail(
+          await readJson(
+            `${CEMS_API}/public-activations/?code=${a.code}`,
+            fetcher,
+          ),
+          now,
+        ),
+      ),
+    );
+    return {
+      features: details.flat(),
+      // Skipped activations, a full list page still inside the window, or AOIs past the per-activation cap.
+      truncated:
+        recent.length > fetched.length ||
+        (listed.length === CEMS_LIST_LIMIT && recent.includes(listed.at(-1))) ||
+        fetched.some((a: any) => Number(a.n_aois) > CEMS_AOIS),
+    };
+  } catch (e) {
+    return { features: [], truncated: false, error: sourceError(e) };
+  }
+}
+async function load(fetcher: typeof fetch): Promise<Loaded> {
+  const now = Date.now();
+  const [thermal, cems] = await Promise.all([
+    Promise.all(
+      FIRMS_SENSORS.map(async (sensor) => {
+        try {
+          const parser = firmsParser(sensor, now);
+          for await (const text of readSource(
+            sensor.url,
+            fetcher,
+            FIRMS_BYTES,
+            "text/csv",
+          ))
+            parser.push(text);
+          return { sensor, data: parser.end() };
+        } catch (e) {
+          return { sensor, error: sourceError(e) };
         }
-      } catch (e) {
-        error =
-          e instanceof Error && /^(source_|invalid_)/.test(e.message)
-            ? e.message
-            : "source_unavailable";
-      }
-      sources.push({
-        id: "copernicus",
-        status: error ? "error" : "ok",
-        checked_at,
-        cadence_seconds: 600,
-        features_count: count,
-        source_url: CEMS_URL,
-        attribution: CEMS_CREDIT,
-        license_url: CEMS_LICENSE,
-        ...(error ? { error } : {}),
-      });
-    })(),
+      }),
+    ),
+    loadCems(fetcher, now),
   ]);
-  const unique = [...new Map(features.map((f) => [f.id, f])).values()]
-    .sort((a, b) => a.layer.localeCompare(b.layer))
-    .slice(0, 2000);
-  for (const s of sources)
-    s.features_count = unique.filter((f) =>
-      s.id === "firms"
-        ? f.layer === "thermal"
-        : f.layer === "emergency_mapping",
-    ).length;
+  return { checked_at: new Date(now).toISOString(), thermal, cems };
+}
+/** Extent overlap; a point is a zero-size extent. */
+function overlaps(
+  [west, south, east, north]: Bbox,
+  minLon: number,
+  minLat: number,
+  maxLon: number,
+  maxLat: number,
+) {
+  return (
+    minLat <= north &&
+    maxLat >= south &&
+    (west <= east
+      ? minLon <= east && maxLon >= west
+      : maxLon >= west || minLon <= east)
+  );
+}
+function intersects(geometry: GeoFeature["geometry"], bbox: Bbox) {
+  const points =
+    geometry.type === "Point"
+      ? [geometry.coordinates]
+      : geometry.type === "Polygon"
+        ? geometry.coordinates.flat()
+        : geometry.coordinates.flat(2);
+  const lons = points.map((p) => p[0]),
+    lats = points.map((p) => p[1]);
+  return overlaps(
+    bbox,
+    Math.min(...lons),
+    Math.min(...lats),
+    Math.max(...lons),
+    Math.max(...lats),
+  );
+}
+function thermalFeature(
+  sensor: ThermalSensor,
+  data: Detections,
+  i: number,
+): GeoFeature {
+  const at = new Date(data.at[i]).toISOString().slice(0, 19) + "Z",
+    coordinates: [number, number] = [data.lon[i], data.lat[i]];
   return {
-    features: unique,
-    sources: sources.sort((a, b) => a.id.localeCompare(b.id)),
+    id: `firms:${sensor.satellite}:VIIRS:${at}:${coordinates.join(":")}`,
+    layer: "thermal",
+    geometry: { type: "Point", coordinates },
+    name: "VIIRS thermal anomaly",
+    observed_at: at,
+    source_url: "https://firms.modaps.eosdis.nasa.gov/map/",
+    attribution: firmsCredit(sensor.label),
+    license_url: NASA_LICENSE,
+    properties: {
+      kind: "thermal_detection",
+      sensor: sensor.label,
+      sensor_id: sensor.id,
+      confidence: VIIRS_CONFIDENCE[data.confidence[i]],
+      uncertainty:
+        "Satellite thermal detection, not a confirmed wildfire or human incident. Pixel scale 375 m; other heat sources, cloud cover and observation delay apply. No crowd, injury, cause or evacuation inference.",
+    },
   };
 }
-export function getGeospatialCatalog(
+/** Bbox filter first, then the newest THERMAL_LIMIT across sensors; each sensor is already newest first. */
+function thermalFeatures(thermal: Loaded["thermal"], bbox: Bbox) {
+  const matches = thermal.map(({ data }) => {
+    const out: number[] = [];
+    if (data)
+      for (let i = 0; i < data.at.length; i++)
+        if (overlaps(bbox, data.lon[i], data.lat[i], data.lon[i], data.lat[i]))
+          out.push(i);
+    return out;
+  });
+  const returned = matches.map(() => 0),
+    features: GeoFeature[] = [];
+  while (features.length < THERMAL_LIMIT) {
+    let next = -1;
+    for (let k = 0; k < matches.length; k++)
+      if (
+        returned[k] < matches[k].length &&
+        (next < 0 ||
+          thermal[k].data!.at[matches[k][returned[k]]] >
+            thermal[next].data!.at[matches[next][returned[next]]])
+      )
+        next = k;
+    if (next < 0) break;
+    const { sensor, data } = thermal[next];
+    features.push(
+      thermalFeature(sensor, data!, matches[next][returned[next]++]),
+    );
+  }
+  return {
+    features,
+    sensors: thermal.map(({ sensor, error }, k) => ({
+      id: sensor.id,
+      label: sensor.label,
+      status: error ? ("error" as const) : ("ok" as const),
+      features_count: returned[k],
+      total_available: matches[k].length,
+      source_url: sensor.url,
+      ...(error ? { error } : {}),
+    })),
+  };
+}
+export function parseBbox(value: string): Bbox | null {
+  const parts = value.split(",");
+  if (
+    parts.length !== 4 ||
+    !parts.every((p) => /^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(p))
+  )
+    return null;
+  const [west, south, east, north] = parts.map(Number);
+  return Math.abs(west) <= 180 &&
+    Math.abs(east) <= 180 &&
+    west !== east &&
+    south >= -90 &&
+    north <= 90 &&
+    south < north
+    ? [west, south, east, north]
+    : null;
+}
+export async function getGeospatialCatalog(
+  bbox: Bbox = WORLD,
   fetcher: typeof fetch = fetch,
 ): Promise<GeospatialCatalog> {
   const hit = cache.get(fetcher),
     now = Date.now();
-  if (hit && hit.expires > now) return hit.value;
-  const value = load(fetcher);
-  cache.set(fetcher, { expires: now + 600000, value });
-  return value;
+  let loading = hit && hit.expires > now ? hit.value : undefined;
+  if (!loading) {
+    loading = load(fetcher);
+    cache.set(fetcher, { expires: now + 600000, value: loading });
+  }
+  const { checked_at, thermal, cems } = await loading;
+  const mapping = cems.features.filter((f) => intersects(f.geometry, bbox)),
+    { features, sensors } = thermalFeatures(thermal, bbox);
+  const failed = sensors.find((s) => s.error);
+  const sources: LayerSourceHealth[] = [
+    {
+      id: "copernicus",
+      status: cems.error ? "error" : "ok",
+      checked_at,
+      cadence_seconds: 600,
+      features_count: mapping.length,
+      total_available: mapping.length,
+      truncated: cems.truncated,
+      source_url: CEMS_URL,
+      attribution: CEMS_CREDIT,
+      license_url: CEMS_LICENSE,
+      ...(cems.error ? { error: cems.error } : {}),
+    },
+    {
+      id: "firms",
+      status: sensors.every((s) => s.error) ? "error" : "ok",
+      checked_at,
+      cadence_seconds: 600,
+      features_count: features.length,
+      total_available: sensors.reduce((n, s) => n + s.total_available, 0),
+      truncated: sensors.some((s) => s.features_count < s.total_available),
+      source_url: "https://firms.modaps.eosdis.nasa.gov/active_fire/",
+      attribution: firmsCredit("NOAA-20, NOAA-21 and Suomi NPP VIIRS 375 m"),
+      license_url: NASA_LICENSE,
+      ...(failed ? { error: failed.error } : {}),
+      sensors,
+    },
+  ];
+  return { bbox, features: [...mapping, ...features], sources };
 }
