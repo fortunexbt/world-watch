@@ -1627,7 +1627,9 @@ async function routes(r: Request, e: Env) {
   if (r.method === "GET" && p === "/api/geospatial") {
     if (who !== "owner") return json({error:"forbidden"},who ? 403 : 401);
     const geo = await import("./geospatial");
-    return json(await geo.getGeospatialCatalog());
+    const bbox = u.searchParams.has("bbox") ? geo.parseBbox(u.searchParams.get("bbox")!) : geo.WORLD;
+    if (!bbox) return json({error:"invalid_bbox"},400);
+    return json(await geo.getGeospatialCatalog(bbox));
   }
   if (r.method === "GET" && (p === "/api/cameras" || p.startsWith("/api/cameras/"))) {
     if (who !== "owner") return json({error: "forbidden"}, who ? 403 : 401);
