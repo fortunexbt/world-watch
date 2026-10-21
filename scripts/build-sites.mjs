@@ -72,6 +72,8 @@ const result = await build({
   platform: "browser",
   target: "es2022",
   minify: true,
+  // The worldwide gazetteer is mostly non-ASCII; escaping it would add about 4 MB.
+  charset: "utf8",
   define: { __EW_SITE_ASSETS__: JSON.stringify(assets) },
 });
 const worker = result.outputFiles[0].text;
