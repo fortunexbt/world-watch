@@ -82,7 +82,7 @@ async function head(
             : callback(null, address.address, address.family),
         headers: {
           "user-agent":
-            "WorldWatchSourceResearch/1.0 (+https://github.com/fortunexbt/europe-watch)",
+            "WorldWatchSourceResearch/1.0 (+https://github.com/fortunexbt/world-watch)",
           accept: "text/html,application/json,application/xml;q=0.9,*/*;q=0.1",
         },
       },

@@ -213,10 +213,10 @@ async function getText(
       Accept: manifest
         ? "application/vnd.apple.mpegurl, application/x-mpegURL, text/plain"
         : "application/geo+json, application/json",
-      "User-Agent": "EuropeWatch/0.1 (public provider camera context)",
+      "User-Agent": "WorldWatch/0.1 (public provider camera context)",
       "Accept-Encoding": "gzip",
       ...(u.hostname === "tie.digitraffic.fi"
-        ? { "Digitraffic-User": "EuropeWatch/0.1" }
+        ? { "Digitraffic-User": "WorldWatch/0.1" }
         : {}),
     },
     signal: AbortSignal.timeout(15000),

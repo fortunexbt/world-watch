@@ -1623,7 +1623,7 @@ async function routes(r: Request, e: Env) {
   if (!who) {
     if (p.startsWith("/api/")) return json({ error: "unauthorized" }, 401);
     return new Response(
-      '<!doctype html><meta name="viewport" content="width=device-width"><title>Europe Watch · Private</title><style>body{background:#0d151c;color:#e7edf1;font:18px system-ui;display:grid;place-content:center;height:95vh}input,button{font:inherit;padding:12px;border-radius:8px;border:1px solid #354650;background:#192730;color:inherit}form{display:grid;gap:16px;max-width:360px}p{color:#a6b5be}</style><form id="login"><h1>Europe Watch</h1><p>Private owner access</p><input aria-label="Owner access token" type="password" id="token" autocomplete="current-password" required><button>Open map</button><output id="status"></output></form><script>login.onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token.value})});if(r.ok)location.reload();else status.textContent="Access token not accepted"}</script>',
+      '<!doctype html><meta name="viewport" content="width=device-width"><title>World Watch · Private</title><style>body{background:#0d151c;color:#e7edf1;font:18px system-ui;display:grid;place-content:center;height:95vh}input,button{font:inherit;padding:12px;border-radius:8px;border:1px solid #354650;background:#192730;color:inherit}form{display:grid;gap:16px;max-width:360px}p{color:#a6b5be}</style><form id="login"><h1>World Watch</h1><p>Private owner access</p><input aria-label="Owner access token" type="password" id="token" autocomplete="current-password" required><button>Open map</button><output id="status"></output></form><script>login.onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token.value})});if(r.ok)location.reload();else status.textContent="Access token not accepted"}</script>',
       {
         headers: {
           "content-type": "text/html;charset=utf-8",
@@ -1654,7 +1654,7 @@ async function routes(r: Request, e: Env) {
   if (p === "/api/health")
     return json({
       ok: true,
-      service: "europe-watch",
+      service: "world-watch",
       storage: "D1 durable",
       analysis_mode: e.ANALYSIS_MODE ?? "local-codex",
       ...(who === "owner" ? { status: await status(e) } : {}),
@@ -2539,7 +2539,7 @@ async function routes(r: Request, e: Env) {
         {
           headers: {
             "content-type": "text/csv",
-            "content-disposition": "attachment;filename=europe-watch.csv",
+            "content-disposition": "attachment;filename=world-watch.csv",
           },
         },
       );
