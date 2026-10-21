@@ -454,6 +454,13 @@ Object.assign(italian, {
   "Satellite thermal detections": "Rilevamenti termici satellitari",
   "Copernicus mapping areas": "Aree di mappatura Copernicus",
   "Explore geospatial context": "Esplora il contesto geospaziale",
+  "Showing {shown} of {total} in this view. Zoom in for complete coverage.":
+    "Mostrati {shown} su {total} in questa vista. Ingrandisci la mappa per una copertura completa.",
+  "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.":
+    "Mostrati {shown} su almeno {total} in questa vista. Alcuni dati della fonte non sono stati acquisiti in questo aggiornamento.",
+  "{shown} of {total} detections in this view":
+    "{shown} su {total} rilevamenti in questa vista",
+  "Sensor unavailable": "Sensore non disponibile",
 });
 export function translate(language: Language, text: string) {
   return language === "it"

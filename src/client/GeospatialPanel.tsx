@@ -21,6 +21,11 @@ export default function GeospatialPanel({
   const tr = (text: string) => translate(language, text);
   const number = (value: number) =>
     value.toLocaleString(language === "it" ? "it-IT" : "en-GB");
+  const fill = (text: string, values: Record<string, number>) =>
+    Object.entries(values).reduce(
+      (out, [key, value]) => out.replace(`{${key}}`, number(value)),
+      tr(text),
+    );
   const heading = useRef<HTMLHeadingElement>(null);
   const feature = catalog?.features.find((f) => f.id === selected);
   useEffect(() => {
@@ -209,6 +214,31 @@ export default function GeospatialPanel({
                   ? `${number(s.features_count)} ${tr("contextual features")}`
                   : tr("Source unavailable")}
               </small>
+              {s.truncated && (
+                <p className="caution">
+                  {s.features_count < s.total_available
+                    ? fill(
+                        "Showing {shown} of {total} in this view. Zoom in for complete coverage.",
+                        { shown: s.features_count, total: s.total_available },
+                      )
+                    : fill(
+                        "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.",
+                        { shown: s.features_count, total: s.total_available },
+                      )}
+                </p>
+              )}
+              {s.sensors?.map((sensor) => (
+                <small key={sensor.id}>
+                  {sensor.label} ·{" "}
+                  {sensor.status === "ok"
+                    ? fill("{shown} of {total} detections in this view", {
+                        shown: sensor.features_count,
+                        total: sensor.total_available,
+                      })
+                    : tr("Sensor unavailable")}
+                  {sensor.error && ` · ${tr(sensor.error)}`}
+                </small>
+              ))}
               {s.error && (
                 <p role="status" className="error">
                   {tr(s.error)}
@@ -222,7 +252,7 @@ export default function GeospatialPanel({
               <p className="rights">
                 {s.attribution} ·{" "}
                 <a href={s.license_url} target="_blank" rel="noreferrer">
-                  Data reuse terms
+                  {tr("Data reuse terms")}
                 </a>
               </p>
             </article>

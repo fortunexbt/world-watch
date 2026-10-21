@@ -29,7 +29,11 @@ export function longitudeOverlaps(
   const start = eastOf(min, west);
   return start <= span(west, east) || start + (max - min) >= 360;
 }
-/** Map viewports on wrapped world copies, reduced to the bounds convention above. */
+/**
+ * Map viewports on wrapped world copies, reduced to the bounds convention above.
+ * Five decimals (about 1 m) keep floating-point noise such as 1e-14 out of query
+ * strings, which servers parse as plain decimals.
+ */
 export function viewportBounds(
   west: number,
   south: number,
@@ -40,5 +44,7 @@ export function viewportBounds(
     east - west >= 360
       ? [-180, 180]
       : [eastOf(west, -180) - 180, 180 - eastOf(180, east)];
-  return [w, Math.max(-90, south), e, Math.min(90, north)].join(",");
+  return [w, Math.max(-90, south), e, Math.min(90, north)]
+    .map((v) => Number(v.toFixed(5)))
+    .join(",");
 }
