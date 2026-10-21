@@ -1,0 +1,17 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "europe-watch",
+  "main": "../src/collector/remote.ts",
+  "compatibility_date": "2026-10-21",
+  "workers_dev": true,
+  "vars": {
+    "EW_API_URL": "https://your-site.chatgpt.site",
+    "EW_SITES_ORIGIN": "https://your-site.chatgpt.site",
+    "EW_COLLECTION_PAUSED": "1",
+  },
+  "triggers": {
+    // Intentionally paused. Remove the pause flag and explicitly re-enable cron to resume.
+    "crons": [],
+  },
+  "observability": { "enabled": true },
+}

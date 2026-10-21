@@ -1,0 +1,7 @@
+# Gazetteer and map data
+
+`src/shared/gazetteer.json` is a Europe-scope extract of the GeoNames cities15000 dataset downloaded 21 October 2026: 8,795 places, 118,957 name/alternate-name entries including transcontinental countries. Coordinates are locality centroids, never street accuracy. GeoNames data: [GeoNames attribution and dump terms](https://download.geonames.org/export/dump/readme.txt), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), source https://download.geonames.org/export/dump/cities15000.zip. Source is provided as-is; geographic ambiguity remains unresolved unless supplied country/admin context disambiguates it. No online geocoder or public Nominatim requests.
+
+`src/shared/countries.json` contains derived country labels, approximate centroids and aliases from the same Natural Earth material. `public/countries.geojson` is Natural Earth 1:110m admin-0 countries, downloaded from the upstream natural-earth-vector repository on 21 October 2026. [Public domain terms](https://www.naturalearthdata.com/about/terms-of-use/). Boundary geography does not imply a political position or event danger assessment.
+
+Street detail uses the public [OpenFreeMap dark vector style](https://openfreemap.org/quick_start/), with OSM/OpenMapTiles attribution. The configurable style URL is `VITE_MAP_STYLE`. No offline tile scraping. Bundled boundaries remain available when detail tiles cannot load.

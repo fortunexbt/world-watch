@@ -1,0 +1,22 @@
+.git/
+node_modules/
+dist/
+.openai/
+.runtime/
+work/
+.env
+.env.*
+!.env.example
+.worker.env
+.dev.vars
+.dev.vars.*
+.wrangler/
+docs/evidence/
+test-results/
+playwright-report/
+coverage/
+*.log
+.DS_Store
+
+# Source-discovery metadata is not needed in runtime images.
+research/

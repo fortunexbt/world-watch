@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env
+.runtime/
+test-results/
+playwright-report/
+
+.dev.vars
+.wrangler/
+work/
+
+.worker.env
+
+# Private environment variants; the documented template is intentionally tracked.
+.env.*
+!.env.example
+
+# Operator-owned provider metadata and local execution evidence.
+.openai/
+docs/evidence/
+.dev.vars.*
+*.log
+.DS_Store
+coverage/
+
+# Reproducible merged catalogue; original researched inputs remain tracked.
+research/world-atlas/sources.jsonl

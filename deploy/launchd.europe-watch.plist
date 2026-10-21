@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.europewatch.luna-worker</string>
+<key>ProgramArguments</key><array><string>/ABSOLUTE/PATH/TO/node</string><string>--import</string><string>file:///ABSOLUTE/PROJECT/node_modules/tsx/dist/loader.mjs</string><string>/ABSOLUTE/PROJECT/src/worker/cli.ts</string><string>run</string></array>
+<key>WorkingDirectory</key><string>/ABSOLUTE/PROJECT</string>
+<key>EnvironmentVariables</key><dict><key>DOTENV_CONFIG_PATH</key><string>/ABSOLUTE/PROJECT/.runtime/worker.env</string></dict>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>ThrottleInterval</key><integer>60</integer><key>ExitTimeOut</key><integer>240</integer>
+<key>StandardOutPath</key><string>/ABSOLUTE/PROJECT/work/worker/stdout.log</string>
+<key>StandardErrorPath</key><string>/ABSOLUTE/PROJECT/work/worker/stderr.log</string>
+</dict></plist>

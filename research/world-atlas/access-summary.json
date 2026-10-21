@@ -1,0 +1,9 @@
+{
+  "checked": 396,
+  "method": "HEAD",
+  "http_2xx": 312,
+  "blocked_or_limited": 34,
+  "other_http": 10,
+  "transport_or_guard_errors": 40,
+  "working_feed_integrations": 0
+}
