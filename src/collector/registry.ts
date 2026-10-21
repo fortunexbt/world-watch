@@ -7,6 +7,8 @@ import { DEMOS_QUERY_URL, DEMOS_LICENSE_URL } from "./adapters/demos.js";
 import type { SourceRecord } from "../shared/contracts.js";
 import { CATALUNYA_BOMBERS_QUERY } from "./adapters/catalunya-bombers.js";
 import { ZWAAILICHT_URL } from "./adapters/zwaailicht.js";
+import { USGS_FEED_URL } from "./adapters/usgs.js";
+import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
 const rights = (
   basis: string,
@@ -378,6 +380,68 @@ export const sourceRegistry: SourceRecord[] = [
   },
   {
     ...base,
+    id: "global-usgs-earthquakes",
+    name: "USGS — earthquakes M4.5+ worldwide, past day",
+    owner: "U.S. Geological Survey Earthquake Hazards Program",
+    url: USGS_FEED_URL,
+    docs: "https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["natural_hazard", "earthquake"],
+    family: "rss",
+    rights: rights(
+      "USGS-authored information is U.S. public domain; credit requested. https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits . Deterministic structured publication; no model analysis.",
+      "U.S. Geological Survey. PAGER levels are modelled estimates; derived impact labels are not official USGS assessments.",
+      false,
+    ),
+    config: {
+      format: "usgs_geojson",
+      max_bytes: 2 * 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      declared_refresh_seconds: 60,
+      coverage:
+        "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points only; no shaking footprint, no country attribution. Preferred event IDs can change when the authoritative network changes.",
+    },
+  },
+  {
+    ...base,
+    id: "global-gdacs-alerts",
+    name: "GDACS — Orange and Red disaster alerts worldwide",
+    owner:
+      "Global Disaster Alert and Coordination System (European Commission JRC and UN OCHA)",
+    url: GDACS_EVENTS_URL,
+    docs: "https://www.gdacs.org/",
+    countries: ["*"],
+    languages: ["en"],
+    categories: [
+      "natural_hazard",
+      "earthquake",
+      "tropical_cyclone",
+      "flood",
+      "volcanic_eruption",
+      "drought",
+      "wildfire",
+    ],
+    family: "rss",
+    poll_seconds: 600,
+    rights: {
+      ...rights(
+        "European Commission legal notice linked by GDACS: CC BY 4.0 with attribution, excluding third-party material. https://commission.europa.eu/legal-notice_en . GDACS terms: data provided as is and not for decision making without prior confirmation. Hazard inputs named in each record's source field (for example GLOFAS, JTWC, NEIC, GWIS) are third-party material. Deterministic structured publication; no model analysis.",
+        "GDACS, European Commission Joint Research Centre, CC BY 4.0. Hazard data from the provider named per record. Automatic alert, not for decision making without confirmation.",
+        false,
+      ),
+      redistribute: false,
+    },
+    config: {
+      format: "gdacs_geojson",
+      max_bytes: 2 * 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Current Orange and Red events for EQ, TC, FL, VO, DR and WF. Green events are excluded because a Green-inclusive list returned exactly 100 records, an apparent page limit. Points are GDACS centroids, not impact footprints; country only when GDACS lists exactly one affected country.",
+    },
+  },
+  {
+    ...base,
     id: "fr-paris-public-events",
     name: "Paris PC LUTECE — explicit public gatherings and safety events",
     owner: "Ville de Paris / PC LUTECE",
@@ -530,55 +594,6 @@ export const sourceRegistry: SourceRecord[] = [
   ...fcdo,
   ...meteo,
 ];
-/** Initial country scope. Inclusion here never asserts functioning source coverage. */
-export const EUROPE_SCOPE = [
-  "AD",
-  "AL",
-  "AT",
-  "BA",
-  "BE",
-  "BG",
-  "BY",
-  "CH",
-  "CY",
-  "CZ",
-  "DE",
-  "DK",
-  "EE",
-  "ES",
-  "FI",
-  "FR",
-  "GB",
-  "GR",
-  "HR",
-  "HU",
-  "IE",
-  "IS",
-  "IT",
-  "LI",
-  "LT",
-  "LU",
-  "LV",
-  "MC",
-  "MD",
-  "ME",
-  "MK",
-  "MT",
-  "NL",
-  "NO",
-  "PL",
-  "PT",
-  "RO",
-  "RS",
-  "SE",
-  "SI",
-  "SK",
-  "SM",
-  "UA",
-  "VA",
-  "XK",
-];
-export const TRANSCONTINENTAL_SCOPE = ["AM", "AZ", "GE", "KZ", "RU", "TR"];
 export const gatedFamilies = [
   {
     family: "bluesky",
@@ -651,6 +666,6 @@ export function configuredRegistry(
     .filter(
       (s) =>
         !options.countries ||
-        s.countries.some((c) => options.countries!.includes(c)),
+        s.countries.some((c) => c === "*" || options.countries!.includes(c)),
     );
 }

@@ -19,6 +19,8 @@ export const APPROVED_HOSTS = new Set([
   "zwaailicht.nl",
   "api.demonstrations.org",
   "data.humdata.org",
+  "earthquake.usgs.gov",
+  "www.gdacs.org",
 ]);
 function idmcFilestore(u: URL) {
   return (

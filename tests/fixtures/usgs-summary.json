@@ -1,0 +1,261 @@
+{
+ "type": "FeatureCollection",
+ "metadata": {
+  "generated": 1792604314000,
+  "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson",
+  "title": "USGS Magnitude 2.5+ Earthquakes, Past Day",
+  "status": 200,
+  "api": "2.7.0",
+  "count": 6
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 4.9,
+    "place": "208 km WNW of Port-Olry, Vanuatu",
+    "time": 1792596153566,
+    "updated": 1792602042040,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u3uk",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u3uk.geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 369,
+    "net": "us",
+    "code": "6000u3uk",
+    "ids": ",us6000u3uk,",
+    "sources": ",us,",
+    "types": ",origin,phase-data,",
+    "nst": 49,
+    "dmin": 6.466,
+    "rms": 0.96,
+    "gap": 113,
+    "magType": "mb",
+    "type": "earthquake",
+    "title": "M 4.9 - 208 km WNW of Port-Olry, Vanuatu"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     165.3793,
+     -14.1338,
+     10
+    ]
+   },
+   "id": "us6000u3uk"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 3.8,
+    "place": "49 km NW of Toyah, Texas",
+    "time": 1792586757181,
+    "updated": 1792597789178,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/tx2026usvdxs",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/tx2026usvdxs.geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 222,
+    "net": "tx",
+    "code": "2026usvdxs",
+    "ids": ",us6000u3tu,tx2026usvdxs,",
+    "sources": ",us,tx,",
+    "types": ",moment-tensor,origin,phase-data,",
+    "nst": 73,
+    "dmin": 0.1,
+    "rms": 0.2,
+    "gap": 51,
+    "magType": "ml",
+    "type": "earthquake",
+    "title": "M 3.8 - 49 km NW of Toyah, Texas"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -104.14,
+     31.652,
+     6.0999
+    ]
+   },
+   "id": "tx2026usvdxs"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 5.2,
+    "place": "68 km NE of Cabatuan, Philippines",
+    "time": 1792571861317,
+    "updated": 1792572887040,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u3t6",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u3t6.geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 416,
+    "net": "us",
+    "code": "6000u3t6",
+    "ids": ",us6000u3t6,",
+    "sources": ",us,",
+    "types": ",origin,phase-data,",
+    "nst": 65,
+    "dmin": 11.082,
+    "rms": 0.76,
+    "gap": 51,
+    "magType": "mb",
+    "type": "earthquake",
+    "title": "M 5.2 - 68 km NE of Cabatuan, Philippines"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     125.5898,
+     13.0297,
+     10
+    ]
+   },
+   "id": "us6000u3t6"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 4.9,
+    "place": "south of the Fiji Islands",
+    "time": 1792538667101,
+    "updated": 1792542098040,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u3r3",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u3r3.geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 369,
+    "net": "us",
+    "code": "6000u3r3",
+    "ids": ",us6000u3r3,",
+    "sources": ",us,",
+    "types": ",origin,phase-data,",
+    "nst": 85,
+    "dmin": 4.331,
+    "rms": 0.57,
+    "gap": 28,
+    "magType": "mb",
+    "type": "earthquake",
+    "title": "M 4.9 - south of the Fiji Islands"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     179.592,
+     -25.502,
+     529.781
+    ]
+   },
+   "id": "us6000u3r3"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 4.2,
+    "place": "south of the Fiji Islands",
+    "time": 1792521363727,
+    "updated": 1792524471040,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u3p9",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u3p9.geojson",
+    "felt": null,
+    "cdi": null,
+    "mmi": null,
+    "alert": null,
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 271,
+    "net": "us",
+    "code": "6000u3p9",
+    "ids": ",us6000u3p9,",
+    "sources": ",us,",
+    "types": ",origin,phase-data,",
+    "nst": 48,
+    "dmin": 3.363,
+    "rms": 1.14,
+    "gap": 112,
+    "magType": "mb",
+    "type": "earthquake",
+    "title": "M 4.2 - south of the Fiji Islands"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -178.9413,
+     -25.9915,
+     353.846
+    ]
+   },
+   "id": "us6000u3p9"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 5.1,
+    "place": "39 km W of Mosteiros, Portugal",
+    "time": 1792519638131,
+    "updated": 1792603976249,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u3p1",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u3p1.geojson",
+    "felt": 14,
+    "cdi": 4.6,
+    "mmi": null,
+    "alert": null,
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 407,
+    "net": "us",
+    "code": "6000u3p1",
+    "ids": ",us6000u3p1,",
+    "sources": ",us,",
+    "types": ",dyfi,moment-tensor,origin,phase-data,",
+    "nst": 132,
+    "dmin": 0.613,
+    "rms": 0.8,
+    "gap": 33,
+    "magType": "mww",
+    "type": "earthquake",
+    "title": "M 5.1 - 39 km W of Mosteiros, Portugal"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -26.2588,
+     37.9575,
+     10
+    ]
+   },
+   "id": "us6000u3p1"
+  }
+ ],
+ "bbox": [
+  -178.9413,
+  -25.9915,
+  6.0999,
+  179.592,
+  37.9575,
+  529.781
+ ]
+}

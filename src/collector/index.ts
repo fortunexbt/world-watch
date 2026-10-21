@@ -16,6 +16,8 @@ import {
 } from "./parsers.js";
 import { configuredRegistry } from "./registry.js";
 import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
+import { parseUsgs } from "./adapters/usgs.js";
+import { parseGdacs } from "./adapters/gdacs.js";
 import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
@@ -239,6 +241,12 @@ export async function collectSources(
             source,
             JSON.parse(response.text),
           );
+          break;
+        case "usgs_geojson":
+          observations = parseUsgs(source, JSON.parse(response.text));
+          break;
+        case "gdacs_geojson":
+          observations = parseGdacs(source, JSON.parse(response.text));
           break;
         case "paris_json": {
           const first = JSON.parse(response.text);
@@ -575,6 +583,13 @@ export function sourceEligibility(
     return observation.source_event_id
       ? keep("publisher_selected_public_fire_service")
       : exclude("missing_public_fire_episode_identity");
+  if (
+    source.id === "global-usgs-earthquakes" ||
+    source.id === "global-gdacs-alerts"
+  )
+    return observation.source_event_id
+      ? keep("structured_natural_hazard_record")
+      : exclude("missing_hazard_native_identity");
   if (source.id === "fr-paris-public-events") {
     const crowd =
       /\b(?:manifestant\w*|manifestation\w*|rassembl\w*|cortege\w*|foule\w*|greve\w*|emeute\w*|evacuat\w*|incendie\w*|explosion\w*|mouvement social|perimetre de securite)\b/u;

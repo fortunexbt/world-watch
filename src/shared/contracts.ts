@@ -20,6 +20,12 @@ export const Activity = z.enum([
   "property_damage_fire",
   "displacement",
   "official_advisory",
+  "earthquake",
+  "tropical_cyclone",
+  "flood",
+  "wildfire",
+  "volcanic_eruption",
+  "drought",
   "other_unknown",
 ]);
 export const Evidence = z.object({ id: z.string(), text: z.string() }).strict();
@@ -122,11 +128,16 @@ export type ObservationInput = {
     name: string;
     accuracy: "point" | "city" | "country" | "area";
     radius_km?: number;
+    /** ISO 3166-1 alpha-2 code stated by the source; null when the source states none or several. */
+    country?: string | null;
   };
   official?: {
     issuer: string;
     effective_at: string | null;
     expires_at: string | null;
+    /** Deterministic classification from native structured fields; absent means a generic advisory of unknown impact. */
+    activity?: z.infer<typeof Activity>;
+    impact?: z.infer<typeof Impact>;
     cancelled?: boolean;
     references?: string[];
     message_type?: string;
@@ -206,6 +217,7 @@ export type SourceRecord = {
   owner: string;
   url: string;
   docs: string;
+  /** ISO 3166-1 alpha-2 codes, or ["*"] for a worldwide source. */
   countries: string[];
   languages: string[];
   categories: string[];

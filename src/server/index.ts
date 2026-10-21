@@ -380,9 +380,18 @@ export async function ingest(e: Env, items: ObservationInput[]) {
       (!Number.isFinite(item.source_geo.lon) ||
         !Number.isFinite(item.source_geo.lat) ||
         Math.abs(item.source_geo.lon) > 180 ||
-        Math.abs(item.source_geo.lat) > 90)
+        Math.abs(item.source_geo.lat) > 90 ||
+        (item.source_geo.country != null &&
+          !/^[A-Z]{2}$/.test(item.source_geo.country)))
     )
       throw Error("invalid_geography");
+    if (
+      (item.official?.activity !== undefined &&
+        !Activity.safeParse(item.official.activity).success) ||
+      (item.official?.impact !== undefined &&
+        !Impact.safeParse(item.official.impact).success)
+    )
+      throw Error("invalid_official_classification");
     const id = await hash(`${item.source_id}:${item.native_id}`);
     let rev = await hash(
       JSON.stringify({
@@ -537,13 +546,17 @@ export async function ingest(e: Env, items: ObservationInput[]) {
         headline: item.title,
         summary_en: item.excerpts.map((v) => v.text).join(" "),
         summary_it: null,
-        activity: "official_advisory",
-        impact: "unknown",
+        activity: item.official.activity ?? "official_advisory",
+        impact: item.official.impact ?? "unknown",
         evidence_status: "official_advisory",
         location: g
           ? {
               ...g,
-              country: s.countries.length === 1 ? s.countries[0] : null,
+              country:
+                g.country ??
+                (s.countries.length === 1 && s.countries[0] !== "*"
+                  ? s.countries[0]
+                  : null),
               radius_km: g.radius_km ?? (g.accuracy === "area" ? 20 : 8),
             }
           : item.official.cancelled && previous?.view
@@ -801,6 +814,9 @@ async function computeStatus(e: Env) {
     queue_durable: true,
   };
 }
+/** Worldwide sources balance by the country each observation states, never one shared "*" bucket. */
+const FAIRNESS_COUNTRY =
+  "coalesce(json_extract(r.input,'$.source_geo.country'),nullif(json_extract(s.record,'$.countries[0]'),'*'))";
 async function claim(e: Env, worker: string, limit: number) {
   if (typeof worker !== "string" || worker.length > 150)
     throw Error("invalid_worker");
@@ -824,7 +840,7 @@ async function claim(e: Env, worker: string, limit: number) {
   const result: Lease[] = [];
   const held = await rows(
     e,
-    "SELECT o.source_id,json_extract(s.record,'$.countries[0]') AS country FROM analysis_jobs j JOIN observations o ON o.id=j.report_id JOIN sources s ON s.id=o.source_id WHERE j.state='analyzing' LIMIT 50",
+    `SELECT o.source_id,${FAIRNESS_COUNTRY} AS country FROM analysis_jobs j JOIN observations o ON o.id=j.report_id JOIN sources s ON s.id=o.source_id JOIN observation_revisions r ON r.report_id=j.report_id AND r.revision=j.revision WHERE j.state='analyzing' LIMIT 50`,
   );
   const countryLoad = new Map<string, number>();
   const sourceLoad = new Map<string, number>();
@@ -838,7 +854,7 @@ async function claim(e: Env, worker: string, limit: number) {
     // Bounded indexed candidates; never run a correlated country scan for every pending job.
     const candidates = await rows(
       e,
-      `SELECT j.id,j.priority,o.source_id,json_extract(s.record,'$.countries[0]') AS country FROM analysis_jobs j INDEXED BY ${oldestSlot ? "jobs_pending_fifo" : "jobs_pending_priority"} JOIN observations o ON o.id=j.report_id JOIN sources s ON s.id=o.source_id WHERE j.state IN ('pending','retrying') AND j.available_at<=? AND o.deleted_at IS NULL AND json_extract(s.record,'$.rights.ai')=1 AND json_extract(s.record,'$.rights.storage')=1 AND json_extract(s.record,'$.rights.access')=1 AND json_extract(s.record,'$.status') IN('enabled','degraded') AND coalesce(json_extract(s.record,'$.config.context_only'),0)=0 ORDER BY ${oldestSlot ? "j.created_at" : "j.priority DESC,j.created_at"} LIMIT 32`,
+      `SELECT j.id,j.priority,o.source_id,${FAIRNESS_COUNTRY} AS country FROM analysis_jobs j INDEXED BY ${oldestSlot ? "jobs_pending_fifo" : "jobs_pending_priority"} JOIN observations o ON o.id=j.report_id JOIN sources s ON s.id=o.source_id JOIN observation_revisions r ON r.report_id=j.report_id AND r.revision=j.revision WHERE j.state IN ('pending','retrying') AND j.available_at<=? AND o.deleted_at IS NULL AND json_extract(s.record,'$.rights.ai')=1 AND json_extract(s.record,'$.rights.storage')=1 AND json_extract(s.record,'$.rights.access')=1 AND json_extract(s.record,'$.status') IN('enabled','degraded') AND coalesce(json_extract(s.record,'$.config.context_only'),0)=0 ORDER BY ${oldestSlot ? "j.created_at" : "j.priority DESC,j.created_at"} LIMIT 32`,
       time,
     );
     if (!candidates.length) break;
