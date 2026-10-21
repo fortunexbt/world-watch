@@ -1,6 +1,6 @@
 # Working in this repository
 
-World Watch (runtime name Europe Watch) is an unfinished, paused public-source event-awareness application. Read `README.md`, `docs/HANDOFF.md`, `TODO.md` and `docs/paused.md` before changing behavior. The backlog distinguishes shipped code, observed failures and unverified proposals.
+World Watch is an unfinished, paused public-source event-awareness application for worldwide events. It began as Europe Watch, and deployment identifiers (Worker and D1 names, the launchd label, the session salt and `EUROPE_WATCH_*` variables) keep that name so a resumed deployment finds its existing state. Read `README.md`, `docs/HANDOFF.md`, `TODO.md` and `docs/paused.md` before changing behavior. The backlog distinguishes shipped code, observed failures and unverified proposals.
 
 ## Keep it paused
 

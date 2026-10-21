@@ -1,6 +1,6 @@
 # Security
 
-Europe Watch is an unfinished prototype and has no declared supported production release or security response SLA.
+World Watch is an unfinished prototype and has no declared supported production release or security response SLA.
 
 Do not put credentials, private watch locations, personal information or complete exploit captures in a public issue. For a suspected exposure, stop publishing the affected material, preserve a private copy for investigation, and contact the repository owner through an established private channel. If GitHub private vulnerability reporting is enabled, it can be used; its availability is not assumed here.
 

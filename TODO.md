@@ -1,4 +1,4 @@
-# Europe Watch — implementation backlog
+# World Watch implementation backlog
 
 **Paused. Unfinished. The current testing experience did not meet the user's usefulness bar.** Do not restart collection, inference, previews, schedules or cloud maintenance while working through this document. Public release of the code does not resume the service.
 

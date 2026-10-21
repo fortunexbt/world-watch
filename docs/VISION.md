@@ -18,11 +18,11 @@ Start with a user who needs to investigate developing infrastructure and public 
 
 ## The screen
 
-Keep one flat world map centred on Europe. Its default view should survive a busy news day without becoming a dashboard of competing widgets.
+Keep one flat world map that opens on the whole world. Its default view should survive a busy news day without becoming a dashboard of competing widgets.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
-│ EUROPE WATCH     What changed · 5 min        Search / command    UTC │
+│ WORLD WATCH      What changed · 5 min        Search / command    UTC │
 │ A short, cited brief. Age and coverage shown. Important items below.│
 ├──────────────────────────────────────────────┬─────────────────────┤
 │                                              │ CHANGES             │
@@ -65,7 +65,7 @@ These are hypothetical investigation flows, not current incidents or fabricated 
 
 ### 1. The outage before the headline
 
-A regional connectivity baseline changes across multiple networks. Europe Watch surfaces the change with the measurement window, probe coverage and magnitude, then checks whether independent infrastructure or authority sources report an outage. The panel keeps equipment failure, loss of power and measurement failure as competing explanations until evidence distinguishes them.
+A regional connectivity baseline changes across multiple networks. World Watch surfaces the change with the measurement window, probe coverage and magnitude, then checks whether independent infrastructure or authority sources report an outage. The panel keeps equipment failure, loss of power and measurement failure as competing explanations until evidence distinguishes them.
 
 The map shows the affected measurement area, not a false pinpoint. One click exposes the time series and baseline. A source going offline is also visible; disappearing instruments must not manufacture a larger outage.
 
