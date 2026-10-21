@@ -16,7 +16,13 @@ import {
   type ModelRun,
 } from "../shared/contracts";
 import { resolveClaimLocation, inBbox } from "./geo";
-import { alertDecision } from "./alerts";
+import {
+  alertDecision,
+  alertMaterialityProjection,
+  alertMaterialityVersion,
+  type AlertRule,
+  type AlertDeliverySnapshot,
+} from "./alerts";
 type Stmt = {
   bind(...v: any[]): Stmt;
   first<T = any>(column?: string): Promise<T | null>;
@@ -191,33 +197,74 @@ function refreshRights(
     })),
   };
 }
+// A material comparison must use the last notice eligible for this rule, not
+// an intervening revision whose delivery was suppressed. UI eligibility is not
+// evidence of delivery through an external notification channel.
+async function lastAlertDelivery(
+  e: Env,
+  incidentId: string,
+  ruleId: string,
+  rule: AlertRule,
+): Promise<AlertDeliverySnapshot | null> {
+  const last = await stmt(
+    e,
+    `SELECT d.created_at,d.state,d.incident_version,d.rule_version,
+      coalesce(v.view,i.view) AS delivered_view
+     FROM alert_deliveries d
+     LEFT JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version
+     LEFT JOIN incidents i ON i.id=d.incident_id AND i.version=d.incident_version AND i.deleted_at IS NULL
+     WHERE d.incident_id=? AND d.rule_id=? AND d.state='eligible_ui'
+     ORDER BY d.incident_version DESC,d.rule_version DESC LIMIT 1`,
+    incidentId,
+    ruleId,
+  ).first<{
+    created_at: string;
+    state: string;
+    incident_version: number;
+    rule_version: number;
+    delivered_view: string | null;
+  }>();
+  if (!last) return null;
+  let delivered: IncidentView | null = null;
+  if (last.delivered_view) {
+    try {
+      const candidate = parse(last.delivered_view) as IncidentView;
+      if (candidate.id === incidentId && candidate.version === last.incident_version)
+        delivered = candidate;
+    } catch {
+      // Purged/unreadable history is unknown, never a made-up delivered state.
+    }
+  }
+  return {
+    state: last.state,
+    created_at: last.created_at,
+    material_projection: delivered ? alertMaterialityProjection(delivered, rule) : null,
+    material_version: delivered ? alertMaterialityVersion(delivered, rule) : null,
+  };
+}
+
 async function correctionAlerts(
   e: Env,
   view: IncidentView,
-  previous: IncidentView,
+  acceptance?: { sql: string; values: unknown[] },
 ): Promise<Stmt[]> {
   const result: Stmt[] = [];
   for (const rule of await rows(
     e,
     "SELECT r.*,a.geometry FROM alert_rules r LEFT JOIN watch_areas a ON a.id=json_extract(r.rule,'$.watch_area_id') WHERE r.owner_id='owner'",
   )) {
-    const last = await stmt(
-      e,
-      "SELECT created_at FROM alert_deliveries WHERE incident_id=? AND rule_id=? AND state='eligible_ui' ORDER BY created_at DESC LIMIT 1",
-      view.id,
-      rule.id,
-    ).first<any>();
+    const policy = parse(rule.rule) as AlertRule;
+    const last = await lastAlertDelivery(e, view.id, rule.id, policy);
     const decision = alertDecision(
       view,
-      parse(rule.rule),
+      policy,
       rule.geometry ? parse(rule.geometry) : null,
       last,
-      previous,
     );
     result.push(
       stmt(
         e,
-        "INSERT OR IGNORE INTO alert_deliveries(id,incident_id,incident_version,rule_id,rule_version,state,reason,created_at) VALUES(?,?,?,?,?,?,?,?)",
+        `INSERT OR IGNORE INTO alert_deliveries(id,incident_id,incident_version,rule_id,rule_version,state,reason,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${acceptance?.sql ?? "1"}`,
         await hash(`${view.id}:${view.version}:${rule.id}:${rule.version}`),
         view.id,
         view.version,
@@ -226,6 +273,7 @@ async function correctionAlerts(
         decision.state,
         decision.reason,
         now(),
+        ...(acceptance?.values ?? []),
       ),
     );
   }
@@ -604,7 +652,7 @@ export async function ingest(e: Env, items: ObservationInput[]) {
       }
       if (previous?.view)
         statements.push(
-          ...(await correctionAlerts(e, view, parse(previous.view))),
+          ...(await correctionAlerts(e, view)),
         );
       const origin = await hash(item.canonical_url);
       statements.push(
@@ -1135,18 +1183,13 @@ async function complete(
       "SELECT r.*,a.geometry FROM alert_rules r LEFT JOIN watch_areas a ON a.id=json_extract(r.rule,'$.watch_area_id') WHERE r.owner_id='owner'",
     );
     for (const rule of rules) {
-      const last = await stmt(
-        e,
-        "SELECT created_at FROM alert_deliveries WHERE incident_id=? AND rule_id=? AND state='eligible_ui' ORDER BY created_at DESC LIMIT 1",
-        iid,
-        rule.id,
-      ).first<any>();
+      const policy = parse(rule.rule) as AlertRule;
+      const last = await lastAlertDelivery(e, iid, rule.id, policy);
       const decision = alertDecision(
         view,
-        parse(rule.rule),
+        policy,
         rule.geometry ? parse(rule.geometry) : null,
         last,
-        old,
       );
       const delivery = await hash(
         `${iid}:${version}:${rule.id}:${rule.version}`,
@@ -1210,7 +1253,9 @@ async function complete(
       cancelled: !otherReports.length,
       evidence_status: otherReports.length ? "corrected" : "retracted",
     };
-    statements.push(...(await correctionAlerts(e, corrected, old)));
+    statements.push(
+      ...(await correctionAlerts(e, corrected, { sql: guard, values: [aid] })),
+    );
     statements.push(
       stmt(
         e,
@@ -1884,7 +1929,7 @@ async function routes(r: Request, e: Env) {
           view.id,
           JSON.stringify({ incident: view, catchup: true }),
         ),
-        ...(await correctionAlerts(e, view, old)),
+        ...(await correctionAlerts(e, view)),
       );
     }
     if (statements.length) await measuredBatch(e, statements);
@@ -2676,7 +2721,7 @@ async function routes(r: Request, e: Env) {
       updated_at: time,
       evidence_status: b.patch.evidence_status ?? "corrected",
     };
-    const alertStatements = await correctionAlerts(e, view, parse(saved.view));
+    const alertStatements = await correctionAlerts(e, view);
     await measuredBatch(e, [
       ...alertStatements,
       stmt(

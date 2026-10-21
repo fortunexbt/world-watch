@@ -1,0 +1,997 @@
+{
+  "scope": "Compiled source configuration only; not live access or country coverage",
+  "sources": [
+    {
+      "id": "ua-idmc-displacement-flows",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "UA"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "de-demos-assemblies",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "DE",
+        "AT",
+        "CH"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "nl-zwaailicht-fire-clusters",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "NL"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "es-cat-bombers",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "ES"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "fr-paris-public-events",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "FR"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "se-polisen-events",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "SE"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "it-mit-strikes",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "IT"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "it-dpc-notizia",
+      "family": "rss",
+      "status": "disabled",
+      "countries": [
+        "IT"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "it-dpc-comunicato_stampa",
+      "family": "rss",
+      "status": "disabled",
+      "countries": [
+        "IT"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "it-dpc-bollettino_criticita",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "IT"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "it-dpc-bollettino_vigilanza",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "IT"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "de-bbk-mowas",
+      "family": "bbk",
+      "status": "enabled",
+      "countries": [
+        "DE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "de-bbk-katwarn",
+      "family": "bbk",
+      "status": "enabled",
+      "countries": [
+        "DE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "de-bbk-biwapp",
+      "family": "bbk",
+      "status": "enabled",
+      "countries": [
+        "DE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "de-dwd",
+      "family": "dwd",
+      "status": "enabled",
+      "countries": [
+        "DE"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "uk-tfl-roads",
+      "family": "tfl",
+      "status": "awaiting_credentials",
+      "countries": [
+        "GB"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "fr-sncf-siri",
+      "family": "siri",
+      "status": "disabled",
+      "countries": [
+        "FR"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "no-politiloggen",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "NO"
+      ],
+      "ai_permitted": true,
+      "context_only": false
+    },
+    {
+      "id": "fcdo-ad",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "AD"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-al",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "AL"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-at",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "AT"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-ba",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "BA"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-be",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "BE"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-bg",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "BG"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-by",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "BY"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-ch",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "CH"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-cy",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "CY"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-cz",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "CZ"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-de",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "DE"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-dk",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "DK"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-ee",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "EE"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-es",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "ES"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-fi",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "FI"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-fr",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "FR"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-gr",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "GR"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-hr",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "HR"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-hu",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "HU"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-ie",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "IE"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-is",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "IS"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-it",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "IT"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-li",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "LI"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-lt",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "LT"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-lu",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "LU"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-lv",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "LV"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-mc",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "MC"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-md",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "MD"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-me",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "ME"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-mk",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "MK"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-mt",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "MT"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-nl",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "NL"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-no",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "NO"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-pl",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "PL"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-pt",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "PT"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-ro",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "RO"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-rs",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "RS"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-se",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "SE"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-si",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "SI"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-sk",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "SK"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-sm",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "SM"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-ua",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "UA"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "fcdo-xk",
+      "family": "rss",
+      "status": "enabled",
+      "countries": [
+        "XK"
+      ],
+      "ai_permitted": true,
+      "context_only": true
+    },
+    {
+      "id": "meteoalarm-ad",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "AD"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-at",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "AT"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-be",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "BE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-ba",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "BA"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-bg",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "BG"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-hr",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "HR"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-cy",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "CY"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-cz",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "CZ"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-dk",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "DK"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-ee",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "EE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-fi",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "FI"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-fr",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "FR"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-de",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "DE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-gr",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "GR"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-hu",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "HU"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-is",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "IS"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-ie",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "IE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-it",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "IT"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-lv",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "LV"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-lt",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "LT"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-lu",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "LU"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-mt",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "MT"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-md",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "MD"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-me",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "ME"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-nl",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "NL"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-mk",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "MK"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-no",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "NO"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-pl",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "PL"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-pt",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "PT"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-ro",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "RO"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-rs",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "RS"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-sk",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "SK"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-si",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "SI"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-es",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "ES"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-se",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "SE"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-ch",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "CH"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-ua",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "UA"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    },
+    {
+      "id": "meteoalarm-gb",
+      "family": "rss",
+      "status": "license_required",
+      "countries": [
+        "GB"
+      ],
+      "ai_permitted": false,
+      "context_only": false
+    }
+  ]
+}

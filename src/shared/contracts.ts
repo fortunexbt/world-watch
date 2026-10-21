@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateSeverity } from "./severity.js";
 export const CONTRACT_VERSION = "ew-1";
 export const Impact = z.enum([
   "informational",
@@ -281,12 +282,7 @@ export function validateResult(value: unknown, input: JobInput) {
     ];
     if (!c.evidence_ids.length || refs.some((id) => !ids.has(id)))
       throw Error("unsupported_evidence");
-    if (
-      ["severe", "critical"].includes(c.impact) &&
-      c.violence_mentioned !== "yes" &&
-      !c.official_instruction
-    )
-      throw Error("unsupported_escalation");
+    validateSeverity(c, input);
   }
   return r;
 }
