@@ -1378,8 +1378,9 @@ async function liveScope(e: Env, hours: number, bbox?: number[]) {
     Number.isFinite(before.getTime())
   ) {
     where.push(`${windowKey}>=?`, `(${eventTime} IS NULL OR ${eventTime}<=?)`);
+    // The recency index stops after LIMIT matches; most recently updated
+    // incidents fall in the window, so it reads less than a window index would.
     params.push(after.toISOString(), before.toISOString());
-    index = " INDEXED BY incidents_window";
   }
   if (bbox) {
     const reach = await memoRead(e, "incident-reach", 1000, () =>

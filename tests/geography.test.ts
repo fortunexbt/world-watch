@@ -264,7 +264,7 @@ test("snapshot filters bbox and window in indexed SQL so busy regions cannot hid
   assert.equal(recent.incidents.length, 5);
   assert.match(
     s.plan("SELECT view FROM incidents"),
-    /^SEARCH incidents USING INDEX incidents_window \(<expr>>\?\)/,
+    /USING INDEX incidents_recent/,
   );
 
   const both = await s.snapshot(
