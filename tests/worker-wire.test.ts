@@ -93,7 +93,7 @@ test("other sources, excerpt shapes, malformed or unstructured text are not stri
   assert.equal(report.updated, metadata.aggregator_record_updated_at);
 });
 test("prompt includes displacement and classifies fires without inferring violence or harm", () => {
-  assert.equal(PROMPT_VERSION, "analyst-11-geospatial-displacement");
+  assert.equal(PROMPT_VERSION, "analyst-12-grounded-severity");
   assert.match(ANALYST, /displacement/);
   assert.match(
     ANALYST,

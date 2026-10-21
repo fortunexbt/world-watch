@@ -1,0 +1,452 @@
+{
+  "scope": "Synthetic in-memory SQLite; same existing migrations; no added indexes, network, application services, credentials or production data.",
+  "limitation": "VM instructions are not D1 billed rows, end-to-end latency or a daily capacity measurement. Old or never-notified recipients can still scan a full incident ledger without a composite delivery index. Actual hosted D1 budget remains unmeasured while paused.",
+  "sqlite_version": "3.54.1",
+  "baseline_commit": "90b9c2e59ed92a064086a53d32a4540fb1215fc4",
+  "current_source_sha256": "95c3b7ea1edaf27d8cbaa8a428904795b75bcc7a1472aebf9e55c3590810f5ed",
+  "baseline_query": "SELECT created_at FROM alert_deliveries WHERE incident_id=? AND rule_id=? AND state='eligible_ui' ORDER BY created_at DESC LIMIT 1",
+  "current_query": "SELECT d.created_at,d.state,d.incident_version,d.rule_version,\n      coalesce(v.view,i.view) AS delivered_view\n     FROM alert_deliveries d\n     LEFT JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version\n     LEFT JOIN incidents i ON i.id=d.incident_id AND i.version=d.incident_version AND i.deleted_at IS NULL\n     WHERE d.incident_id=? AND d.rule_id=? AND d.state='eligible_ui'\n     ORDER BY d.incident_version DESC,d.rule_version DESC LIMIT 1",
+  "profiles": [
+    {
+      "incident_versions": 10,
+      "delivery_rows": 100,
+      "scenario": "recent_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 619,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 614,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 614,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 614
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 200,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 180,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 180,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 180
+      }
+    },
+    {
+      "incident_versions": 10,
+      "delivery_rows": 100,
+      "scenario": "old_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 542,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 542,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 542,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 542
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 582,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 582,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 582,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 582
+      }
+    },
+    {
+      "incident_versions": 10,
+      "delivery_rows": 100,
+      "scenario": "never_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 514,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 514,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 514,
+            "returned_rows": 0
+          }
+        ],
+        "median_vm_instructions": 514
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 519,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 519,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 519,
+            "returned_rows": 0
+          }
+        ],
+        "median_vm_instructions": 519
+      }
+    },
+    {
+      "incident_versions": 100,
+      "delivery_rows": 1000,
+      "scenario": "recent_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 6019,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 6014,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 6014,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 6014
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 200,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 180,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 180,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 180
+      }
+    },
+    {
+      "incident_versions": 100,
+      "delivery_rows": 1000,
+      "scenario": "old_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 5222,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 5222,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 5222,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 5222
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 5262,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 5262,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 5262,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 5262
+      }
+    },
+    {
+      "incident_versions": 100,
+      "delivery_rows": 1000,
+      "scenario": "never_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 5014,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 5014,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 5014,
+            "returned_rows": 0
+          }
+        ],
+        "median_vm_instructions": 5014
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 5019,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 5019,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 5019,
+            "returned_rows": 0
+          }
+        ],
+        "median_vm_instructions": 5019
+      }
+    },
+    {
+      "incident_versions": 1000,
+      "delivery_rows": 10000,
+      "scenario": "recent_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 60019,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 60014,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 60014,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 60014
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 200,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 180,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 180,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 180
+      }
+    },
+    {
+      "incident_versions": 1000,
+      "delivery_rows": 10000,
+      "scenario": "old_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 52022,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 52022,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 52022,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 52022
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 52062,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 52062,
+            "returned_rows": 1
+          },
+          {
+            "sqlite_vm_instructions": 52062,
+            "returned_rows": 1
+          }
+        ],
+        "median_vm_instructions": 52062
+      }
+    },
+    {
+      "incident_versions": 1000,
+      "delivery_rows": 10000,
+      "scenario": "never_recipient",
+      "baseline": {
+        "query_plan": [
+          "SEARCH alert_deliveries USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 50014,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 50014,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 50014,
+            "returned_rows": 0
+          }
+        ],
+        "median_vm_instructions": 50014
+      },
+      "current": {
+        "query_plan": [
+          "SEARCH d USING INDEX sqlite_autoindex_alert_deliveries_2 (incident_id=?)",
+          "SEARCH v USING INDEX sqlite_autoindex_incident_revisions_1 (incident_id=? AND version=?) LEFT-JOIN",
+          "SEARCH i USING INDEX sqlite_autoindex_incidents_1 (id=?) LEFT-JOIN",
+          "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+        ],
+        "runs": [
+          {
+            "sqlite_vm_instructions": 50019,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 50019,
+            "returned_rows": 0
+          },
+          {
+            "sqlite_vm_instructions": 50019,
+            "returned_rows": 0
+          }
+        ],
+        "median_vm_instructions": 50019
+      }
+    }
+  ]
+}
