@@ -27,7 +27,7 @@ export const italian: Record<string, string> = {
   "on map": "sulla mappa",
   "location unresolved": "senza luogo accertato",
   "Skip to activity": "Vai alle attività",
-  "Europe Watch home": "Pagina iniziale di Europe Watch",
+  "World Watch home": "Pagina iniziale di World Watch",
   "Search events, places and sources": "Cerca eventi, luoghi e fonti",
   "All activity": "Tutte le attività",
   Gatherings: "Raduni",
@@ -96,8 +96,8 @@ export const italian: Record<string, string> = {
   "Interface language": "Lingua dell’interfaccia",
   "Sound volume (ceiling 20%)": "Volume del suono (massimo 20%)",
   "Test gentle sound": "Prova il suono discreto",
-  "Sounds are muted initially. Quiet hours: 22:00–08:00 Europe/Rome. Reconnects, replay and backlog reconciliation stay silent.":
-    "Il suono è inizialmente disattivato. Fascia silenziosa: 22:00–08:00 Europe/Rome. Riconnessioni, cronologia e recupero degli arretrati restano silenziosi.",
+  "Sounds are muted initially. Quiet hours: 22:00–08:00 {zone}. Reconnects, replay and backlog reconciliation stay silent.":
+    "Il suono è inizialmente disattivato. Fascia silenziosa: 22:00–08:00 {zone}. Riconnessioni, cronologia e recupero degli arretrati restano silenziosi.",
   "Follow live": "Segui in diretta",
   on: "attivo",
   off: "disattivo",
@@ -136,7 +136,7 @@ export const italian: Record<string, string> = {
   "Switch incoming reports and incidents":
     "Alterna segnalazioni in arrivo ed eventi",
   "Feed scope": "Ambito dell’elenco",
-  Europe: "Europa",
+  World: "Mondo",
   "Map area": "Area della mappa",
   private: "privata",
   observed: "osservati",
@@ -179,6 +179,13 @@ export const italian: Record<string, string> = {
   property_damage_fire: "danni o incendio",
   official_advisory: "avviso ufficiale",
   other_unknown: "altro o sconosciuto",
+  earthquake: "terremoto",
+  tropical_cyclone: "ciclone tropicale",
+  flood: "alluvione",
+  wildfire: "incendio boschivo",
+  volcano: "attività vulcanica",
+  drought: "siccità",
+  tsunami: "tsunami",
   unverified: "non verificato",
   corroborated: "con riscontri",
   disputed: "contestato",
@@ -255,8 +262,8 @@ export const italian: Record<string, string> = {
   "Retry requested.": "Nuovo tentativo richiesto.",
   "Processing blocker": "Blocco dell’elaborazione",
   "Use this area in the feed": "Usa questa area nell’elenco",
-  "Enter valid ordered bounds within world coordinates.":
-    "Inserisci limiti ordinati validi nelle coordinate del mondo.",
+  "Enter valid bounds within world coordinates, with south below north. A west value above east crosses the 180° meridian.":
+    "Inserisci limiti validi nelle coordinate del mondo, con sud inferiore a nord. Un valore ovest maggiore di est attraversa il meridiano di 180°.",
   "Change summary": "Sintesi delle modifiche",
   "observed incidents changed since": "eventi osservati modificati dal",
   "No changes in this view since your last visit.":

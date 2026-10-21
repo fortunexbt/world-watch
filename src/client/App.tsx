@@ -32,9 +32,11 @@ import {
   formatWhen,
   formatAge,
   eventTime,
-  validBounds,
+  quietHour,
   readLocal,
+  readSavedViews,
 } from "./time";
+import { validBounds } from "./bounds";
 import WorldMap, { colors } from "./Map";
 import countryRegistry from "../shared/countries.json";
 import type { IncidentView, JobInput } from "../shared/contracts";
@@ -59,7 +61,6 @@ const txt = {
     live: "Connected",
     away: "updates while away",
     new: "new updates",
-    scope: "Europe",
     health: "Collection & analysis",
     mute: "Enable sound",
     sound: "Mute sound",
@@ -75,7 +76,6 @@ const txt = {
     live: "Connesso",
     away: "aggiornamenti durante l’assenza",
     new: "nuovi aggiornamenti",
-    scope: "Europa",
     health: "Raccolta e analisi",
     mute: "Attiva suono",
     sound: "Disattiva suono",
@@ -160,7 +160,7 @@ export default function App() {
     [windowHours, setWindowHours] = useState(
       new URLSearchParams(location.search).get("hours") || "168",
     ),
-    [scope, setScope] = useState("Europe"),
+    [scope, setScope] = useState("World"),
     [bbox, setBbox] = useState(""),
     [ready, setReady] = useState(false),
     [visible, setVisible] = useState(!document.hidden),
@@ -179,9 +179,7 @@ export default function App() {
     [watches, setWatches] = useState<any[]>(() =>
       readLocal<any[]>("ew-watches", []),
     ),
-    [savedViews, setSavedViews] = useState<any[]>(() =>
-      readLocal<any[]>("ew-views", []),
-    ),
+    [savedViews, setSavedViews] = useState<any[]>(readSavedViews),
     [note, setNote] = useState(""),
     [lastSeen] = useState(() => localStorage.getItem("ew-last-seen"));
   const tr = (value: string) => translate(language, value);
@@ -340,14 +338,7 @@ export default function App() {
           at)
       )
         return;
-      const hour = Number(
-        new Intl.DateTimeFormat("en-GB", {
-          hour: "2-digit",
-          hourCycle: "h23",
-          timeZone: "Europe/Rome",
-        }).format(new Date()),
-      );
-      if (!test && (hour >= 22 || hour < 8)) return;
+      if (!test && quietHour()) return;
       const ctx = (audio.current ??= new AudioContext());
       void ctx.resume();
       const gain = ctx.createGain();
@@ -393,7 +384,7 @@ export default function App() {
       !sourceFilter &&
       !languageFilter &&
       !evidenceFilter &&
-      scope === "Europe" &&
+      scope === "World" &&
       !incoming &&
       !at;
     const scheduleSnapshot = () => {
@@ -514,13 +505,6 @@ export default function App() {
           setTimeout(() => {
             if (active && !document.hidden && !at) setPulse([id]);
           }, 350);
-          const hour = Number(
-            new Intl.DateTimeFormat("en-GB", {
-              hour: "2-digit",
-              hourCycle: "h23",
-              timeZone: "Europe/Rome",
-            }).format(new Date()),
-          );
           if (
             cueDecision(i, watches, {
               now: Date.now(),
@@ -529,7 +513,7 @@ export default function App() {
               hidden: document.hidden,
               muted: !soundRef.current,
               lastCue: lastCue.current,
-              quiet: hour >= 22 || hour < 8,
+              quiet: quietHour(),
             }).eligible
           )
             cue(i.impact);
@@ -737,7 +721,7 @@ export default function App() {
         sourceFilter,
         languageFilter,
         evidenceFilter,
-        scope: scope.startsWith("watch:") ? scope : "Europe",
+        scope: scope.startsWith("watch:") ? scope : "World",
       },
     ];
     setSavedViews(next);
@@ -770,7 +754,7 @@ export default function App() {
       }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(await r.blob());
-      a.download = `europe-watch.${format}`;
+      a.download = `world-watch.${format}`;
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (e) {
@@ -802,12 +786,12 @@ export default function App() {
         onCamera={id=>{setSelected(null);setSelectedCamera(id);setSurface("media");}}
       />
       <header className="topbar">
-        <a className="brand" href="/" aria-label={tr("Europe Watch home")}>
+        <a className="brand" href="/" aria-label={tr("World Watch home")}>
           <span className="brand-symbol">
             <Globe2 size={21} />
           </span>
           <span>
-            Europe<span className="brand-light"> Watch</span>
+            World<span className="brand-light"> Watch</span>
           </span>
         </a>
         <div className="search-wrap">
@@ -935,7 +919,7 @@ export default function App() {
         {auth ? (
           <section className="panel-content">
             <div className="eyebrow">{tr("Private owner access")}</div>
-            <h1>Europe Watch</h1>
+            <h1>World Watch</h1>
             <p>
               {tr(
                 "Enter your owner access token to open the live map. It stays out of shareable URLs.",
@@ -1422,7 +1406,7 @@ export default function App() {
                   setSourceFilter(v.sourceFilter ?? "");
                   setLanguageFilter(v.languageFilter ?? "");
                   setEvidenceFilter(v.evidenceFilter ?? "");
-                  setScope(v.scope ?? "Europe");
+                  setScope(v.scope ?? "World");
                   setSurface("feed");
                 }}
               >
@@ -1458,7 +1442,10 @@ export default function App() {
             </button>
             <p className="caution">
               {tr(
-                "Sounds are muted initially. Quiet hours: 22:00–08:00 Europe/Rome. Reconnects, replay and backlog reconciliation stay silent.",
+                "Sounds are muted initially. Quiet hours: 22:00–08:00 {zone}. Reconnects, replay and backlog reconciliation stay silent.",
+              ).replace(
+                "{zone}",
+                Intl.DateTimeFormat().resolvedOptions().timeZone,
               )}
             </p>
             <button aria-pressed={follow} onClick={() => setFollow(!follow)}>
@@ -1479,7 +1466,9 @@ export default function App() {
                 const d = new FormData(e.currentTarget);
                 if (!validBounds(String(d.get("bbox") ?? ""))) {
                   setError(
-                    tr("Enter valid ordered bounds within world coordinates."),
+                    tr(
+                      "Enter valid bounds within world coordinates, with south below north. A west value above east crosses the 180° meridian.",
+                    ),
                   );
                   return;
                 }
@@ -1537,7 +1526,7 @@ export default function App() {
                     const next = watches.filter((x) => x.id !== w.id);
                     setWatches(next);
                     localStorage.setItem("ew-watches", JSON.stringify(next));
-                    if (scope === "watch:" + w.id) setScope("Europe");
+                    if (scope === "watch:" + w.id) setScope("World");
                   }}
                 >
                   {tr("Remove area")}
@@ -1669,7 +1658,7 @@ export default function App() {
                   value={scope}
                   onChange={(e) => setScope(e.target.value)}
                 >
-                  <option value="Europe">{tr("Europe")}</option>
+                  <option value="World">{tr("World")}</option>
                   <option value="Map area">{tr("Map area")}</option>
                   {watches.map((w) => (
                     <option key={w.id} value={"watch:" + w.id}>

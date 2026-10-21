@@ -1,4 +1,5 @@
 import type { IncidentView } from "../shared/contracts";
+import { longitudeOverlaps } from "./bounds";
 export type PrivateArea = {
   id: string;
   name: string;
@@ -14,8 +15,7 @@ export function intersectsArea(i: IncidentView, a: PrivateArea) {
     dy = g.radius_km / 111.32,
     dx = dy / Math.max(0.05, Math.cos((g.lat * Math.PI) / 180));
   return (
-    g.lon + dx >= b[0] &&
-    g.lon - dx <= b[2] &&
+    longitudeOverlaps(b[0], b[2], g.lon - dx, g.lon + dx) &&
     g.lat + dy >= b[1] &&
     g.lat - dy <= b[3]
   );
