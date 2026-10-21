@@ -110,3 +110,81 @@ test("issuer-supplied geometry remains supported; distant multi-city claims stay
 });
 
 test('a strike calendar province or operator name is not municipal incident geometry',()=>{const i={...input('Regione: Veneto Provincia: Venezia Sindacati: SGB. Personale ATVO di Venezia.'),source_id:'it-mit-strikes'} as JobInput;assert.equal(resolveClaimLocation(claim([place('Venice','IT')]),i),null);assert.deepEqual(resolveClaimLocations(claim([place('Venezia','IT')]),i),[]);});
+
+test("worldwide cities resolve from source-quoted names, aliases and other scripts", () => {
+  for (const [name, country, text, lat] of [
+    ["Lagos", "NG", "Traders marched in Lagos on Monday.", 6.45407],
+    ["Jakarta", "ID", "Unjuk rasa di Jakarta, Selasa.", -6.21462],
+    ["Sao Paulo", "BR", "Ato em São Paulo nesta tarde.", -23.5475],
+    ["Dhaka", "BD", "ঢাকা, মঙ্গলবার: শিক্ষার্থীদের মিছিল।", 23.7104],
+    ["Karachi", "PK", "Strike called in Karachi.", 24.8608],
+    ["Suva", "FJ", "Flooding closed roads in Suva.", -18.13683],
+    ["東京都", "JP", "東京都、抗議集会。", 35.6895],
+  ] as const) {
+    const out = resolveClaimLocation(
+      claim([place(name, country)]),
+      input(text),
+    );
+    assert.equal(out?.accuracy, "city", name);
+    assert.equal(out?.country, country, name);
+    assert.equal(out?.lat, lat, name);
+  }
+});
+test("names shared across continents stay ambiguous until country or admin context decides", () => {
+  for (const name of ["Lagos", "San José", "Córdoba", "Hyderabad", "Paris"])
+    assert.deepEqual(
+      resolveClaimLocations(claim([place(name)]), input(`News from ${name}.`)),
+      [],
+      name,
+    );
+  assert.equal(
+    resolveClaimLocation(claim([place("Hyderabad", "PK")]), input("Hyderabad"))
+      ?.lat,
+    25.39689,
+  );
+  assert.equal(
+    resolveClaimLocation(claim([place("Córdoba", "AR")]), input("Córdoba"))
+      ?.country,
+    "AR",
+  );
+  // GeoNames lists two Costa Rican San José localities; only the province code separates them.
+  assert.equal(
+    resolveClaimLocation(claim([place("San José", "CR")]), input("San José")),
+    null,
+  );
+  assert.equal(
+    resolveClaimLocation(
+      claim([place("San José", "CR", "08")]),
+      input("San José"),
+    )?.country,
+    "CR",
+  );
+});
+test("machine romanisations and numeric codes are not source support", () => {
+  assert.equal(
+    resolveClaimLocation(claim([place("Dhaka", "BD")]), input("thaka")),
+    null,
+  );
+  assert.equal(
+    resolveClaimLocation(claim([place("Kyiv", "UA")]), input("kiv")),
+    null,
+  );
+  assert.deepEqual(
+    resolveClaimLocations(claim([place("4")]), input("4 people")),
+    [],
+  );
+});
+test("small states fall back to their own country scope rather than a 250 km circle", () => {
+  const out = resolveClaimLocation(
+    claim([place("Bahrain", "BH")]),
+    input("Protests across Bahrain."),
+  );
+  assert.equal(out?.accuracy, "country");
+  assert.equal(out?.country, "BH");
+  assert.ok(out!.radius_km < 50);
+  assert.equal(
+    resolveClaimLocation(claim([place("Russia", "RU")]), input("Russia"))
+      ?.radius_km,
+    250,
+  );
+});

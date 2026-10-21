@@ -15,7 +15,12 @@ import {
   type SourceRecord,
   type ModelRun,
 } from "../shared/contracts";
-import { resolveClaimLocation, inBbox } from "./geo";
+import {
+  resolveClaimLocation,
+  inBbox,
+  bboxCandidates,
+  locationRadius,
+} from "./geo";
 import {
   alertDecision,
   alertMaterialityProjection,
@@ -1348,6 +1353,53 @@ function defaultSignalEligible(incident: IncidentView) {
     return report.source_id !== "fr-sncf-siri" && ["severe", "critical"].includes(incident.impact) && incident.claims.some(c => temporalStatus(c) === "current");
   });
 }
+const eventTime =
+    "coalesce(json_extract(view,'$.event_start'),json_extract(view,'$.published_at'))",
+  // Latest of start and expiry; '9' sorts timeless incidents after every ISO time, as incidentInWindow always keeps them.
+  windowKey = `coalesce(max(${eventTime},coalesce(json_extract(view,'$.expires_at'),${eventTime})),'9')`;
+/**
+ * Index-backed supersets of incidentInWindow and inBbox, applied before LIMIT so a busy region or
+ * stale backlog cannot hide matching incidents. A bbox reads its padded latitude band, a window its
+ * recent, unexpired and timeless incidents; only a pole-to-pole bbox without a window falls back to
+ * the recency scan. The exact checks in snapshot still decide membership.
+ */
+async function liveScope(e: Env, hours: number, bbox?: number[]) {
+  const where: string[] = [],
+    params: (string | number)[] = [];
+  let index = "";
+  // Day-aligned bounds with a day of slack cover UTC offsets and date-only values and keep the memo key stable.
+  const day = 86400000,
+    today = Math.floor(Date.now() / day) * day,
+    after = new Date(today - hours * 3600000 - day),
+    before = new Date(today + hours * 3600000 + 2 * day);
+  if (
+    hours > 0 &&
+    Number.isFinite(after.getTime()) &&
+    Number.isFinite(before.getTime())
+  ) {
+    where.push(`${windowKey}>=?`, `(${eventTime} IS NULL OR ${eventTime}<=?)`);
+    params.push(after.toISOString(), before.toISOString());
+    index = " INDEXED BY incidents_window";
+  }
+  if (bbox) {
+    const reach = await memoRead(e, "incident-reach", 1000, () =>
+      stmt(
+        e,
+        `SELECT max(${locationRadius}) AS km FROM incidents WHERE deleted_at IS NULL`,
+      ).first<{ km: number | null }>(),
+    );
+    const candidates = bboxCandidates(bbox, reach?.km ?? 0);
+    where.push(candidates.sql);
+    params.push(...candidates.params);
+    if (candidates.banded) index = " INDEXED BY incidents_latitude";
+  }
+  return {
+    where: where.map((w) => ` AND ${w}`).join(""),
+    params,
+    index,
+    key: JSON.stringify(params),
+  };
+}
 async function snapshot(e: Env, u: URL) {
   const at = u.searchParams.get("at");
   if (at && !Number.isFinite(Date.parse(at))) throw Error("invalid_time");
@@ -1361,6 +1413,11 @@ async function snapshot(e: Env, u: URL) {
     .slice(0, 20)
     .map((t) => '"' + t.replaceAll('"', '""') + '"')
     .join(" AND ");
+  const hours = Number(u.searchParams.get("hours"));
+  const bbox = u.searchParams.get("bbox")?.split(",").map(Number);
+  if (bbox && (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))))
+    throw Error("invalid_bbox");
+  const scope = await liveScope(e, at ? 0 : hours, at ? undefined : bbox);
   const records = at
     ? await rows(
         e,
@@ -1371,13 +1428,15 @@ async function snapshot(e: Env, u: URL) {
     : fts
       ? await rows(
           e,
-          "SELECT i.view FROM incidents i JOIN incidents_fts f ON f.incident_id=i.id WHERE incidents_fts MATCH ? AND i.deleted_at IS NULL ORDER BY rank LIMIT 1000",
+          `SELECT i.view FROM incidents i JOIN incidents_fts f ON f.incident_id=i.id WHERE incidents_fts MATCH ? AND i.deleted_at IS NULL${scope.where} ORDER BY rank LIMIT 1000`,
           fts,
+          ...scope.params,
         )
-      : await memoRead(e, "incident-head", 1000, () =>
+      : await memoRead(e, `incident-head${scope.key}`, 1000, () =>
           rows(
             e,
-            "SELECT view FROM incidents WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1000",
+            `SELECT view FROM incidents${scope.index} WHERE deleted_at IS NULL${scope.where} ORDER BY updated_at DESC LIMIT 1000`,
+            ...scope.params,
           ),
         );
   const rights = await currentRights(e);
@@ -1418,14 +1477,8 @@ async function snapshot(e: Env, u: URL) {
     const value = u.searchParams.get(key);
     if (value) incidents = incidents.filter((i) => match(i, value));
   }
-  const hours = Number(u.searchParams.get("hours"));
   if (hours > 0 && !at) incidents=incidents.filter(i=>incidentInWindow(i,hours));
-  const bbox = u.searchParams.get("bbox")?.split(",").map(Number);
-  if (bbox) {
-    if (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v)))
-      throw Error("invalid_bbox");
-    incidents = incidents.filter((i) => inBbox(i.location, bbox));
-  }
+  if (bbox) incidents = incidents.filter((i) => inBbox(i.location, bbox));
   const incoming =
     at || u.searchParams.get("include_incoming") === "0"
       ? []

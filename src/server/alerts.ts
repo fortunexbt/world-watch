@@ -1,4 +1,5 @@
 import type { EventClaim, IncidentView } from "../shared/contracts";
+import { lonOverlaps } from "./geo";
 
 export type AlertRule = {
   name?: string;
@@ -205,25 +206,36 @@ export function alertMaterialityVersion(
   return `alert-material-v1:${JSON.stringify(alertMaterialityProjection(incident, rule))}`;
 }
 
+/** Watch bboxes with west > east, or polygon rings with an edge jumping over 180 degrees of longitude, cross the antimeridian. */
 export function intersects(location: IncidentView["location"], geometry: any) {
   if (!location) return false;
   const radius = location.radius_km / 111;
+  const ring: number[][] | null =
+    geometry?.type === "Polygon" ? geometry.coordinates[0] : null;
+  const lons = ring?.map((p) => p[0]) ?? [],
+    lats = ring?.map((p) => p[1]) ?? [];
+  const crossing = lons.some(
+    (lon, i) => i > 0 && Math.abs(lon - lons[i - 1]) > 180,
+  );
   const bbox = Array.isArray(geometry?.bbox)
     ? geometry.bbox
-    : geometry?.type === "Polygon"
+    : ring
       ? [
-          Math.min(...geometry.coordinates[0].map((p: any) => p[0])),
-          Math.min(...geometry.coordinates[0].map((p: any) => p[1])),
-          Math.max(...geometry.coordinates[0].map((p: any) => p[0])),
-          Math.max(...geometry.coordinates[0].map((p: any) => p[1])),
+          crossing
+            ? Math.min(...lons.filter((lon) => lon >= 0))
+            : Math.min(...lons),
+          Math.min(...lats),
+          crossing
+            ? Math.max(...lons.filter((lon) => lon < 0))
+            : Math.max(...lons),
+          Math.max(...lats),
         ]
       : null;
   if (!bbox || bbox.length !== 4) return false;
   const lonRadius =
     radius / Math.max(0.15, Math.cos((location.lat * Math.PI) / 180));
   return (
-    location.lon + lonRadius >= bbox[0] &&
-    location.lon - lonRadius <= bbox[2] &&
+    lonOverlaps(location.lon, lonRadius, bbox[0], bbox[2]) &&
     location.lat + radius >= bbox[1] &&
     location.lat - radius <= bbox[3]
   );

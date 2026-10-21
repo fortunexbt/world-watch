@@ -1,15 +1,37 @@
 import type { EventClaim, JobInput, IncidentView } from "../shared/contracts";
-import cities from "../shared/gazetteer.json";
+import places from "../shared/gazetteer.json";
 import countries from "../shared/countries.json";
 const key = (v: string) => v.normalize("NFC").toLocaleLowerCase().trim();
-type City = (typeof cities)[number];
+type City = {
+  id: string;
+  name: string;
+  aliases: string[];
+  country: string;
+  admin: string;
+  lon: number;
+  lat: number;
+};
 const names = new Map<string, City[]>(),
   aliases = new Map<string, City[]>();
-for (const city of cities) {
-  const n = key(city.name);
-  names.set(n, [...(names.get(n) ?? []), city]);
-  for (const alias of new Set(city.aliases.map(key)))
-    aliases.set(alias, [...(aliases.get(alias) ?? []), city]);
+const add = (map: Map<string, City[]>, k: string, city: City) => {
+  const list = map.get(k);
+  if (list) list.push(city);
+  else map.set(k, [city]);
+};
+// Indexed in global scope, which Workers bill to startup rather than to request CPU.
+for (const row of places) {
+  const [id, name, country, admin, lat, lon, alternates] = row.split("|");
+  const city = {
+    id,
+    name,
+    aliases: alternates ? alternates.split(",") : [],
+    country,
+    admin,
+    lon: Number(lon),
+    lat: Number(lat),
+  };
+  add(names, key(name), city);
+  for (const alias of new Set(city.aliases.map(key))) add(aliases, alias, city);
 }
 function cityCandidates(p: EventClaim["places"][number]) {
   const direct = names.get(key(p.name)) ?? [];
@@ -125,7 +147,7 @@ export function resolveClaimLocations(
     lon: c.lon,
     lat: c.lat,
     accuracy: "country" as const,
-    radius_km: 250,
+    radius_km: c.radius_km,
   }));
 }
 /** Legacy single-location callers must not collapse a multi-city claim into a centroid. */
@@ -138,15 +160,63 @@ export function resolveClaimLocation(
   const namedCities = new Set(claim.places.flatMap(p=>cityCandidates(p)).map(c=>c.id));
   return locations.length === 1 && namedCities.size <= 1 ? locations[0] : null;
 }
+/** Bounding boxes are [west, south, east, north]; west > east crosses the antimeridian. */
 export function inBbox(location: IncidentView["location"], bbox: number[]) {
   if (!location) return false;
   const radius = location.radius_km / 111;
   const lonRadius =
     radius / Math.max(0.05, Math.cos((location.lat * Math.PI) / 180));
   return (
-    location.lon + lonRadius >= bbox[0] &&
     location.lat + radius >= bbox[1] &&
-    location.lon - lonRadius <= bbox[2] &&
-    location.lat - radius <= bbox[3]
+    location.lat - radius <= bbox[3] &&
+    lonOverlaps(location.lon, lonRadius, bbox[0], bbox[2])
   );
+}
+/** Whether lon ± reach meets the span running east from west to east, across the antimeridian if needed. */
+export function lonOverlaps(
+  lon: number,
+  reach: number,
+  west: number,
+  east: number,
+) {
+  const width = east >= west ? east - west : east - west + 360;
+  const offset = (((lon - west) % 360) + 360) % 360;
+  return (
+    width + 2 * reach >= 360 || offset <= width + reach || offset >= 360 - reach
+  );
+}
+export const locationRadius = "json_extract(view,'$.location.radius_km')";
+const latitude = "json_extract(view,'$.location.lat')",
+  longitude = "json_extract(view,'$.location.lon')",
+  reach = `${locationRadius}/111.0`;
+/**
+ * SQL superset of inBbox over incidents.view, without trigonometry in SQL. When `banded`, the
+ * latitude band padded by the largest stored radius can drive the incidents_latitude index.
+ */
+export function bboxCandidates(bbox: number[], maxRadiusKm: number) {
+  const [west, south, east, north] = bbox,
+    pad = maxRadiusKm / 111,
+    banded = south - pad > -90 || north + pad < 90,
+    edge = Math.min(90, Math.max(Math.abs(south - pad), Math.abs(north + pad))),
+    // No row inside the band reaches farther in longitude than its radius times this factor.
+    stretch = 1 / Math.max(0.05, Math.cos((edge * Math.PI) / 180)),
+    width = Math.min(360, east >= west ? east - west : east - west + 360),
+    start = ((((west + 180) % 360) + 360) % 360) - 180;
+  return {
+    banded,
+    sql: `${banded ? `${latitude} BETWEEN ? AND ? AND ` : ""}${latitude}+${reach}>=? AND ${latitude}-${reach}<=? AND ((${longitude}+${reach}*?>=? AND ${longitude}-${reach}*?<=?) OR ${longitude}+${reach}*?>=? OR ${longitude}-${reach}*?<=?)`,
+    params: [
+      ...(banded ? [south - pad, north + pad] : []),
+      south,
+      north,
+      stretch,
+      start,
+      stretch,
+      start + width,
+      stretch,
+      start + 360,
+      stretch,
+      start + width - 360,
+    ],
+  };
 }
