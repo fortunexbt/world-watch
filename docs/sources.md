@@ -12,8 +12,26 @@ The executable inventory is [`src/collector/registry.ts`](../src/collector/regis
 | Official warnings and calendars     | BBK, MIT strikes, selected Paris records                           | Keep issuer validity and explicit geographic scope. Rights restrictions may prohibit model processing.                                    |
 | Public cameras                      | Statens vegvesen, Digitraffic                                      | Selected public publisher-operated imagery. Snapshot time, update cadence and playback permission vary.                                   |
 | Satellite/context                   | NASA FIRMS, Copernicus Emergency Management Service                | Thermal observations and emergency mapping areas; neither establishes incident severity or affected population.                           |
+| Worldwide natural hazards           | USGS earthquakes, GDACS alerts                                     | Structured records published without a model. Points are epicentres or alert centroids, not impact footprints.                            |
 
 Passenger-train circulation and institutional-announcement feeds were disabled after they overwhelmed the feed. Fire/thermal coverage can still dominate. Adding more endpoints without a usefulness test would repeat that failure.
+
+## Worldwide hazards
+
+USGS supplies the complete past-day earthquake summary at magnitude 4.5 and above, the level at which its catalogue is complete worldwide. Each record keeps the USGS event ID and update time, magnitude, depth, review status, PAGER alert and tsunami flag. The tsunami flag marks a large oceanic event and does not mean a tsunami occurred. USGS states no country, so none is derived. USGS-authored data is U.S. public domain, and USGS asks for credit as "U.S. Geological Survey". A preferred event ID can change when another network becomes authoritative, which can briefly duplicate an earthquake.
+
+GDACS supplies current Orange and Red alerts for earthquakes, tropical cyclones, floods, volcanoes, droughts and wildfires. Green alerts are excluded because a request including them returned exactly 100 records on 21 October 2026, which looks like a page limit. A full page fails visibly rather than hiding a Red event. Each record keeps the hazard type and event ID, the episode as its revision, alert levels, start and latest dates, affected countries and the upstream hazard provider. A country is set only when GDACS lists exactly one affected country. The European Commission legal notice linked by GDACS grants CC BY 4.0 with attribution and excludes third-party material, such as the GLOFAS, JTWC and GWIS inputs named in each record. GDACS provides its data as is and not for decision making without prior confirmation, so these records are not redistributed in exports.
+
+Both sources set impact from the native alert level and never ask a model.
+
+| Native level                        | Impact      |
+| ----------------------------------- | ----------- |
+| USGS PAGER green, GDACS Green       | minor       |
+| USGS PAGER yellow, GDACS Orange     | significant |
+| USGS PAGER orange or red, GDACS Red | severe      |
+| None or unrecognised                | unknown     |
+
+Alert levels are modelled estimates of losses or humanitarian impact, not observed harm. They never map to critical, which needs stated mass-casualty evidence. GDACS reports the highest alert across an event's episodes, and the current episode level stays in the record.
 
 ## Admission contract
 
