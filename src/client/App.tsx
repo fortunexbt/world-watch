@@ -1257,7 +1257,10 @@ export default function App() {
                   <ArrowUpRight size={14} />
                 </a>
                 <small>
-                  {tr(s.status)} · {s.countries?.join(", ")}
+                  {tr(s.status)} ·{" "}
+                  {s.countries?.includes("*")
+                    ? tr("worldwide")
+                    : s.countries?.join(", ")}
                 </small>
                 <small>
                   {tr("Last success")}:{" "}
@@ -1618,7 +1621,8 @@ export default function App() {
                 snapshot.sources.filter(
                   (s) =>
                     s.status === "enabled" &&
-                    s.countries?.includes(countryCode) &&
+                    (s.countries?.includes(countryCode) ||
+                      s.countries?.includes("*")) &&
                     s.health?.last_success_at,
                 ).length
               }{" "}
