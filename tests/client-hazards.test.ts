@@ -15,6 +15,7 @@ import { translate } from "../src/client/locale.js";
 import { parseUsgs } from "../src/collector/adapters/usgs.js";
 import { parseGdacs } from "../src/collector/adapters/gdacs.js";
 import { parseNws } from "../src/collector/adapters/nws.js";
+import { parseEccc } from "../src/collector/adapters/eccc.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import { Impact } from "../src/shared/contracts.js";
 
@@ -27,10 +28,16 @@ const gdacs = parseGdacs(
   source("global-gdacs-alerts"),
   JSON.parse(readFileSync("tests/fixtures/gdacs-events.json", "utf8")),
 );
-const warnings = parseNws(
-  source("us-nws-warnings"),
-  JSON.parse(readFileSync("tests/fixtures/nws-alerts.json", "utf8")),
-);
+const warnings = [
+  ...parseNws(
+    source("us-nws-warnings"),
+    JSON.parse(readFileSync("tests/fixtures/nws-alerts.json", "utf8")),
+  ),
+  ...parseEccc(
+    source("ca-eccc-warnings"),
+    JSON.parse(readFileSync("tests/fixtures/eccc-alerts.json", "utf8")),
+  ),
+];
 
 test("earthquake markers grow with magnitude between a floor and a ceiling", () => {
   assert.equal(markerScale(null), 1);

@@ -10,6 +10,7 @@ import { ZWAAILICHT_URL } from "./adapters/zwaailicht.js";
 import { USGS_FEED_URL } from "./adapters/usgs.js";
 import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "./adapters/nws.js";
+import { ECCC_ALERTS_URL } from "./adapters/eccc.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
 const rights = (
   basis: string,
@@ -466,6 +467,32 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "structured_natural_hazard",
       coverage:
         "Active tornado, severe thunderstorm, flash flood, flood, extreme wind, snow squall and dust storm warnings that carry an NWS polygon. Watches, advisories, statements and zone-only warnings (winter, heat, tropical, marine) are not collected. Points are polygon bounding-box centres with a radius to the farthest vertex.",
+    },
+  },
+  {
+    ...base,
+    id: "ca-eccc-warnings",
+    name: "ECCC — public weather warnings, Canada",
+    owner:
+      "Environment and Climate Change Canada, Meteorological Service of Canada",
+    url: ECCC_ALERTS_URL,
+    docs: "https://eccc-msc.github.io/open-data/msc-data/alerts/readme_alerts_en/",
+    countries: ["CA"],
+    languages: ["en", "fr"],
+    categories: ["natural_hazard", "severe_weather"],
+    family: "rss",
+    verified_at: "2026-10-22T18:35:00Z",
+    rights: rights(
+      "Environment and Climate Change Canada Data Services End-use Licence 2.1.1: worldwide, royalty-free, perpetual licence to copy, publish, distribute and adapt, including commercially, with attribution; weather alerts must be reproduced without altering their content or intent; no endorsement implied; provided as is. https://eccc-msc.github.io/open-data/licence/readme_en/ . MSC Open Data usage policy: under 86,400 requests a day and a meaningful User-Agent. https://eccc-msc.github.io/open-data/usage-policy/readme_en/ . English and French warning text kept unchanged. Deterministic structured publication; no model analysis.",
+      "Data Source: Environment and Climate Change Canada. Licence: https://eccc-msc.github.io/open-data/licence/readme_en/ . Warning text unchanged; impact labels and map points are World Watch derivations.",
+      false,
+    ),
+    config: {
+      format: "eccc_geojson",
+      max_bytes: 2 * 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex.",
     },
   },
   {

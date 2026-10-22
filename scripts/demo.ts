@@ -1,5 +1,6 @@
 // Local-only showcase: a throwaway database fed by the worldwide structured
-// hazard sources (USGS, GDACS, NWS). No model runs and no private file is read.
+// hazard sources (USGS, GDACS, NWS, ECCC). No model runs and no private file is
+// read.
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
@@ -14,6 +15,7 @@ const DEMO_SOURCES = [
   "global-usgs-earthquakes",
   "global-gdacs-alerts",
   "us-nws-warnings",
+  "ca-eccc-warnings",
 ];
 const API_PORT = 8797;
 const PREVIEW_PORT = 4319;
@@ -123,7 +125,7 @@ try {
   await waitFor(`http://127.0.0.1:${PREVIEW_PORT}/api/health`);
   console.log(
     `\nWorld Watch demo: http://127.0.0.1:${PREVIEW_PORT}/?hours=168\n` +
-      "Live USGS earthquakes, GDACS alerts and NWS warnings, refreshed every 5 minutes. " +
+      "Live USGS earthquakes, GDACS alerts and NWS and ECCC warnings, refreshed every 5 minutes. " +
       "Toggle the thermal layer for NASA FIRMS detections. Ctrl-C stops everything and deletes the demo data.",
   );
   setInterval(() => void collect().catch((e) => console.error(String(e))), REFRESH_MS);

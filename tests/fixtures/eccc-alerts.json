@@ -1,0 +1,1399 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "190122771851897148202610210501_fea1-2532",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -94.65461305,
+       74.92489447
+      ],
+      [
+       -95.2633828,
+       74.9250078
+      ],
+      [
+       -95.71135649,
+       74.81755156
+      ],
+      [
+       -95.71146863,
+       74.81740377
+      ],
+      [
+       -95.71191655,
+       74.81741579
+      ],
+      [
+       -95.71199511,
+       74.81739675
+      ],
+      [
+       -95.89493833,
+       74.65097126
+      ],
+      [
+       -95.90564305,
+       74.31912475
+      ],
+      [
+       -94.86267042,
+       74.29366384
+      ],
+      [
+       -94.15475884,
+       74.34143701
+      ],
+      [
+       -94.1885742,
+       74.63399488
+      ],
+      [
+       -94.1520119,
+       74.66255286
+      ],
+      [
+       -94.20788797,
+       74.81780189
+      ],
+      [
+       -94.65461305,
+       74.92489447
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "alert_code": "WDW",
+    "alert_type": "warning",
+    "alert_name_en": "wind warning",
+    "alert_name_fr": "avertissement de vent",
+    "alert_short_name_en": "Wind",
+    "alert_short_name_fr": "Vent",
+    "publication_datetime": "2026-10-22T08:42:16.793Z",
+    "expiration_datetime": "2026-10-23T00:42:16.793Z",
+    "validity_datetime": "2026-10-22T16:00:00.000Z",
+    "event_end_datetime": "2026-10-23T01:00:00.000Z",
+    "alert_text_en": "Damaging winds are expected.\n\nStrong easterly winds, with gusts to 90 km/h, are expected this afternoon. These strong wind gusts will weaken below 90 km/h this evening.\n\nSome property damage is possible.\n\nSecure loose objects. Prepare for possible disruptions to transportation, services, and utilities.\n\nPlease continue to monitor alerts and forecasts issued by Environment Canada. To report severe weather, send an email to NUstorm@ec.gc.ca, call 1-800-239-0484 or post reports on social media using #NUStorm.",
+    "alert_text_fr": "Des vents destructeurs sont prévus.\n\nOn prévoit des vents forts d'est soufflant en rafales à 90 km/h cet après-midi. Ces fortes rafales faibliront pour passer sous le seuil de 90 km/h ce soir.\n\nDes dommages matériels sont possibles.\n\nAttachez les objets non fixés. Préparez-vous à d’éventuelles perturbations des transports et des services publics.\n\nVeuillez continuer à surveiller les alertes et les prévisions émises par Environnement Canada. Pour signaler du temps violent, envoyez un courriel à meteoNU@ec.gc.ca, appelez au 1-800-239-0484 ou publiez un message sur les réseaux sociaux en utilisant #NUMeteo.",
+    "risk_colour_en": "yellow",
+    "risk_colour_fr": "jaune",
+    "confidence_en": "High",
+    "confidence_fr": "élevée",
+    "impact_en": "Moderate",
+    "impact_fr": "modéré",
+    "feature_name_en": "Resolute",
+    "feature_name_fr": "Resolute",
+    "province": "NU",
+    "status_en": "continued",
+    "status_fr": "maintenu",
+    "feature_id": "fea1-2532"
+   }
+  },
+  {
+   "id": "845087691867508436202610220501_fea1-2534",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -83.16153433,
+       76.29805286
+      ],
+      [
+       -82.05953674,
+       76.26121729
+      ],
+      [
+       -82.13279245,
+       76.55849676
+      ],
+      [
+       -82.13134238,
+       76.55847868
+      ],
+      [
+       -82.13296539,
+       76.55910419
+      ],
+      [
+       -82.13365397,
+       76.55934476
+      ],
+      [
+       -82.13395078,
+       76.55944844
+      ],
+      [
+       -82.1344252,
+       76.55960837
+      ],
+      [
+       -82.14341302,
+       76.5626373
+      ],
+      [
+       -82.15311778,
+       76.56578056
+      ],
+      [
+       -82.16306745,
+       76.5688783
+      ],
+      [
+       -82.17324516,
+       76.57194574
+      ],
+      [
+       -82.18365967,
+       76.5749672
+      ],
+      [
+       -82.19430395,
+       76.57794229
+      ],
+      [
+       -82.2051768,
+       76.58088013
+      ],
+      [
+       -82.21627039,
+       76.58376419
+      ],
+      [
+       -82.22759263,
+       76.58661094
+      ],
+      [
+       -82.23912149,
+       76.58940315
+      ],
+      [
+       -82.25087316,
+       76.5921485
+      ],
+      [
+       -82.26282816,
+       76.59485058
+      ],
+      [
+       -82.27499064,
+       76.59750497
+      ],
+      [
+       -82.28735174,
+       76.60010661
+      ],
+      [
+       -82.29411147,
+       76.60147814
+      ],
+      [
+       -82.30676857,
+       76.60683369
+      ],
+      [
+       -82.45445994,
+       76.62690693
+      ],
+      [
+       -82.4546169,
+       76.62692566
+      ],
+      [
+       -83.28031353,
+       76.63814555
+      ],
+      [
+       -83.53266733,
+       76.58129602
+      ],
+      [
+       -83.79235253,
+       76.49395733
+      ],
+      [
+       -83.84913171,
+       76.26121729
+      ],
+      [
+       -83.16153433,
+       76.29805286
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "alert_code": "WDW",
+    "alert_type": "warning",
+    "alert_name_en": "wind warning",
+    "alert_name_fr": "avertissement de vent",
+    "alert_short_name_en": "Wind",
+    "alert_short_name_fr": "Vent",
+    "publication_datetime": "2026-10-22T08:46:52.904Z",
+    "expiration_datetime": "2026-10-23T00:46:52.904Z",
+    "validity_datetime": "2026-10-22T22:00:00.000Z",
+    "event_end_datetime": "2026-10-23T10:00:00.000Z",
+    "alert_text_en": "Damaging winds are expected.\n\nStrong easterly winds, with gusts to 100 km/h at times, are expected tonight. There may be blowing snow at times with these strong winds.\n\nWinds will weaken Friday morning and diminish Friday afternoon.\n\nSome property damage is possible.\n\nSecure loose objects. Prepare for possible disruptions to transportation, services, and utilities.\n\nPlease continue to monitor alerts and forecasts issued by Environment Canada. To report severe weather, send an email to NUstorm@ec.gc.ca, call 1-800-239-0484 or post reports on social media using #NUStorm.",
+    "alert_text_fr": "Des vents destructeurs sont prévus.\n\nOn prévoit des vents forts d'est soufflant en rafales à 100 km/h par moments ce soir et cette nuit. Il pourrait y avoir de la poudrerie par moments sous l'effet de ces vents forts.\n\nLes vents faibliront vendredi matin, puis ils diminueront d'intensité vendredi après-midi.\n\nDes dommages matériels sont possibles.\n\nAttachez les objets non fixés. Préparez-vous à d’éventuelles perturbations des transports et des services publics.\n\nVeuillez continuer à surveiller les alertes et les prévisions émises par Environnement Canada. Pour signaler du temps violent, envoyez un courriel à meteoNU@ec.gc.ca, appelez au 1-800-239-0484 ou publiez un message sur les réseaux sociaux en utilisant #NUMeteo.",
+    "risk_colour_en": "yellow",
+    "risk_colour_fr": "jaune",
+    "confidence_en": "High",
+    "confidence_fr": "élevée",
+    "impact_en": "Moderate",
+    "impact_fr": "modéré",
+    "feature_name_en": "Grise Fiord",
+    "feature_name_fr": "Grise Fiord",
+    "province": "NU",
+    "status_en": "issued",
+    "status_fr": "émis",
+    "feature_id": "fea1-2534"
+   }
+  },
+  {
+   "id": "33513774847910979202610220507_fea1-854",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -52.9110835,
+       46.79933249
+      ],
+      [
+       -52.9466205,
+       46.80161371
+      ],
+      [
+       -52.95774711,
+       46.8
+      ],
+      [
+       -52.95992011,
+       46.80000094
+      ],
+      [
+       -53.04,
+       46.8
+      ],
+      [
+       -53.04,
+       47.22494117
+      ],
+      [
+       -53.58,
+       47.39195617
+      ],
+      [
+       -53.58,
+       47.20504689
+      ],
+      [
+       -53.58011349,
+       47.19702101
+      ],
+      [
+       -53.62552184,
+       47.09095542
+      ],
+      [
+       -53.69437327,
+       47.06676438
+      ],
+      [
+       -53.79093069,
+       46.88754848
+      ],
+      [
+       -53.70949746,
+       46.60770121
+      ],
+      [
+       -53.43896209,
+       46.51752275
+      ],
+      [
+       -52.99395102,
+       46.57045359
+      ],
+      [
+       -52.9110835,
+       46.79933249
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "alert_code": "WDW",
+    "alert_type": "warning",
+    "alert_name_en": "wind warning",
+    "alert_name_fr": "avertissement de vent",
+    "alert_short_name_en": "Wind",
+    "alert_short_name_fr": "Vent",
+    "publication_datetime": "2026-10-22T13:25:54.289Z",
+    "expiration_datetime": "2026-10-23T05:25:54.289Z",
+    "validity_datetime": "2026-10-23T14:00:00.000Z",
+    "event_end_datetime": "2026-10-24T03:00:00.000Z",
+    "alert_text_en": "Strong winds are expected.\n\nLocations: south coast of Newfoundland from Burgeo to the Burin Peninsula, and the southern Avalon Peninsula. \n\nMaximum wind gusts: northeasterly 80 km/h, except 100 along parts of the coast.\n\nTime span: Friday afternoon and evening.\n\nLocal utility outages are possible. Disruptions to services and travel are possible.\n\nWind warnings are issued when there is a significant risk of damaging winds.\n\nPlease continue to monitor alerts and forecasts issued by Environment Canada. To report severe weather, send an email to NLstorm@ec.gc.ca or post reports on social media using #NLwx.",
+    "alert_text_fr": "Vents forts à prévoir.\n\nRégions : la côte sud de Terre-Neuve, de Burgeo à la péninsule de Burin, et le sud de la péninsule d'Avalon.\n\nRafales maximales : du nord-est à 80 km/h, mais à 100 km/h le long de certaines parties de la côte.\n\nPériode : vendredi après-midi et vendredi soir.\n\nDes pannes de courant sont possibles par endroits. Des perturbations des services et des transports sont possibles.\n\nUn avertissement de vent est émis lorsqu'il y a un risque important que des vents destructeurs soufflent.\n\nVeuillez continuer à surveiller les alertes et les prévisions émises par Environnement Canada. Pour signaler du temps violent, envoyez un courriel à meteoNL@ec.gc.ca ou publiez un message sur les réseaux sociaux en utilisant #NLMeteo.",
+    "risk_colour_en": "yellow",
+    "risk_colour_fr": "jaune",
+    "confidence_en": "High",
+    "confidence_fr": "élevée",
+    "impact_en": "Moderate",
+    "impact_fr": "modéré",
+    "feature_name_en": "Avalon Peninsula Southeast",
+    "feature_name_fr": "péninsule d'Avalon Sud-Est",
+    "province": "NL",
+    "status_en": "continued",
+    "status_fr": "maintenu",
+    "feature_id": "fea1-854"
+   }
+  },
+  {
+   "id": "529223621158090160202610220506_fea1-801",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -61.37092087,
+       45.58631029
+      ],
+      [
+       -61.39513276,
+       45.63354816
+      ],
+      [
+       -61.43053717,
+       45.65260505
+      ],
+      [
+       -61.43718616,
+       45.64925112
+      ],
+      [
+       -61.50310164,
+       45.62210123
+      ],
+      [
+       -61.73749938,
+       45.52500128
+      ],
+      [
+       -61.73307061,
+       45.5024514
+      ],
+      [
+       -61.72999929,
+       45.48680108
+      ],
+      [
+       -61.94900232,
+       45.39410049
+      ],
+      [
+       -62.09040103,
+       45.3736996
+      ],
+      [
+       -62.62350051,
+       45.29479943
+      ],
+      [
+       -62.62559974,
+       45.29349925
+      ],
+      [
+       -62.62809996,
+       45.29259824
+      ],
+      [
+       -62.62960135,
+       45.29200033
+      ],
+      [
+       -62.63429909,
+       45.29050046
+      ],
+      [
+       -62.63830325,
+       45.2890018
+      ],
+      [
+       -62.64429897,
+       45.28760141
+      ],
+      [
+       -62.64690016,
+       45.28710203
+      ],
+      [
+       -62.64960208,
+       45.28659896
+      ],
+      [
+       -62.65479973,
+       45.28599889
+      ],
+      [
+       -62.65990149,
+       45.2859003
+      ],
+      [
+       -62.66699976,
+       45.28549982
+      ],
+      [
+       -62.67089739,
+       45.28530059
+      ],
+      [
+       -62.67739816,
+       45.28400047
+      ],
+      [
+       -62.68340014,
+       45.28260083
+      ],
+      [
+       -62.69010223,
+       45.28030017
+      ],
+      [
+       -62.69620194,
+       45.27799982
+      ],
+      [
+       -62.70159864,
+       45.27569913
+      ],
+      [
+       -62.70640299,
+       45.27370142
+      ],
+      [
+       -62.71049999,
+       45.27130171
+      ],
+      [
+       -62.71189869,
+       45.27040069
+      ],
+      [
+       -62.16553844,
+       44.97549682
+      ],
+      [
+       -62.16474592,
+       44.97397266
+      ],
+      [
+       -62.15481225,
+       44.9424363
+      ],
+      [
+       -62.05479031,
+       44.87978482
+      ],
+      [
+       -61.19461431,
+       45.17552255
+      ],
+      [
+       -60.91932678,
+       45.21274254
+      ],
+      [
+       -60.92143357,
+       45.35951574
+      ],
+      [
+       -61.23999958,
+       45.52633393
+      ],
+      [
+       -61.28796818,
+       45.54298127
+      ],
+      [
+       -61.35871017,
+       45.57806472
+      ],
+      [
+       -61.37092087,
+       45.58631029
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "alert_code": "RFW",
+    "alert_type": "warning",
+    "alert_name_en": "rainfall warning",
+    "alert_name_fr": "avertissement de pluie",
+    "alert_short_name_en": "Rainfall",
+    "alert_short_name_fr": "Pluie",
+    "publication_datetime": "2026-10-22T13:43:20.615Z",
+    "expiration_datetime": "2026-10-23T05:43:20.615Z",
+    "validity_datetime": "2026-10-22T13:41:00.000Z",
+    "event_end_datetime": "2026-10-23T23:00:00.000Z",
+    "alert_text_en": "Very heavy rain is expected.\n\nLocations: Guysborough County, Richmond County, Sydney Metro and Cape Breton County.\n\nTotal rainfall: 50 to 70 mm.\n\nTime span: today until Friday evening.\n\nRemarks: Gusty winds accompanying the rain may cause tree branches to break.\n\nLocal utility outages are possible.\n\nRainfall warnings are issued when significant impacts are expected due to rainfall amounts.\n\nPlease continue to monitor alerts and forecasts issued by Environment Canada. To report severe weather, send an email to NSstorm@ec.gc.ca or post reports on social media using #NSStorm.",
+    "alert_text_fr": "De la pluie très forte est prévue.\n\nRégions : le comté de Guysborough, le comté de Richmond, la ville de Sydney et le comté de Cap-Breton.\n\nQuantité totale de pluie : de 50 à 70 mm.\n\nPériode : d'aujourd'hui jusqu'à vendredi soir.\n\nRemarques : les vents soufflant en rafales qui accompagnent la pluie pourraient casser des branches d'arbres.\n\nDes pannes de courant sont possibles par endroits.\n\nUn avertissement de pluie est émis lorsque des impacts importants sont attendus en raison de la quantité de pluie prévue.\n\nVeuillez continuer à surveiller les alertes et les prévisions émises par Environnement Canada. Pour signaler du temps violent, envoyez un courriel à meteoNS@ec.gc.ca ou publiez un message sur les réseaux sociaux en utilisant #NSMeteo.",
+    "risk_colour_en": "yellow",
+    "risk_colour_fr": "jaune",
+    "confidence_en": "High",
+    "confidence_fr": "élevée",
+    "impact_en": "Moderate",
+    "impact_fr": "modéré",
+    "feature_name_en": "Guysborough County",
+    "feature_name_fr": "comté de Guysborough",
+    "province": "NS",
+    "status_en": "continued",
+    "status_fr": "maintenu",
+    "feature_id": "fea1-801"
+   }
+  },
+  {
+   "id": "185815178851897148202610210501_fea1-2532",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -94.65461305,
+       74.92489447
+      ],
+      [
+       -95.2633828,
+       74.9250078
+      ],
+      [
+       -95.71135649,
+       74.81755156
+      ],
+      [
+       -95.71146863,
+       74.81740377
+      ],
+      [
+       -95.71191655,
+       74.81741579
+      ],
+      [
+       -95.71199511,
+       74.81739675
+      ],
+      [
+       -95.89493833,
+       74.65097126
+      ],
+      [
+       -95.90564305,
+       74.31912475
+      ],
+      [
+       -94.86267042,
+       74.29366384
+      ],
+      [
+       -94.15475884,
+       74.34143701
+      ],
+      [
+       -94.1885742,
+       74.63399488
+      ],
+      [
+       -94.1520119,
+       74.66255286
+      ],
+      [
+       -94.20788797,
+       74.81780189
+      ],
+      [
+       -94.65461305,
+       74.92489447
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "alert_code": "BZW",
+    "alert_type": "warning",
+    "alert_name_en": "blizzard warning",
+    "alert_name_fr": "avertissement de blizzard",
+    "alert_short_name_en": "Blizzard",
+    "alert_short_name_fr": "Blizzard",
+    "publication_datetime": "2026-10-22T17:42:23.278Z",
+    "expiration_datetime": "2026-10-23T09:00:23.278Z",
+    "validity_datetime": "2026-10-22T17:41:00.000Z",
+    "event_end_datetime": "2026-10-23T07:00:00.000Z",
+    "alert_text_en": "Blizzard conditions with poor visibility in snow and blowing snow continue.\n\nBlizzard conditions will persist until early Friday morning.\n\nLimit travel and outdoor activities, if possible. If you become lost or stranded, remain where you are until conditions improve.\n\nPlease continue to monitor alerts and forecasts issued by Environment Canada. To report severe weather, send an email to NUstorm@ec.gc.ca, call 1-800-239-0484 or post reports on social media using #NUStorm.",
+    "alert_text_fr": "Des conditions de blizzard se pousuivent, avec une mauvaise visibilité dans la neige et la poudrerie. \n\nLe blizzard persistera jusque tôt vendredi matin.\n\nLimitez les déplacements et les activités en plein air, si possible. Si vous vous perdez ou vous restez bloqué, restez où vous êtes jusqu’à ce que les conditions s’améliorent.\n\nVeuillez continuer à surveiller les alertes et les prévisions émises par Environnement Canada. Pour signaler du temps violent, envoyez un courriel à meteoNU@ec.gc.ca, appelez au 1-800-239-0484 ou publiez un message sur les réseaux sociaux en utilisant #NUMeteo.",
+    "risk_colour_en": "yellow",
+    "risk_colour_fr": "jaune",
+    "confidence_en": "High",
+    "confidence_fr": "élevée",
+    "impact_en": "Moderate",
+    "impact_fr": "modéré",
+    "feature_name_en": "Resolute",
+    "feature_name_fr": "Resolute",
+    "province": "NU",
+    "status_en": "continued",
+    "status_fr": "maintenu",
+    "feature_id": "fea1-2532"
+   }
+  },
+  {
+   "id": "72847450661299643202610220503_fea1-1313",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -83.99120271,
+       47.25169288
+      ],
+      [
+       -83.99393346,
+       48.11077534
+      ],
+      [
+       -83.99604284,
+       48.11066758
+      ],
+      [
+       -84.23526184,
+       48.09813966
+      ],
+      [
+       -84.24016987,
+       48.09787624
+      ],
+      [
+       -84.24188269,
+       48.09732632
+      ],
+      [
+       -84.6559698,
+       47.96308447
+      ],
+      [
+       -84.86081714,
+       47.89571687
+      ],
+      [
+       -85.1481213,
+       47.8240426
+      ],
+      [
+       -84.91340571,
+       47.234691
+      ],
+      [
+       -84.6283359,
+       47.25227805
+      ],
+      [
+       -84.60833312,
+       47.25232574
+      ],
+      [
+       -84.60779978,
+       47.25232696
+      ],
+      [
+       -83.99123713,
+       47.25169303
+      ],
+      [
+       -83.99120271,
+       47.25169288
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "alert_code": "FGA",
+    "alert_type": "advisory",
+    "alert_name_en": "fog advisory",
+    "alert_name_fr": "avis de brouillard",
+    "alert_short_name_en": "Fog (advisory)",
+    "alert_short_name_fr": "Brouillard (avis)",
+    "publication_datetime": "2026-10-22T16:10:17.405Z",
+    "expiration_datetime": "2026-10-22T21:00:17.405Z",
+    "validity_datetime": "2026-10-22T16:08:00.000Z",
+    "event_end_datetime": "2026-10-22T19:00:00.000Z",
+    "alert_text_en": "Near-zero visibility in fog continues over some areas.\n\nThe fog is expected to lift later this afternoon.\n\nTravel will likely be hazardous in some locations. Visibility will likely be suddenly reduced at times.\n\nBe prepared for areas of near-zero visibility and allow extra time to reach your destination.\n\nPlease continue to monitor alerts and forecasts issued by Environment Canada. To report severe weather, send an email to ONstorm@ec.gc.ca or post reports on social media using #ONStorm.",
+    "alert_text_fr": "La visibilité demeure presque nulle par endroits dans le brouillard. \n\nLe brouillard devrait se dissiper cet après-midi.\n\nLes déplacements seront probablement dangereux dans certains endroits. Une visibilité soudainement réduite par moments est à prévoir.\n\nSoyez prêts à composer avec des zones où la visibilité est quasi nulle et prévoyez plus de temps pour vous rendre à destination.\n\nVeuillez continuer à surveiller les alertes et les prévisions émises par Environnement Canada. Pour signaler du temps violent, envoyez un courriel à meteoON@ec.gc.ca ou publiez un message sur les réseaux sociaux en utilisant #ONMeteo.",
+    "risk_colour_en": "yellow",
+    "risk_colour_fr": "jaune",
+    "confidence_en": null,
+    "confidence_fr": null,
+    "impact_en": null,
+    "impact_fr": null,
+    "feature_name_en": "Agawa - Lake Superior Park",
+    "feature_name_fr": "Agawa - parc du lac Supérieur",
+    "province": "ON",
+    "status_en": "ended",
+    "status_fr": "terminé",
+    "feature_id": "fea1-1313"
+   }
+  },
+  {
+   "id": "73002614607149770202610220501_fea1-1496",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -99.40014618,
+       59.99921709
+      ],
+      [
+       -99.42889982,
+       59.99923006
+      ],
+      [
+       -99.48439982,
+       59.99924006
+      ],
+      [
+       -99.52149982,
+       59.99923006
+      ],
+      [
+       -99.55829982,
+       59.99921006
+      ],
+      [
+       -99.56429982,
+       59.99922006
+      ],
+      [
+       -99.61729982,
+       59.99924006
+      ],
+      [
+       -99.64019982,
+       59.99924006
+      ],
+      [
+       -99.69979982,
+       59.99923006
+      ],
+      [
+       -99.77999982,
+       59.99924006
+      ],
+      [
+       -99.86709982,
+       59.99924006
+      ],
+      [
+       -100.03008512,
+       59.99924174
+      ],
+      [
+       -100.03269982,
+       59.99924006
+      ],
+      [
+       -100.05959983,
+       59.99924006
+      ],
+      [
+       -100.08389982,
+       59.99922006
+      ],
+      [
+       -100.09169982,
+       59.99923006
+      ],
+      [
+       -100.13999983,
+       59.99925006
+      ],
+      [
+       -100.17379983,
+       59.99925006
+      ],
+      [
+       -100.24419983,
+       59.99924006
+      ],
+      [
+       -100.25909983,
+       59.99923006
+      ],
+      [
+       -100.27799983,
+       59.99924006
+      ],
+      [
+       -100.32039983,
+       59.99925006
+      ],
+      [
+       -100.36049983,
+       59.99926006
+      ],
+      [
+       -100.41749983,
+       59.99924006
+      ],
+      [
+       -100.43429983,
+       59.99923006
+      ],
+      [
+       -100.48479983,
+       59.99925006
+      ],
+      [
+       -100.56099983,
+       59.99925006
+      ],
+      [
+       -100.57569983,
+       59.99924006
+      ],
+      [
+       -100.62599983,
+       59.99924006
+      ],
+      [
+       -100.64899983,
+       59.99925006
+      ],
+      [
+       -100.66129983,
+       59.99925006
+      ],
+      [
+       -100.71969983,
+       59.99925006
+      ],
+      [
+       -100.77249983,
+       59.99923006
+      ],
+      [
+       -100.80129983,
+       59.99924006
+      ],
+      [
+       -100.83429983,
+       59.99925006
+      ],
+      [
+       -100.91115605,
+       59.9992501
+      ],
+      [
+       -100.95379983,
+       59.99923006
+      ],
+      [
+       -100.99109983,
+       59.99924006
+      ],
+      [
+       -101.02029983,
+       59.99925006
+      ],
+      [
+       -101.03899983,
+       59.99925006
+      ],
+      [
+       -101.08969983,
+       59.99925006
+      ],
+      [
+       -101.11999983,
+       59.99923006
+      ],
+      [
+       -101.13499983,
+       59.99922006
+      ],
+      [
+       -101.13839983,
+       59.99923006
+      ],
+      [
+       -101.16519983,
+       59.99924006
+      ],
+      [
+       -101.20189983,
+       59.99925006
+      ],
+      [
+       -101.29659983,
+       59.99923006
+      ],
+      [
+       -101.31019983,
+       59.99923006
+      ],
+      [
+       -101.33559983,
+       59.99924006
+      ],
+      [
+       -101.36019983,
+       59.99925006
+      ],
+      [
+       -101.41749983,
+       59.99926006
+      ],
+      [
+       -101.46359983,
+       59.99924006
+      ],
+      [
+       -101.48539983,
+       59.99923006
+      ],
+      [
+       -101.50399983,
+       59.99924006
+      ],
+      [
+       -101.53939983,
+       59.99926006
+      ],
+      [
+       -101.61379983,
+       59.99925006
+      ],
+      [
+       -101.65309983,
+       59.99924006
+      ],
+      [
+       -101.66059983,
+       59.99923006
+      ],
+      [
+       -101.70089983,
+       59.99925006
+      ],
+      [
+       -101.75649983,
+       59.99926006
+      ],
+      [
+       -101.79659983,
+       59.99925006
+      ],
+      [
+       -101.83399983,
+       59.99922006
+      ],
+      [
+       -101.83579983,
+       59.99922006
+      ],
+      [
+       -101.86619983,
+       59.99924006
+      ],
+      [
+       -101.93159983,
+       59.99925006
+      ],
+      [
+       -101.96979983,
+       59.99924006
+      ],
+      [
+       -102.00047554,
+       59.99922641
+      ],
+      [
+       -102.00759119,
+       59.99922007
+      ],
+      [
+       -102.0075903,
+       59.98520875
+      ],
+      [
+       -102.00759405,
+       59.92739404
+      ],
+      [
+       -102.00759613,
+       59.9134645
+      ],
+      [
+       -102.00760311,
+       59.8888682
+      ],
+      [
+       -102.00760416,
+       59.88352617
+      ],
+      [
+       -102.00760898,
+       59.85893957
+      ],
+      [
+       -102.00761064,
+       59.84533657
+      ],
+      [
+       -102.00761128,
+       59.8338256
+      ],
+      [
+       -102.00761101,
+       59.80175559
+      ],
+      [
+       -102.00760917,
+       59.77574255
+      ],
+      [
+       -102.00760751,
+       59.7400316
+      ],
+      [
+       -102.00760796,
+       59.68428667
+      ],
+      [
+       -102.00760779,
+       59.67202761
+      ],
+      [
+       -102.00760613,
+       59.63216682
+      ],
+      [
+       -102.00760389,
+       59.60329737
+      ],
+      [
+       -102.00759983,
+       59.57541194
+      ],
+      [
+       -102.00759616,
+       59.56241569
+      ],
+      [
+       -102.00758752,
+       59.52707571
+      ],
+      [
+       -102.00758645,
+       59.52269116
+      ],
+      [
+       -102.00758545,
+       59.48836277
+      ],
+      [
+       -102.00758591,
+       59.46606285
+      ],
+      [
+       -102.00758503,
+       59.44215708
+      ],
+      [
+       -102.00758496,
+       59.41039822
+      ],
+      [
+       -102.00758449,
+       59.38071633
+      ],
+      [
+       -102.00758469,
+       59.36582998
+      ],
+      [
+       -102.0075842,
+       59.35440013
+      ],
+      [
+       -102.00758308,
+       59.34558673
+      ],
+      [
+       -102.00758246,
+       59.33403964
+      ],
+      [
+       -102.00758124,
+       59.31118902
+      ],
+      [
+       -102.0075809,
+       59.2821591
+      ],
+      [
+       -102.00758136,
+       59.25716213
+      ],
+      [
+       -102.00758064,
+       59.23849575
+      ],
+      [
+       -102.00757894,
+       59.19423363
+      ],
+      [
+       -102.00757722,
+       59.1252995
+      ],
+      [
+       -102.00757521,
+       59.09321664
+      ],
+      [
+       -102.00757272,
+       59.07590101
+      ],
+      [
+       -102.0075553,
+       59.00589368
+      ],
+      [
+       -102.00755005,
+       58.97798869
+      ],
+      [
+       -102.0075483,
+       58.96338085
+      ],
+      [
+       -102.00754708,
+       58.94049351
+      ],
+      [
+       -102.00754986,
+       58.92355064
+      ],
+      [
+       -102.00755197,
+       58.91062903
+      ],
+      [
+       -102.00755266,
+       58.89078562
+      ],
+      [
+       -102.00754679,
+       58.82959298
+      ],
+      [
+       -102.00754614,
+       58.82287441
+      ],
+      [
+       -102.0075448,
+       58.80486905
+      ],
+      [
+       -102.0075439,
+       58.78501837
+      ],
+      [
+       -102.0075419,
+       58.76810584
+      ],
+      [
+       -102.00753834,
+       58.74196334
+      ],
+      [
+       -102.0075341,
+       58.70589891
+      ],
+      [
+       -102.00753304,
+       58.68018809
+      ],
+      [
+       -102.0075329,
+       58.67672475
+      ],
+      [
+       -102.00753306,
+       58.65612
+      ],
+      [
+       -102.00753136,
+       58.6234104
+      ],
+      [
+       -102.00752865,
+       58.5861663
+      ],
+      [
+       -102.00750445,
+       58.51185091
+      ],
+      [
+       -102.00750414,
+       58.51091854
+      ],
+      [
+       -102.00749722,
+       58.48889286
+      ],
+      [
+       -102.00748731,
+       58.46127728
+      ],
+      [
+       -102.00747874,
+       58.43452417
+      ],
+      [
+       -102.00747169,
+       58.41741352
+      ],
+      [
+       -102.0074678,
+       58.3991366
+      ],
+      [
+       -102.0074658,
+       58.38778526
+      ],
+      [
+       -102.00746453,
+       58.38059831
+      ],
+      [
+       -102.00745907,
+       58.32500335
+      ],
+      [
+       -102.00745834,
+       58.28519525
+      ],
+      [
+       -102.00745753,
+       58.26644876
+      ],
+      [
+       -102.00744717,
+       58.12598953
+      ],
+      [
+       -102.00744207,
+       58.02738541
+      ],
+      [
+       -102.00743803,
+       57.94893053
+      ],
+      [
+       -102.00741559,
+       57.50640625
+      ],
+      [
+       -102.00740658,
+       57.32544024
+      ],
+      [
+       -102.00740099,
+       57.21237679
+      ],
+      [
+       -102.00739548,
+       57.11003059
+      ],
+      [
+       -102.00739548,
+       57.11001702
+      ],
+      [
+       -102.00023405,
+       57.11004075
+      ],
+      [
+       -100.58090079,
+       57.11004356
+      ],
+      [
+       -100.58084439,
+       57.11004322
+      ],
+      [
+       -99.40028766,
+       57.11004555
+      ],
+      [
+       -99.40013429,
+       57.11004477
+      ],
+      [
+       -99.40013429,
+       57.11010795
+      ],
+      [
+       -99.40013429,
+       57.1101767
+      ],
+      [
+       -99.40014618,
+       59.99921709
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "alert_code": "SPS",
+    "alert_type": "statement",
+    "alert_name_en": "special weather statement",
+    "alert_name_fr": "bulletin météorologique spécial",
+    "alert_short_name_en": "Special weather",
+    "alert_short_name_fr": "Météorologique spécial",
+    "publication_datetime": "2026-10-22T09:28:05.749Z",
+    "expiration_datetime": "2026-10-23T01:28:05.749Z",
+    "validity_datetime": "2026-10-24T00:00:00.000Z",
+    "event_end_datetime": "2026-10-25T12:00:00.000Z",
+    "alert_text_en": "A significant Fall storm will impact northern Manitoba beginning Friday evening and will persist through the weekend.\n\nThe precipitation with this storm will begin as rain for most communities then transition to heavy, wet snow. Current forecast guidance suggests total snowfall amounts of 15 to 25 cm are possible, with  the highest snowfall accumulations over Brochet and Tadoule Lake. Rainfall totals are forecast to be in the range of 20 to 40 mm. \n\nStrong winds are also forecast,  with wind gusts possibly up to 90 km/h. Significantly reduced visibilities in blowing snow are expected when these winds combine with falling snow. \n\nFreezing rain is also likely with this storm, specifically for Lynn Lake, Tadoule Lake, and Brochet.\n\nConditions will improve on Sunday as the snow tapers off and winds diminish.\n\nPlease continue to monitor alerts and forecasts issued by Environment Canada. To report severe weather, send an email to MBstorm@ec.gc.ca, call 1-800-239-0484 or post reports on social media using #MBStorm.",
+    "alert_text_fr": "Une importante tempête automnale touchera le nord du Manitoba à compter de vendredi soir, puis elle persistera toute la fin de semaine.\n\nLes précipitations associées à cette tempête commenceront à tomber sous la forme de pluie sur la plupart des collectivités, puis elles se changeront en neige lourde et mouillée. Selon les modèles de prévision actuels, une quantité totale de 15 à 25 cm de neige est possible; l'accumulation la plus importante devrait survenir à Brochet et à Tadoule Lake. Les quantités totales de pluie devraient être de l'ordre de 20 à 40 mm.\n\nOn prévoit également des vents forts qui pourraient souffler en rafales jusqu'à 90 km/h. On prévoit une visibilité considérablement réduite dans la poudrerie sous l'effet conjoint de ces vents et de la neige qui tombera.\n\nDe plus, de la pluie verglaçante sera probable sous l'effet de ce système, plus précisément à Lynn Lake, à Tadoule Lake et à Brochet.\n\nLes conditions s'amélioreront dimanche à mesure que la neige cessera peu à peu et que les vents faibliront.\n\nVeuillez continuer à surveiller les alertes et les prévisions émises par Environnement Canada. Pour signaler du temps violent, envoyez un courriel à meteoMB@ec.gc.ca, appelez au 1-800-239-0484 ou publiez un message sur les réseaux sociaux en utilisant #MBMeteo.",
+    "risk_colour_en": null,
+    "risk_colour_fr": null,
+    "confidence_en": null,
+    "confidence_fr": null,
+    "impact_en": null,
+    "impact_fr": null,
+    "feature_name_en": "Brochet",
+    "feature_name_fr": "Brochet",
+    "province": "MB",
+    "status_en": "issued",
+    "status_fr": "émis",
+    "feature_id": "fea1-1496"
+   }
+  }
+ ],
+ "numberMatched": 7,
+ "numberReturned": 7,
+ "timeStamp": "2026-10-22T18:17:59.930768Z"
+}

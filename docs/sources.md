@@ -13,7 +13,7 @@ The executable inventory is [`src/collector/registry.ts`](../src/collector/regis
 | Public cameras                      | Statens vegvesen, Digitraffic                                      | Selected public publisher-operated imagery. Snapshot time, update cadence and playback permission vary.                                   |
 | Satellite/context                   | NASA FIRMS, Copernicus Emergency Management Service                | Thermal observations and emergency mapping areas; neither establishes incident severity or affected population.                           |
 | Worldwide natural hazards           | USGS earthquakes, GDACS alerts                                     | Structured records published without a model. Points are epicentres or alert centroids, not impact footprints.                            |
-| Regional hazard warnings            | NWS storm-based warnings                                           | Issuer warnings published without a model. Points are polygon centres with a radius covering the warned area, not exact locations.        |
+| Regional hazard warnings            | NWS storm-based warnings, ECCC warnings                            | Issuer warnings published without a model. Points are polygon centres with a radius covering the warned area, not exact locations.        |
 
 Passenger-train circulation and institutional-announcement feeds were disabled after they overwhelmed the feed. Fire/thermal coverage can still dominate. Adding more endpoints without a usefulness test would repeat that failure.
 
@@ -61,6 +61,23 @@ NWS content is U.S. public domain and may be used for any lawful purpose as long
 | Unknown      | unknown       |
 
 CAP severity states a threat to life or property, not observed harm, so each level maps one step down and Extreme never reaches critical. In the messages checked on 22 October 2026, severe thunderstorm, flash flood and flood warnings were Severe, tornado warnings were Extreme and cancellations were Minor. Tornado and flash flood emergencies don't change the mapping, because their wording states a threat rather than counted casualties. VTEC TO, SV, EW, SQ and DS warnings map to the `severe_weather` activity, and FF, FA and FL warnings map to `flood`.
+
+## Canada warnings
+
+ECCC supplies current public weather alerts through the MSC GeoMet OGC API at `api.weather.gc.ca`, one GeoJSON feature per alert per forecast region, each with the region's polygon. On 22 October 2026 the unfiltered collection held 53 features: 11 warnings, 30 special weather statements and 12 fog and frost advisories, 11 of them already ended. The source queries warnings only, which returned 11 features in 32 kB. Watches, advisories and statements are not collected. The query asks for up to 500 features, and a response whose `numberMatched` differs from the features returned fails visibly rather than dropping warnings.
+
+Each record uses ECCC's feature ID, which joins the alert and the forecast region. Two polls 20 minutes apart on 22 October 2026 caught ECCC reissuing nine features, first published at 13:25 UTC and again at 18:28 or 18:30, under unchanged IDs. A reissued warning is therefore a revision of the same record. A wind warning and a blizzard warning for the same region are separate records. The status `ended` marks the warning cancelled, since ECCC ends warnings explicitly. The event starts at ECCC's validity time and ends at its stated event end, or at the message expiry when no event end is given. Each record keeps the English and French alert names and text unchanged, the status, colour, ECCC's impact and confidence ratings, the region and province, and the issue, validity, event-end and expiry times. The country is CA. The map point is the centre of the region's bounding box and the radius reaches its farthest vertex, so the circle covers the whole region and some ground outside it.
+
+The [ECCC Data Services End-use Licence](https://eccc-msc.github.io/open-data/licence/readme_en/) (version 2.1.1, checked 22 October 2026) grants a worldwide, royalty-free, perpetual licence to copy, publish, distribute and adapt the information, including commercially. It requires the attribution "Data Source: Environment and Climate Change Canada" with a link to the licence where possible, forbids implying endorsement, provides the data as is, and requires weather warnings to be reproduced without altering their content or intent. Warning text is therefore kept verbatim in both languages, and World Watch's title, impact label and point are its own derivations. The [MSC Open Data usage policy](https://eccc-msc.github.io/open-data/usage-policy/readme_en/) asks users above 86,400 requests a day to get in touch and asks for a meaningful User-Agent. A five-minute poll makes 288.
+
+| ECCC colour | Impact      |
+| ----------- | ----------- |
+| Yellow      | minor       |
+| Orange      | significant |
+| Red         | severe      |
+| None        | unknown     |
+
+ECCC's colour is its own rating of expected impact, not observed harm. Red, ECCC's "very dangerous" level, still maps to severe and never to critical. Hurricane and tropical storm warnings map to the `tropical_cyclone` activity, storm surge warnings to `flood`, and every other warning, including rainfall, wind, blizzard, heat and cold, to `severe_weather`. A rainfall warning forecasts heavy rain and does not state flooding, so it isn't mapped to `flood`.
 
 ## Admission contract
 

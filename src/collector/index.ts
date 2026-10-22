@@ -19,6 +19,7 @@ import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
 import { parseUsgs } from "./adapters/usgs.js";
 import { GDACS_PAGE_SIZE, parseGdacs } from "./adapters/gdacs.js";
 import { parseNws } from "./adapters/nws.js";
+import { parseEccc } from "./adapters/eccc.js";
 import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
@@ -281,6 +282,9 @@ export async function collectSources(
         }
         case "nws_geojson":
           observations = parseNws(source, JSON.parse(response.text));
+          break;
+        case "eccc_geojson":
+          observations = parseEccc(source, JSON.parse(response.text));
           break;
         case "paris_json": {
           const first = JSON.parse(response.text);

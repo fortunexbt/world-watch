@@ -22,6 +22,7 @@ export const APPROVED_HOSTS = new Set([
   "earthquake.usgs.gov",
   "www.gdacs.org",
   "api.weather.gov",
+  "api.weather.gc.ca",
 ]);
 function idmcFilestore(u: URL) {
   return (
