@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { collectSources } from "../src/collector/index.js";
@@ -18,7 +19,7 @@ const DEMO_SOURCES = [
   "ca-eccc-warnings",
 ];
 const API_PORT = 8797;
-const PREVIEW_PORT = 4319;
+const PREVIEW_PORT = Number(process.env.EW_PREVIEW_PORT || 4319);
 const REFRESH_MS = 5 * 60000;
 const root = path.resolve(import.meta.dirname, "..");
 const api = `http://127.0.0.1:${API_PORT}`;
@@ -70,6 +71,8 @@ const wrangler = path.join(root, "node_modules/.bin/wrangler");
 const state = path.join(temp, "state");
 
 try {
+  // A server already on either port would answer the readiness checks below.
+  for (const port of [API_PORT, PREVIEW_PORT]) await assertFree(port);
   if (!existsSync(path.join(root, "dist/index.html")))
     execFileSync("npm", ["run", "build"], { cwd: root, stdio: "inherit" });
   execFileSync(
@@ -132,6 +135,14 @@ try {
 } catch (error) {
   console.error(String(error));
   await stop(1);
+}
+
+function assertFree(port: number) {
+  return new Promise<void>((resolve, reject) => {
+    const probe = createServer()
+      .once("error", () => reject(Error(`demo_port_in_use: ${port}`)))
+      .listen(port, "127.0.0.1", () => probe.close(() => resolve()));
+  });
 }
 
 async function waitFor(url: string) {
