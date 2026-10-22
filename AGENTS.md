@@ -32,7 +32,7 @@ Tests must inject upstream fetches and model execution. Never seed production wi
 - Treat `src/server/index.ts` and `src/client/App.tsx` as shared integration points. Coordinate narrow edits; extract cohesive modules when justified.
 - Append migrations. Never rewrite a migration already applied to a deployment. Keep `deploy/migrations/` and the Sites `drizzle/` migration sequence consistent.
 - Protect deletion across observations, revisions, results, brief caches, outbox, local spools and exports. Preserve accounting for already consumed model calls.
-- Never commit credentials, account-specific hosting state, local runtime files, raw private receipts or source corpora. Keep environment files and subscription authentication local and untracked.
+- Never commit credentials, account-specific hosting state, local runtime files, raw private receipts or source corpora. The one exception is `eval/severity/dataset.json`, a small set of openly licensed Wikipedia excerpts (CC BY-SA 4.0) that the severity evaluation needs in order to reproduce. Keep environment files and subscription authentication local and untracked.
 - Do not copy subscription credentials to another host. A separately hosted worker needs its own supported sign-in and explicit authorization.
 
 ## Definition of a useful change

@@ -582,14 +582,14 @@ const NEGATION = compile((lexicon) =>
 const NEGATION_AFTER = category((lexicon) => lexicon.negationAfter);
 const HYPOTHETICAL = category((lexicon) => lexicon.hypothetical);
 const FIRE_OR_DISPLACEMENT = category((lexicon) => lexicon.fireOrDisplacement);
-const CONSEQUENCE = category((lexicon) => [
+export const CONSEQUENCE = category((lexicon) => [
   ...lexicon.consequence,
   ...lexicon.fireOrDisplacement,
 ]);
 const CRITICAL_SCALE = category((lexicon) => lexicon.criticalScale);
 const ACTIONABLE_INSTRUCTION = category((lexicon) => lexicon.instruction);
 
-function normalize(value: string): string {
+export function normalize(value: string): string {
   return fold(value).toLocaleLowerCase().replace(/\s+/gu, " ").trim();
 }
 
