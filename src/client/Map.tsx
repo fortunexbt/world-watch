@@ -12,6 +12,7 @@ import type { PublicCamera } from "../shared/media";
 import type { GeoFeature } from "../shared/geospatial";
 import type { IncidentView } from "../shared/contracts";
 import { viewportBounds } from "./bounds";
+import { glyphs, HAZARDS, magnitude, markerIcon, markerScale } from "./hazards";
 export const colors: Record<string, string> = {
   informational: "#73B6E6",
   minor: "#E4D06C",
@@ -20,6 +21,49 @@ export const colors: Record<string, string> = {
   critical: "#C55064",
   unknown: "#9BA9B3",
 };
+/** Ascending severity; a cluster takes the colour of its most severe member. */
+const severity = [
+  "unknown",
+  "informational",
+  "minor",
+  "significant",
+  "severe",
+  "critical",
+];
+/** Traces an impact shape on a 32-unit box centred on the origin. */
+function traceImpact(ctx: CanvasRenderingContext2D, impact: string) {
+  ctx.beginPath();
+  if (impact === "significant") {
+    ctx.moveTo(0, -15);
+    ctx.lineTo(14, 12);
+    ctx.lineTo(-14, 12);
+    ctx.closePath();
+  } else if (impact === "severe") {
+    ctx.moveTo(0, -16);
+    ctx.lineTo(14, 0);
+    ctx.lineTo(0, 16);
+    ctx.lineTo(-14, 0);
+    ctx.closePath();
+  } else if (impact === "critical") {
+    ctx.rect(-5, -16, 10, 32);
+    ctx.rect(-16, -5, 32, 10);
+  } else if (impact === "minor") {
+    ctx.rect(-14, -7, 28, 14);
+  } else {
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+  }
+}
+function canvasImage(
+  size: number,
+  draw: (ctx: CanvasRenderingContext2D) => void,
+) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.translate(size / 2, size / 2);
+  draw(ctx);
+  return ctx.getImageData(0, 0, size, size);
+}
 // The whole width of the world, clamped short of the polar latitudes that
 // Mercator inflates, so populated land fills the frame on any screen.
 const worldFrame: [[number, number], [number, number]] = [
@@ -121,6 +165,9 @@ export default function WorldMap({
           id: i.id,
           impact: i.impact,
           color: colors[i.impact],
+          rank: severity.indexOf(i.impact),
+          icon: markerIcon(i),
+          scale: markerScale(magnitude(i)),
           selected: i.id === selected ? 1 : 0,
           approx: i.location!.accuracy !== "point",
         },
@@ -208,6 +255,7 @@ export default function WorldMap({
         cluster: true,
         clusterMaxZoom: 10,
         clusterRadius: 40,
+        clusterProperties: { rank: ["max", ["get", "rank"]] },
       });
       m.addLayer({
         id: "clusters",
@@ -225,8 +273,15 @@ export default function WorldMap({
             32,
           ],
           "circle-color": "#304854",
-          "circle-stroke-color": "#A6B5BE",
-          "circle-stroke-width": 1,
+          "circle-stroke-color": [
+            "to-color",
+            [
+              "at",
+              ["get", "rank"],
+              ["literal", severity.map((impact) => colors[impact])],
+            ],
+          ],
+          "circle-stroke-width": 1.5,
         },
       });
       m.addLayer({
@@ -241,13 +296,33 @@ export default function WorldMap({
         },
         paint: { "text-color": "#E7EDF1" },
       });
+      // GDACS and other area records are centroids, so a soft ring stands in for an unknown footprint.
+      m.addLayer({
+        id: "area-cue",
+        type: "circle",
+        source: "events",
+        filter: ["all", ["!", ["has", "point_count"]], ["get", "approx"]],
+        paint: {
+          "circle-radius": ["*", ["get", "scale"], 30],
+          "circle-color": ["get", "color"],
+          "circle-opacity": 0.14,
+          "circle-blur": 0.6,
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-opacity": 0.35,
+          "circle-stroke-width": 1,
+        },
+      });
       m.addLayer({
         id: "points-halo",
         type: "circle",
         source: "events",
         filter: ["!", ["has", "point_count"]],
         paint: {
-          "circle-radius": ["case", ["==", ["get", "selected"], 1], 15, 9],
+          "circle-radius": [
+            "*",
+            ["get", "scale"],
+            ["case", ["==", ["get", "selected"], 1], 15, 9],
+          ],
           "circle-color": ["get", "color"],
           "circle-opacity": 0.12,
           "circle-stroke-color": ["get", "color"],
@@ -260,45 +335,54 @@ export default function WorldMap({
         },
       });
       for (const [impact, color] of Object.entries(colors)) {
-        const canvas = document.createElement("canvas");
-        canvas.width = canvas.height = 48;
-        const ctx = canvas.getContext("2d")!;
-        ctx.translate(24, 24);
-        ctx.fillStyle = color;
-        ctx.strokeStyle = "#0D151C";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        if (impact === "significant") {
-          ctx.moveTo(0, -15);
-          ctx.lineTo(14, 12);
-          ctx.lineTo(-14, 12);
-          ctx.closePath();
-        } else if (impact === "severe") {
-          ctx.moveTo(0, -16);
-          ctx.lineTo(14, 0);
-          ctx.lineTo(0, 16);
-          ctx.lineTo(-14, 0);
-          ctx.closePath();
-        } else if (impact === "critical") {
-          ctx.rect(-5, -16, 10, 32);
-          ctx.rect(-16, -5, 32, 10);
-        } else if (impact === "minor") {
-          ctx.rect(-14, -7, 28, 14);
-        } else {
-          ctx.arc(0, 0, 12, 0, Math.PI * 2);
-        }
-        if (impact === "unknown") {
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 4;
-          ctx.stroke();
-        } else {
-          ctx.fill();
-          ctx.stroke();
-        }
         if (!m.hasImage("impact-" + impact))
-          m.addImage("impact-" + impact, ctx.getImageData(0, 0, 48, 48), {
-            pixelRatio: 2,
-          });
+          m.addImage(
+            "impact-" + impact,
+            canvasImage(48, (ctx) => {
+              traceImpact(ctx, impact);
+              ctx.fillStyle = color;
+              ctx.strokeStyle = impact === "unknown" ? color : "#0D151C";
+              ctx.lineWidth = impact === "unknown" ? 4 : 3;
+              if (impact !== "unknown") ctx.fill();
+              ctx.stroke();
+            }),
+            { pixelRatio: 2 },
+          );
+        // Hazard glyph on an impact-coloured disc, with the impact shape as a
+        // corner badge so impact never rests on colour alone. Unknown stays hollow.
+        for (const hazard of HAZARDS)
+          if (!m.hasImage(`hazard-${hazard}-${impact}`))
+            m.addImage(
+              `hazard-${hazard}-${impact}`,
+              canvasImage(64, (ctx) => {
+                const hollow = impact === "unknown";
+                ctx.beginPath();
+                ctx.arc(0, 0, 22, 0, Math.PI * 2);
+                ctx.fillStyle = hollow ? "#0D151C" : color;
+                ctx.strokeStyle = hollow ? color : "#0D151C";
+                ctx.lineWidth = hollow ? 4 : 3;
+                ctx.fill();
+                ctx.stroke();
+                ctx.save();
+                ctx.scale(1.4, 1.4);
+                ctx.translate(-12, -12);
+                ctx.lineWidth = 2.3;
+                ctx.lineCap = ctx.lineJoin = "round";
+                ctx.strokeStyle = hollow ? color : "#0D151C";
+                ctx.stroke(new Path2D(glyphs[hazard]));
+                ctx.restore();
+                if (hollow) return;
+                ctx.translate(20, -20);
+                ctx.scale(0.45, 0.45);
+                traceImpact(ctx, impact);
+                ctx.fillStyle = color;
+                ctx.strokeStyle = "#0D151C";
+                ctx.lineWidth = 6;
+                ctx.stroke();
+                ctx.fill();
+              }),
+              { pixelRatio: 2 },
+            );
       }
       m.addLayer({
         id: "points",
@@ -319,7 +403,9 @@ export default function WorldMap({
         source: "events",
         filter: ["!", ["has", "point_count"]],
         layout: {
-          "icon-image": ["concat", "impact-", ["get", "impact"]],
+          "icon-image": ["get", "icon"],
+          "icon-size": ["get", "scale"],
+          "symbol-sort-key": ["get", "rank"],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true,
         },

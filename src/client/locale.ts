@@ -158,7 +158,9 @@ export const italian: Record<string, string> = {
   "Open contextual search": "Apri ricerca contestuale",
   "Public gatherings, disruption & official notices":
     "Raduni pubblici, disagi e avvisi ufficiali",
-  "Reported impact legend": "Legenda dell’impatto segnalato",
+  "Map legend": "Legenda della mappa",
+  Legend: "Legenda",
+  "approximate area": "area approssimativa",
   "reported impact": "impatto segnalato",
   pending: "in attesa",
   Connecting: "Connessione in corso",
