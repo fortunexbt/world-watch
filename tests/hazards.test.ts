@@ -142,7 +142,8 @@ test("GDACS events keep type plus event ID, episode revision, UTC dates, centroi
     "https://www.gdacs.org/report.aspx?eventid=1001338&episodeid=29&eventtype=TC",
   );
   assert.equal(champi.official?.effective_at, "2026-10-14T12:00:00.000Z");
-  assert.equal(champi.official?.expires_at, "2026-10-22T12:00:00.000Z");
+  assert.equal(champi.official?.expires_at, null);
+  assert.equal(champi.official?.current_listing, true);
   assert.equal(champi.source_updated_at, "2026-10-21T15:01:38.000Z");
   assert.equal(champi.official?.activity, "tropical_cyclone");
   assert.equal(champi.official?.impact, "severe");
@@ -158,6 +159,7 @@ test("GDACS events keep type plus event ID, episode revision, UTC dates, centroi
   assert.match(excerpt.notice, /not for decision making without confirmation/);
   assert.match(excerpt.notice, /not an impact footprint/);
   assert.match(excerpt.notice, /third-party material/);
+  assert.match(excerpt.notice, /while GDACS lists it as current/);
   const japan = byId(rows, "EQ-1572939");
   assert.equal(japan.source_geo?.country, "JP");
   assert.equal(japan.official?.activity, "earthquake");
@@ -196,15 +198,7 @@ test("a new GDACS episode is a new revision of the same event, and every listed 
   assert(rows.every((r) => r.official?.impact !== "critical"));
 });
 
-test("a full GDACS page fails visibly instead of silently dropping events", () => {
-  const full = {
-    ...gdacs,
-    features: Array.from({ length: 100 }, () => gdacs.features[0]),
-  };
-  assert.throws(
-    () => parseGdacs(gdacsSource, full),
-    /gdacs_pagination_required/,
-  );
+test("malformed GDACS pages fail visibly and invalid points are dropped", () => {
   assert.throws(
     () => parseGdacs(gdacsSource, { features: {} }),
     /invalid_gdacs_response/,
@@ -242,13 +236,20 @@ test("worldwide sources survive country filtering and collect through dedicated 
       },
       fetch: async (url) => {
         requested.push(String(url));
+        if (String(url).endsWith("/reconcile"))
+          return Response.json({ changed: 0, more: false });
         return Response.json(String(url) === USGS_FEED_URL ? usgs : gdacs);
       },
       maxRequests: 40,
       now: () => Date.parse("2026-10-21T18:00:00Z"),
     },
   );
-  assert.deepEqual(requested, [USGS_FEED_URL, GDACS_EVENTS_URL]);
+  // GDACS states which events are current, so a complete read reconciles that set; USGS is a rolling window.
+  assert.deepEqual(requested, [
+    USGS_FEED_URL,
+    GDACS_EVENTS_URL,
+    "https://isolated.invalid/api/sources/global-gdacs-alerts/reconcile",
+  ]);
   assert.deepEqual(
     results.map((r) => [r.source_id, r.status, r.received]),
     [
@@ -461,4 +462,201 @@ test("USGS epicentres take a country only well inside one map polygon, never off
   assert.equal(country("Iran-Iraq border region"), null);
   assert.equal(country("39 km W of Mosteiros, Portugal"), null);
   assert.match(record(rows[0]).notice, /left empty offshore or near a coast or border/);
+});
+
+/** A GDACS page of `count` current events, cloned from a real current earthquake record. */
+const gdacsPage = (count: number, first = 0) => ({
+  ...gdacs,
+  features: Array.from({ length: count }, (_, i) => {
+    const feature = structuredClone(gdacs.features[3]);
+    feature.properties.eventid = 2000000 + first + i;
+    return feature;
+  }),
+});
+async function collectGdacs(
+  pages: Record<string, unknown>,
+  options: { maxRequests?: number; source?: SourceRecord } = {},
+) {
+  const requested: string[] = [];
+  const accepted: ObservationInput[] = [];
+  const reconciled: string[][] = [];
+  const health: { error: string | null }[] = [];
+  const results = await collectSources(
+    {
+      EW_API_URL: "https://isolated.invalid",
+      EW_COLLECTOR_TOKEN: "isolated-fixture",
+    },
+    {
+      sources: [options.source ?? gdacsSource],
+      register: async () => {},
+      checkpoint: async () => ({}),
+      recordHealth: async (_, h) => {
+        health.push(h);
+      },
+      ingest: async (rows) => {
+        accepted.push(...rows);
+      },
+      fetch: async (url, init) => {
+        requested.push(String(url));
+        if (String(url).endsWith("/reconcile")) {
+          reconciled.push(JSON.parse(String(init?.body)).active_native_ids);
+          return Response.json({ changed: 0, more: false });
+        }
+        const page = pages[String(url)];
+        return page === undefined
+          ? new Response(null, { status: 204 })
+          : Response.json(page);
+      },
+      maxRequests: options.maxRequests ?? 40,
+      now: () => Date.parse("2026-10-21T18:00:00Z"),
+    },
+  );
+  return { results, requested, accepted, reconciled, health };
+}
+const page = (n: number) => `${GDACS_EVENTS_URL}&pagenumber=${n}`;
+
+test("GDACS pages past 100 events and publishes and reconciles all 101", async () => {
+  const run = await collectGdacs({
+    [GDACS_EVENTS_URL]: gdacsPage(100),
+    [page(2)]: gdacsPage(1, 100),
+  });
+  assert.deepEqual(run.requested.slice(0, 2), [GDACS_EVENTS_URL, page(2)]);
+  assert.deepEqual(
+    run.results.map((r) => [r.status, r.received]),
+    [["ok", 101]],
+  );
+  assert.equal(new Set(run.accepted.map((o) => o.native_id)).size, 101);
+  assert.equal(run.reconciled.length, 1);
+  assert.equal(run.reconciled[0].length, 101);
+  // Exactly 100 events: GDACS answers the next page with 204 No Content.
+  const exact = await collectGdacs({ [GDACS_EVENTS_URL]: gdacsPage(100) });
+  assert.deepEqual(exact.requested.slice(0, 2), [GDACS_EVENTS_URL, page(2)]);
+  assert.equal(exact.results[0].received, 100);
+  assert.equal(exact.reconciled[0].length, 100);
+  // An event updated between page requests can move pages; it is published once.
+  const shifted = await collectGdacs({
+    [GDACS_EVENTS_URL]: gdacsPage(100),
+    [page(2)]: gdacsPage(2, 99),
+  });
+  assert.equal(shifted.results[0].received, 101);
+});
+
+test("an unfinished GDACS paging run publishes and reconciles nothing", async () => {
+  const full = Object.fromEntries(
+    [1, 2, 3, 4, 5, 6, 7].map((n) => [
+      n === 1 ? GDACS_EVENTS_URL : page(n),
+      gdacsPage(100, n * 100),
+    ]),
+  );
+  const capped = await collectGdacs(full);
+  assert.equal(capped.requested.length, 3);
+  assert.deepEqual(capped.results[0].status, "error");
+  assert.equal(capped.results[0].error, "gdacs_source_page_budget");
+  assert.equal(capped.accepted.length, 0);
+  assert.equal(capped.reconciled.length, 0);
+  // The run-wide request budget stops paging even when the source allows more pages.
+  const exhausted = await collectGdacs(full, {
+    maxRequests: 6,
+    source: {
+      ...gdacsSource,
+      config: { ...gdacsSource.config, max_pages: 10 },
+    },
+  });
+  assert.equal(exhausted.requested.length, 6);
+  assert.equal(exhausted.results[0].error, "collector_request_budget");
+  assert.equal(exhausted.accepted.length, 0);
+  assert.equal(exhausted.reconciled.length, 0);
+  assert.equal(exhausted.health.at(-1)?.error, "collector_request_budget");
+});
+
+test("a GDACS event stays live while listed as current, however old, and ends without cancellation when GDACS stops listing it", async () => {
+  const s = fixtureServer();
+  try {
+    const day = 86400000;
+    let clock = Date.now();
+    // GDACS writes UTC without a zone designator.
+    const gdacsTime = (ms: number) => new Date(ms).toISOString().slice(0, 19);
+    const listed = structuredClone(gdacs);
+    const tc = listed.features.find(
+      (f: any) => f.properties.eventid === 1001338,
+    );
+    tc.properties.fromdate = gdacsTime(clock - 10 * day);
+    tc.properties.todate = gdacsTime(clock - 3 * day);
+    tc.properties.datemodified = gdacsTime(clock - 3 * day);
+    const withdrawn = {
+      ...listed,
+      features: listed.features.filter((f: any) => f !== tc),
+    };
+    const checkpoints = new Map<string, any>();
+    const run = (payload: unknown) =>
+      collectSources(
+        {
+          EW_API_URL: "https://isolated.invalid",
+          EW_COLLECTOR_TOKEN: "isolated-fixture",
+        },
+        {
+          sources: [gdacsSource],
+          register: (sources) =>
+            s.api("/api/sources", { sources }, "fixture-collector"),
+          checkpoint: async (id) => checkpoints.get(id) ?? {},
+          recordHealth: async (id, h) => {
+            checkpoints.set(id, h.checkpoint);
+          },
+          request: async (path, body) => {
+            const r = await s.api(path, body, "fixture-collector");
+            if (r.status !== 200) throw Error(`fixture_api_${r.status}`);
+            return r.body;
+          },
+          fetch: async () => Response.json(payload),
+          now: () => clock,
+        },
+      );
+    const live = async () =>
+      ((await s.api("/api/snapshot?hours=24&include_incoming=0")).body
+        .incidents as IncidentView[]).map((i) => i.headline);
+    const champi = "Tropical Cyclone CHAMPI-26";
+    await s.api("/api/alert-rules", { id: "severe", rule: { impacts: ["severe"] } });
+
+    assert.equal((await run(listed))[0].received, 6);
+    assert.deepEqual((await live()).sort(), listed.features.map((f: any) => f.properties.name).sort());
+
+    clock += 11 * 60000;
+    assert.equal((await run(withdrawn))[0].status, "ok");
+    assert.deepEqual((await live()).sort(), withdrawn.features.map((f: any) => f.properties.name).sort());
+    const ended = ((await s.api("/api/snapshot?include_incoming=0")).body
+      .incidents as IncidentView[]).find((i) => i.headline === champi)!;
+    assert.equal(ended.version, 2);
+    assert.equal(ended.current_listing, false);
+    assert.equal(ended.cancelled, false);
+    assert.equal(ended.evidence_status, "official_advisory");
+    assert.equal(ended.impact, "severe");
+    assert.ok(Date.parse(ended.expires_at!) <= Date.now());
+    assert.deepEqual(
+      { ...s.db.prepare("SELECT reason FROM incident_revisions WHERE incident_id=? AND version=2").get(ended.id) },
+      { reason: "issuer no longer lists the event as current" },
+    );
+    assert.equal(
+      s.db.prepare("SELECT count(*) AS n FROM outbox WHERE entity_id=? AND event_type='incident.updated'").get(ended.id)?.n,
+      1,
+    );
+    // An ended event cannot raise an urgent alert.
+    assert.deepEqual(
+      { ...s.db.prepare("SELECT state,reason FROM alert_deliveries WHERE incident_id=? AND incident_version=2").get(ended.id) },
+      { state: "suppressed", reason: "expired" },
+    );
+
+    // A further complete read changes nothing, and a new episode brings the event back.
+    clock += 11 * 60000;
+    await run(withdrawn);
+    tc.properties.episodeid = 30;
+    clock += 11 * 60000;
+    await run(listed);
+    const back = ((await s.api("/api/snapshot?hours=24&include_incoming=0")).body
+      .incidents as IncidentView[]).find((i) => i.headline === champi)!;
+    assert.equal(back.version, 3);
+    assert.equal(back.current_listing, true);
+    assert.equal(back.expires_at, null);
+  } finally {
+    s.db.close();
+  }
 });

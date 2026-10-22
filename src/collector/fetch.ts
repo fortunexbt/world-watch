@@ -74,6 +74,8 @@ export type FetchOptions = {
   maxBytes?: number;
   timeoutMs?: number;
   allowHTML?: boolean;
+  /** A paged API that answers 204 past its last page; the result text is empty. */
+  allowNoContent?: boolean;
   /** Only the documented public, read-only Demos event query; never arbitrary POST. */
   demosQuery?: boolean;
 };
@@ -166,6 +168,15 @@ export async function fetchSource(
         };
         if (seconds !== null) error.retryAfter = seconds;
         throw error;
+      }
+      if (r.status === 204 && options.allowNoContent) {
+        await r.body?.cancel();
+        return {
+          notModified: false,
+          text: "",
+          contentType: "",
+          state: { last_success_at: new Date().toISOString(), failures: 0 },
+        };
       }
       const mime = r.headers.get("content-type") ?? "";
       const licensedIdmcCsv =

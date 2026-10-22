@@ -435,9 +435,10 @@ export const sourceRegistry: SourceRecord[] = [
     config: {
       format: "gdacs_geojson",
       max_bytes: 2 * 1024 * 1024,
+      max_pages: 3,
       operational_role: "structured_natural_hazard",
       coverage:
-        "Current Orange and Red events for EQ, TC, FL, VO, DR and WF. Green events are excluded because a Green-inclusive list returned exactly 100 records, an apparent page limit. Points are GDACS centroids, not impact footprints; country only when GDACS lists exactly one affected country.",
+        "Current Orange and Red events for EQ, TC, FL, VO, DR and WF, read in pages of 100 and live while GDACS lists them as current. Green events are excluded: on 22 October 2026 they added over 300 current events, mostly small wildfires, at impact minor. Points are GDACS centroids, not impact footprints; country only when GDACS lists exactly one affected country.",
     },
   },
   {

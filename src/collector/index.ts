@@ -17,7 +17,7 @@ import {
 import { configuredRegistry } from "./registry.js";
 import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
 import { parseUsgs } from "./adapters/usgs.js";
-import { parseGdacs } from "./adapters/gdacs.js";
+import { GDACS_PAGE_SIZE, parseGdacs } from "./adapters/gdacs.js";
 import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
@@ -245,9 +245,35 @@ export async function collectSources(
         case "usgs_geojson":
           observations = parseUsgs(source, JSON.parse(response.text));
           break;
-        case "gdacs_geojson":
-          observations = parseGdacs(source, JSON.parse(response.text));
+        case "gdacs_geojson": {
+          const pages = [JSON.parse(response.text)];
+          // Only a short or empty page proves the list is complete; reconciliation depends on it.
+          while (pages.at(-1)?.features?.length === GDACS_PAGE_SIZE) {
+            if (pages.length >= Number(source.config.max_pages ?? 3))
+              throw Error("gdacs_source_page_budget");
+            const page = await fetchSource(
+              `${source.url}&pagenumber=${pages.length + 1}`,
+              {},
+              {
+                ...options,
+                fetch: fetcher,
+                allowNoContent: true,
+                maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+              },
+            );
+            if (!page.text) break;
+            pages.push(JSON.parse(page.text));
+          }
+          // The list is ordered by latest observation, so an event updated between page requests can appear twice.
+          observations = [
+            ...new Map(
+              pages
+                .flatMap((page) => parseGdacs(source, page))
+                .map((o) => [o.native_id, o]),
+            ).values(),
+          ];
           break;
+        }
         case "paris_json": {
           const first = JSON.parse(response.text);
           let all = Array.isArray(first.results) ? first.results : [];
@@ -469,7 +495,11 @@ export async function collectSources(
       for (const id of Object.keys(acceptedItems))
         if (!currentIds.has(id)) delete acceptedItems[id];
       let complete = offset >= missing.length;
-      if (complete && source.config.format === "bbk") {
+      if (
+        complete &&
+        (source.config.format === "bbk" ||
+          source.config.format === "gdacs_geojson")
+      ) {
         let more = true;
         while (more && requests < maxRequests - 3) {
           const result = await request(

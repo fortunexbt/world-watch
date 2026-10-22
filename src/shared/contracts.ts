@@ -139,6 +139,8 @@ export type ObservationInput = {
     activity?: z.infer<typeof Activity>;
     impact?: z.infer<typeof Impact>;
     cancelled?: boolean;
+    /** The issuer lists the event as current and states no expiry. It stays live until reconciliation of the issuer's complete current list no longer finds it. */
+    current_listing?: boolean;
     references?: string[];
     message_type?: string;
   };
@@ -210,6 +212,8 @@ export type IncidentView = {
   superseded_by?: string;
   review_needed: boolean;
   cancelled: boolean;
+  /** Live while its issuer lists it as current; false once the issuer stops listing it. */
+  current_listing?: boolean;
 };
 export type SourceRecord = {
   id: string;

@@ -594,6 +594,9 @@ export async function ingest(e: Env, items: ObservationInput[]) {
         history: [],
         review_needed: false,
         cancelled: item.official.cancelled ?? false,
+        ...(item.official.current_listing === true
+          ? { current_listing: true }
+          : {}),
       };
       statements.push(
         stmt(
@@ -1356,8 +1359,8 @@ function defaultSignalEligible(incident: IncidentView) {
 }
 const eventTime =
     "coalesce(json_extract(view,'$.event_start'),json_extract(view,'$.published_at'))",
-  // Latest of start and expiry; '9' sorts timeless incidents after every ISO time, as incidentInWindow always keeps them.
-  windowKey = `coalesce(max(${eventTime},coalesce(json_extract(view,'$.expires_at'),${eventTime})),'9')`;
+  // Latest of start and expiry; '9' sorts timeless and issuer-current incidents after every ISO time, as incidentInWindow keeps them once started.
+  windowKey = `CASE WHEN json_extract(view,'$.current_listing') THEN '9' ELSE coalesce(max(${eventTime},coalesce(json_extract(view,'$.expires_at'),${eventTime})),'9') END`;
 /**
  * Index-backed supersets of incidentInWindow and inBbox, applied before LIMIT so a busy region or
  * stale backlog cannot hide matching incidents. A bbox reads its padded latitude band, a window its
@@ -1943,9 +1946,12 @@ async function routes(r: Request, e: Env) {
       "SELECT record FROM sources WHERE id=?",
       sourceId,
     ).first<any>();
+    const source = sourceRow && parse(sourceRow.record);
+    // BBK withdraws warnings from its complete active feed; GDACS ends events it stops listing as current.
+    const listing = source?.config?.format === "gdacs_geojson";
     if (
-      !sourceRow ||
-      parse(sourceRow.record).family !== "bbk" ||
+      !source ||
+      (source.family !== "bbk" && !listing) ||
       b.complete !== true ||
       !Array.isArray(b.active_native_ids) ||
       b.active_native_ids.length > 1000 ||
@@ -1972,7 +1978,7 @@ async function routes(r: Request, e: Env) {
       .map((v) => parse(v.view) as IncidentView)
       .filter(
         (i) =>
-          !i.cancelled &&
+          (listing ? i.current_listing === true : !i.cancelled) &&
           i.reports.length &&
           i.reports.every(
             (p: any) =>
@@ -1983,15 +1989,25 @@ async function routes(r: Request, e: Env) {
       );
     const statements: Stmt[] = [];
     for (const old of candidates.slice(0, 8)) {
-      const view = {
-        ...old,
-        version: old.version + 1,
-        cancelled: true,
-        evidence_status: "corrected",
-        updated_at: now(),
-        summary_en:
-          "This warning is no longer present in the issuer’s complete active feed. It is archived as inactive; removal alone does not establish an explicit cancellation.",
-      };
+      const time = now();
+      // Leaving a current list ends the event without cancelling it; the expiry records when World Watch saw it go.
+      const view = listing
+        ? {
+            ...old,
+            version: old.version + 1,
+            current_listing: false,
+            expires_at: time,
+            updated_at: time,
+          }
+        : {
+            ...old,
+            version: old.version + 1,
+            cancelled: true,
+            evidence_status: "corrected",
+            updated_at: time,
+            summary_en:
+              "This warning is no longer present in the issuer’s complete active feed. It is archived as inactive; removal alone does not establish an explicit cancellation.",
+          };
       statements.push(
         stmt(
           e,
@@ -2008,7 +2024,9 @@ async function routes(r: Request, e: Env) {
           view.version,
           JSON.stringify(view),
           view.updated_at,
-          "complete issuer feed withdrawal",
+          listing
+            ? "issuer no longer lists the event as current"
+            : "complete issuer feed withdrawal",
         ),
         stmt(
           e,
