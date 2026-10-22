@@ -4,7 +4,7 @@ import GeospatialPanel from "./GeospatialPanel";
 import type {GeospatialCatalog} from "../shared/geospatial";
 import type {PublicCameraCatalog} from "../shared/media";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   VolumeX,
@@ -1008,11 +1008,17 @@ export default function App() {
                 ? " · " + tr("approximate")
                 : ""}
             </p>
-            <p className="lead">
-              {language === "it" && incident.summary_it
-                ? incident.summary_it
-                : incident.summary_en}
-            </p>
+            <div className="lead">
+              <EvidenceText
+                text={
+                  language === "it" && incident.summary_it
+                    ? incident.summary_it
+                    : incident.summary_en
+                }
+                label={tr}
+                format={when}
+              />
+            </div>
             {incident.cancelled && (
               <p className="notice">
                 {tr("Cancelled or retracted. See the source update.")}
@@ -1170,7 +1176,7 @@ export default function App() {
                     tabIndex={-1}
                     lang={r.original_language}
                   >
-                    {e.text}
+                    <EvidenceText text={e.text} label={tr} format={when} />
                   </blockquote>
                 ))}
               </article>
@@ -2336,6 +2342,52 @@ function QueueReports({
   );
 }
 
+/** Structured adapters store their record as JSON; show its fields instead of raw text. */
+function EvidenceText({
+  text,
+  label,
+  format,
+}: {
+  text: string;
+  label: (key: string) => string;
+  format: (time: string) => string;
+}) {
+  let record: unknown;
+  try {
+    record = JSON.parse(text);
+  } catch {
+    return <>{text}</>;
+  }
+  if (!record || typeof record !== "object" || Array.isArray(record))
+    return <>{text}</>;
+  const { notice, ...fields } = record as Record<string, unknown>;
+  const value = (v: unknown) =>
+    Array.isArray(v)
+      ? v.join(", ")
+      : typeof v === "boolean"
+        ? label(v ? "yes" : "no")
+        : typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v)
+          ? format(v)
+          : String(v);
+  return (
+    <>
+      <dl className="evidence-fields">
+        {Object.entries(fields)
+          .filter(
+            ([, v]) =>
+              v !== null && v !== "" && !(Array.isArray(v) && !v.length),
+          )
+          .map(([k, v]) => (
+            <Fragment key={k}>
+              <dt>{label(k)}</dt>
+              <dd>{value(v)}</dd>
+            </Fragment>
+          ))}
+      </dl>
+      {typeof notice === "string" && <p className="caution">{notice}</p>}
+    </>
+  );
+}
 function evidenceAnchor(report: any, evidenceId: string) {
   return (
     "evidence-" +
