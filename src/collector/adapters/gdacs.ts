@@ -4,6 +4,8 @@ import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 export const GDACS_EVENTS_URL =
   "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=EQ;TC;FL;VO;DR;WF&alertlevel=Orange;Red";
 const PAGE_LIMIT = 100;
+/** Platform freshness rule, not a GDACS statement: a current event stays live for a day past its latest observation. */
+const VALIDITY_MS = 24 * 3600000;
 const HAZARD = {
   EQ: "earthquake",
   TC: "tropical_cyclone",
@@ -50,6 +52,8 @@ export function parseGdacs(
     const episodeId = Number.isSafeInteger(p.episodeid) ? p.episodeid : null;
     const from = utc(p.fromdate);
     if (!Object.hasOwn(HAZARD, type) || eventId === null || !from) return [];
+    // Orange and Red results include archived events; only current ones belong on the live map.
+    if (p.iscurrent !== "true") return [];
     const to = utc(p.todate);
     const modified = utc(p.datemodified) ?? from;
     const level = Object.hasOwn(GDACS_IMPACT, p.alertlevel)
@@ -107,8 +111,7 @@ export function parseGdacs(
               affected_countries: affected,
               glide: text(p.glide) || null,
               hazard_data_source: upstream,
-              current: p.iscurrent === "true",
-              notice: `GDACS automatic alert, provided as is and not for decision making without confirmation. The point is a GDACS centroid, not an impact footprint. The alert level is the event maximum across episodes and a modelled humanitarian-impact estimate, not observed harm. Hazard data originates from ${upstream ?? "an unstated provider"} and is third-party material outside the GDACS licence.`,
+              notice: `GDACS automatic alert, provided as is and not for decision making without confirmation. The point is a GDACS centroid, not an impact footprint. The alert level is the event maximum across episodes and a modelled humanitarian-impact estimate, not observed harm. World Watch keeps the event live until 24 hours after the latest GDACS observation; each GDACS update extends it. Hazard data originates from ${upstream ?? "an unstated provider"} and is third-party material outside the GDACS licence.`,
             }),
           },
         ],
@@ -126,8 +129,9 @@ export function parseGdacs(
         official: {
           issuer: "GDACS — European Commission Joint Research Centre",
           effective_at: from,
-          // "to" is the latest observed or forecast time, not a validity end; alerts would treat it as expiry.
-          expires_at: null,
+          expires_at: to
+            ? new Date(Date.parse(to) + VALIDITY_MS).toISOString()
+            : null,
           activity: HAZARD[type],
           impact: level ? GDACS_IMPACT[level] : ("unknown" as const),
         },

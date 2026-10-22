@@ -142,7 +142,7 @@ test("GDACS events keep type plus event ID, episode revision, UTC dates, centroi
     "https://www.gdacs.org/report.aspx?eventid=1001338&episodeid=29&eventtype=TC",
   );
   assert.equal(champi.official?.effective_at, "2026-10-14T12:00:00.000Z");
-  assert.equal(champi.official?.expires_at, null);
+  assert.equal(champi.official?.expires_at, "2026-10-22T12:00:00.000Z");
   assert.equal(champi.source_updated_at, "2026-10-21T15:01:38.000Z");
   assert.equal(champi.official?.activity, "tropical_cyclone");
   assert.equal(champi.official?.impact, "severe");
@@ -426,4 +426,14 @@ test("non-European USGS and GDACS records publish as classified incidents with s
   } finally {
     s.db.close();
   }
+});
+
+test("archived GDACS events are not published to the live map", () => {
+  const archived = structuredClone(gdacs);
+  for (const feature of archived.features) feature.properties.iscurrent = "false";
+  archived.features[0].properties.iscurrent = "true";
+  assert.deepEqual(
+    parseGdacs(gdacsSource, archived).map((row) => row.native_id),
+    [`${gdacs.features[0].properties.eventtype}-${gdacs.features[0].properties.eventid}`],
+  );
 });
