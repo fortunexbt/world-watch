@@ -349,29 +349,44 @@ test("bbox filters before capping, across the antimeridian and in the southern h
     9,
   );
 });
-test("thermal cap keeps the newest detections across sensors and reports truncation honestly", async () => {
+test("thermal cap balances regions, keeps each region's newest detections and reports truncation honestly", async () => {
   const rows = (code: string, offset: number) =>
     Array.from({ length: 900 }, (_, n) => {
       const [d, t] = ago(10 + offset + 3 * (n % 300));
       return row(-30 + n / 100, 150 + n / 100, d, t, code);
     });
+  // Older than every clustered detection and far from them: a newest-first cap would drop it.
+  const [qd, qt] = ago(1200);
+  const quiet = row(-10, -60, qd, qt, "N20");
   const catalog = await getGeospatialCatalog(
     undefined,
-    upstream({ N20: rows("N20", 0), N21: rows("N21", 1), N: rows("N", 2) }),
+    upstream({
+      N20: [...rows("N20", 0), quiet],
+      N21: rows("N21", 1),
+      N: rows("N", 2),
+    }),
   );
   const thermal = catalog.features.filter((f) => f.layer === "thermal");
   assert.equal(thermal.length, 2000);
   const times = thermal.map((f) => f.observed_at!);
   assert.deepEqual(times, [...times].sort().reverse());
+  assert(
+    thermal.some(
+      (f) => (f.geometry as { coordinates: number[] }).coordinates[0] === -60,
+    ),
+  );
   const source = catalog.sources.find((s) => s.id === "firms")!;
   assert.equal(source.features_count, 2000);
-  assert.equal(source.total_available, 2700);
+  assert.equal(source.total_available, 2701);
   assert.equal(source.truncated, true);
   assert.equal(
     source.sensors!.reduce((n, s) => n + s.features_count, 0),
     2000,
   );
-  assert(source.sensors!.every((s) => s.total_available === 900));
+  assert.deepEqual(
+    source.sensors!.map((s) => s.total_available),
+    [901, 900, 900],
+  );
 });
 test("each sensor fails independently and failures are reported, not silently dropped", async () => {
   const [d, t] = ago(60);

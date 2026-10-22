@@ -532,34 +532,60 @@ function thermalFeature(
     },
   };
 }
-/** Bbox filter first, then the newest THERMAL_LIMIT across sensors; each sensor is already newest first. */
+const GRID_COLUMNS = 48,
+  GRID_ROWS = 24;
+/**
+ * Bbox filter first, then a spatially balanced THERMAL_LIMIT: the newest
+ * detection in every occupied grid cell, then each cell's next newest, so the
+ * latest satellite pass over one region cannot hide every other region.
+ */
 function thermalFeatures(thermal: Loaded["thermal"], bbox: Bbox) {
-  const matches = thermal.map(({ data }) => {
-    const out: number[] = [];
-    if (data)
-      for (let i = 0; i < data.at.length; i++)
-        if (overlaps(bbox, data.lon[i], data.lat[i], data.lon[i], data.lat[i]))
-          out.push(i);
-    return out;
+  const [west, south, east, north] = bbox,
+    width = east > west ? east - west : east - west + 360,
+    height = north - south,
+    cells = new Map<number, [number, number][]>(),
+    totals = thermal.map(() => 0);
+  thermal.forEach(({ data }, k) => {
+    if (!data) return;
+    for (let i = 0; i < data.at.length; i++) {
+      const lon = data.lon[i],
+        lat = data.lat[i];
+      if (!overlaps(bbox, lon, lat, lon, lat)) continue;
+      totals[k]++;
+      const x = Math.min(
+          GRID_COLUMNS - 1,
+          Math.floor(((((lon - west) % 360) + 360) % 360 / width) * GRID_COLUMNS),
+        ),
+        y = Math.min(
+          GRID_ROWS - 1,
+          Math.max(0, Math.floor(((lat - south) / height) * GRID_ROWS)),
+        ),
+        key = y * GRID_COLUMNS + x;
+      const cell = cells.get(key);
+      if (cell) cell.push([k, i]);
+      else cells.set(key, [[k, i]]);
+    }
   });
-  const returned = matches.map(() => 0),
-    features: GeoFeature[] = [];
-  while (features.length < THERMAL_LIMIT) {
-    let next = -1;
-    for (let k = 0; k < matches.length; k++)
-      if (
-        returned[k] < matches[k].length &&
-        (next < 0 ||
-          thermal[k].data!.at[matches[k][returned[k]]] >
-            thermal[next].data!.at[matches[next][returned[next]]])
-      )
-        next = k;
-    if (next < 0) break;
-    const { sensor, data } = thermal[next];
-    features.push(
-      thermalFeature(sensor, data!, matches[next][returned[next]++]),
-    );
+  const at = ([k, i]: [number, number]) => thermal[k].data!.at[i];
+  const queues = [...cells.values()].map((cell) =>
+    cell.sort((a, b) => at(b) - at(a)),
+  );
+  const picked: [number, number][] = [];
+  for (let round = 0; picked.length < THERMAL_LIMIT; round++) {
+    let added = false;
+    for (const queue of queues)
+      if (round < queue.length && picked.length < THERMAL_LIMIT) {
+        picked.push(queue[round]);
+        added = true;
+      }
+    if (!added) break;
   }
+  picked.sort((a, b) => at(b) - at(a));
+  const returned = thermal.map(() => 0);
+  const features = picked.map(([k, i]) => {
+    returned[k]++;
+    return thermalFeature(thermal[k].sensor, thermal[k].data!, i);
+  });
   return {
     features,
     sensors: thermal.map(({ sensor, error }, k) => ({
@@ -567,7 +593,7 @@ function thermalFeatures(thermal: Loaded["thermal"], bbox: Bbox) {
       label: sensor.label,
       status: error ? ("error" as const) : ("ok" as const),
       features_count: returned[k],
-      total_available: matches[k].length,
+      total_available: totals[k],
       source_url: sensor.url,
       ...(error ? { error } : {}),
     })),
