@@ -266,12 +266,11 @@ test(
         (window as any).__hidden = true;
         document.dispatchEvent(new Event("visibilitychange"));
       });
-      await page.waitForTimeout(20);
-      assert.equal(
-        await page.evaluate(
-          () => (window as any).__streams.filter((s: any) => !s.closed).length,
-        ),
-        0,
+      // Closing happens on React's next render, so wait for it rather than a fixed delay.
+      await page.waitForFunction(
+        () => (window as any).__streams.every((s: any) => s.closed),
+        undefined,
+        { timeout: 2000 },
       );
       const beforeHidden = snapshots, briefsBeforeHidden = briefs;
       await page.clock.fastForward(65000);
