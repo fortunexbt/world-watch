@@ -19,7 +19,7 @@ npm run demo
 
 The demo starts a throwaway local server and database, pulls the live USGS, GDACS, NWS and ECCC feeds and opens a signed-in view at `http://127.0.0.1:4319/?hours=168`. It refreshes every five minutes. It makes its own random tokens and config in a temporary directory. It doesn't read your private files or call a model. Ctrl-C stops the demo's processes and deletes its data.
 
-On 22 October 2026 a run published 21 earthquakes of magnitude 4.5 or more, from Vanuatu and the Kuril Islands to the Reykjanes Ridge and Namibia. It also published Red Typhoon CHAMPI-26, affecting the Philippines, Guam, Japan and Taiwan. Turning on the thermal layer loaded 123,015 detections from the last 24 hours across NOAA-20, NOAA-21 and Suomi NPP.
+On the evening of 22 October 2026 a run published 56 incidents. They included 21 earthquakes, among them an M7.0 quake 191 km east-northeast of Nagqu in China. GDACS issued a Red earthquake alert for China and a Red alert for Typhoon CHAMPI-26 affecting the Philippines, Guam, Japan and Taiwan. The other 34 were NWS and Environment Canada flood and storm warnings, including a blizzard warning for Resolute. The structured brief summed it up from issuer fields alone, and turning on the thermal layer loaded 196,952 detections from the last 24 hours across NOAA-20, NOAA-21 and Suomi NPP.
 
 ![Thermal detections from three satellites across every continent, with Copernicus mapping areas listed](docs/media/thermal.jpg)
 
