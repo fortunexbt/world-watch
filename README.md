@@ -1,26 +1,83 @@
 # World Watch
 
-A proposed worldwide OSINT workspace built around a flat world map, with events linked to their original evidence. This repository began as Europe Watch; the runtime still uses that name while the source atlas and product direction expand globally.
+![World Watch showing live earthquakes and a Red typhoon alert on a world map](docs/media/world.jpg)
 
-The first prototype wasn't useful enough: repetitive fire reports and notices dominated a clunky feed. The project is paused while its coverage and investigation workflow are reconsidered.
+World Watch puts what's happening in the world on one flat map, and each marker links back to the public record behind it. Earthquakes from USGS, disaster alerts from GDACS, heat detections from three NASA satellites and Copernicus emergency mapping areas reach the map without a language model in the loop. News and other narrative reports take a separate path, where a model extracts claims and the host checks each claim against the text it cites before anything is published.
 
-[Product vision](docs/VISION.md) · [Source atlas](research/world-atlas) · [194-task backlog](TODO.md) · [Team handoff](docs/HANDOFF.md)
+It started as Europe Watch, a Europe-only prototype that wasn't useful enough. Routine notices crowded its feed. This version covers the world and is built as a hackathon showcase. The hosted deployment stays paused.
 
-## What to build
+[Demo script](docs/DEMO.md) · [Product vision](docs/VISION.md) · [Backlog](TODO.md) · [Team handoff](docs/HANDOFF.md) · [Source atlas](research/world-atlas)
 
-Surface unusual changes. Bring related reports into an evolving event that shows what changed, how it is supported and which questions remain open. Connectivity measurements or public imagery should help someone investigate a situation without filling the feed with routine updates.
+## Try it
 
-Keep one map, one compact feed and one reusable detail panel. The [vision](docs/VISION.md) describes proposed investigation flows and the evidence needed to earn broader coverage. The worldwide research target is 50 useful sources per country, with discovered candidates distinguished from verified access and working integrations.
+You need Node.js 24 and npm.
 
-## What exists
+```sh
+npm ci
+npm run demo
+```
 
-Source adapters feed a D1-backed queue. A local Codex worker requests `gpt-6-luna` and submits structured results to a React/MapLibre client. Public-camera and satellite context have separate paths. The effective served model/tier is unconfirmed.
+The demo starts a throwaway local server and database, pulls the live USGS and GDACS feeds and opens a signed-in view at `http://127.0.0.1:4319/?hours=168`. It refreshes every five minutes. It makes its own random tokens and config in a temporary directory. It doesn't read your private files or call a model. Ctrl-C stops the demo's processes and deletes its data.
 
-Useful ranking and severity calibration remain unfinished. The brief scheduler can waste a call on an obsolete catch-up window. Read [the handoff](docs/HANDOFF.md) before running a worker. Existing private queues are preserved; collection and analysis remain paused.
+On 22 October 2026 a run published 21 earthquakes of magnitude 4.5 or more, from Vanuatu and the Kuril Islands to the Reykjanes Ridge and Namibia. It also published Red Typhoon CHAMPI-26, affecting the Philippines, Guam, Japan and Taiwan. Turning on the thermal layer loaded 123,015 detections from the last 24 hours across NOAA-20, NOAA-21 and Suomi NPP.
+
+![Thermal detections from three satellites across every continent, with Copernicus mapping areas listed](docs/media/thermal.jpg)
+
+![The typhoon's detail panel with its GDACS record shown as readable fields](docs/media/detail.jpg)
+
+<img src="docs/media/mobile.jpg" alt="The same view on a phone" width="300">
+
+Screenshots show data from USGS (public domain), GDACS and the European Commission Joint Research Centre (CC BY 4.0), NASA FIRMS, the Copernicus Emergency Management Service and OpenFreeMap with OpenStreetMap contributors.
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph Sources
+    S1[USGS, GDACS<br/>structured records]
+    S2[News and local<br/>narrative reports]
+    S3[NASA FIRMS, Copernicus EMS<br/>on demand]
+  end
+  S1 --> C[Collector<br/>rights and admission checks]
+  S2 --> C
+  C --> D[(D1 queue,<br/>incidents, revisions)]
+  D -->|structured path, no model| P[Publication]
+  D -->|narrative path| W[Local Codex worker<br/>gpt-6-luna]
+  W --> V[Host validation<br/>evidence, place, severity]
+  V --> P
+  P --> A[API and live stream]
+  S3 --> A
+  A --> M[Map, feed and<br/>detail panel]
+```
+
+The parts worth a closer look:
+
+- A structured hazard publishes the moment the collector accepts it. Its impact comes from the issuer's own level. USGS PAGER and GDACS alert levels map to minor, significant and severe, and never to critical, because those levels are modelled loss estimates rather than reported harm. GDACS mixes archived events into its Orange and Red list (62 of 63 on 22 October), so only events it marks as current reach the map.
+- A model can't escalate a claim to severe or critical on its own say-so. The claim has to quote an affirmed consequence from its own cited evidence, such as "120 homes destroyed", or a matching official directive. Negated, hypothetical and drill wording is rejected within the same clause, using 22 lexicon tables that cover 23 languages. Chinese, Japanese and Thai, which don't put spaces between words, use substring matching. Anything the tables don't recognise fails closed.
+- When a source corrects or retracts an event, each watch rule that received the original alert gets the correction, even if the corrected location has left their watch area. A new alert fires only when a versioned projection of location, timing, instructions, severity or evidence changes. A reworded headline doesn't count.
+- Geography works across the 180° line. Watch areas, map views and queries treat a box whose west edge is east of its east edge as crossing the dateline, so Fiji and the Aleutians resolve correctly. Place names come from a 34,174-place GeoNames gazetteer covering 244 country codes, with alternate names in local scripts.
+- The thermal layer reads the public 24-hour global files for three satellites and filters by the visible area on the server. When a view holds more than 2,000 detections, it takes the newest one from each cell of a 48 by 24 grid before taking second picks, so one busy region can't hide the rest. The panel says how many it is showing out of how many.
+- Snapshot queries filter by area in SQL before their 1,000-row limit, so a quiet region still shows up beside a busy one. The project exhausted the free D1 read allowance once, and the read path is built around that lesson.
+- The pipeline treats source text as evidence and ignores instructions inside it. The extraction worker runs without tools or file access, and a malicious-input evaluation recorded zero tool attempts.
+
+The test suite has 276 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
+
+## Honest status
+
+The map, the structured hazard path and the satellite layers work live, as the demo shows. Several things don't yet.
+
+- The five-minute brief and narrative claims need the local Codex worker. Without it, the brief panel says so.
+- Recall, relevance precision, severity calibration and multilingual accuracy haven't been measured against a held-out set.
+- Most earthquakes show impact unknown, because USGS only issues PAGER alerts for damaging quakes.
+- GDACS events stay live until 24 hours after their latest observation. That's a World Watch freshness rule, not a GDACS validity statement.
+- Only USGS and GDACS feed the map worldwide today. The other enabled sources are European city and agency feeds.
+- No week-long endurance run, restore drill or production capacity measurement has been done. Read [the handoff](docs/HANDOFF.md) and [verification notes](docs/verification.md) before resuming anything.
+
+## Source atlas
+
+The worldwide research target is 50 useful sources per country. The atlas holds 43,211 distinct candidate hosts across 218 country codes, and 11,108 of them are news or curated specialist sources. At the discovery stage, 36 of the 195 target countries reach 50 candidates. None is yet verified as a working integration, and a catalogue entry is a lead rather than coverage. See [the atlas](research/world-atlas) for per-country numbers.
 
 ## Check a checkout
-
-Use Node.js 24 and npm:
 
 ```sh
 npm ci
@@ -31,11 +88,11 @@ npm run build
 npm run audit:public
 ```
 
-Tests use disposable stores and fixtures, with temporary browser servers. They leave collection and inference stopped. The host-sandbox integration probe is opt-in; a default pass doesn't verify live source quality or the inference host.
+Tests use disposable stores and fixtures, with temporary browser servers. They leave collection and inference stopped.
 
 ## Run an empty local app
 
-Create an ignored `.dev.vars` with distinct random values:
+`npm run demo` is the quickest route. To run the app against your own empty database instead, create an ignored `.dev.vars` with distinct random values.
 
 ```dotenv
 EUROPE_WATCH_OWNER_TOKEN=replace-with-a-random-owner-secret
@@ -50,12 +107,12 @@ npm run build
 npm run dev -- --local --var STORAGE_PAUSED:0
 ```
 
-Open `http://127.0.0.1:8787` and sign in with the owner token. The override affects this local process only. Its separate database starts empty. Stop it with Ctrl-C.
+Open `http://127.0.0.1:8787` and sign in with the owner token. Deployment identifiers such as these variable names keep the Europe Watch name so a resumed deployment finds its state.
 
-[Worker setup](docs/codex.md) and [hosting configuration](deploy/README.md) require operator-owned credentials. Provider manifests under `.openai/` stay ignored. The public checkout excludes private captures and deployment metadata.
+[Worker setup](docs/codex.md) and [hosting configuration](deploy/README.md) need operator-owned credentials. Provider manifests under `.openai/` stay ignored.
 
 ## Pick up the work
 
-Start with [AGENTS.md](AGENTS.md). Claim a bounded task from [TODO.md](TODO.md) and follow [CONTRIBUTING.md](CONTRIBUTING.md). [Architecture](docs/architecture.md) maps the implementation; [verification notes](docs/verification.md) explain its limits. [Pause instructions](docs/paused.md) govern any future restart.
+Start with [AGENTS.md](AGENTS.md), then claim a bounded task from [TODO.md](TODO.md) and follow [CONTRIBUTING.md](CONTRIBUTING.md). [Architecture](docs/architecture.md) maps the implementation, and the [v2 contract proposal](docs/plans/PR1-v2-contracts.md) is the next planned change.
 
-Application code is currently `UNLICENSED`; public visibility grants no open-source licence. Dependencies and datasets retain their own terms, including [map and gazetteer attribution](docs/gazetteer.md).
+Application code is currently `UNLICENSED`, and public visibility grants no open-source licence. Dependencies and datasets keep their own terms, including [map and gazetteer attribution](docs/gazetteer.md).

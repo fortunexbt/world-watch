@@ -284,3 +284,16 @@ The product direction is worldwide. The runtime remains paused and retains its o
 - [ ] G12 **P1 · runtime/verification** — Load-test the first approved global portfolio against source, storage and inference budgets. Accept when request and token estimates are based on actual changed-event workloads, with interruption recovery and visible coverage degradation.
 - [ ] G13 **P1 · verification** — Independently sample country/source assignments and provenance from all three Luna research lanes. Accept when misassigned or fabricated URLs are removed, discovery errors are measured, and no per-country minimum is claimed from unreviewed rows.
 - [ ] G14 **P2 · research** — Maintain catalogue snapshots and review deltas without ingesting publisher text. Accept when disappeared entries trigger review rather than deletion/retraction of incidents, metadata provenance is reproducible and country shortfalls remain visible.
+
+## H — Harden the worldwide pass
+
+The worldwide pass shipped a world map, USGS and GDACS on the structured path, global FIRMS, a worldwide gazetteer and multilingual severity grounding. G10 and G11 have first implementations there. These items close the gaps it found.
+
+- [ ] H01 **P0 · runtime** — Keep long-running structured hazards visible without inventing expiry. GDACS events use a 24-hour freshness rule after their latest observation, and `incidentInWindow` drops open-ended events that started before the window. Accept when an ongoing cyclone, drought or eruption stays in the live view while its issuer lists it as current, and leaves it when the issuer stops.
+- [ ] H02 **P1 · acquisition** — Page GDACS with `pagenumber` instead of failing at 100 rows, and decide whether Green alerts belong on the map. Accept when a 100-row page is followed within the request budget and a fixture with 101 events publishes all of them.
+- [ ] H03 **P1 · acquisition** — Add a deterministic country for USGS events from the epicentre, using the existing country data rather than reverse-geocoding services. Accept when offshore and border events keep a null country instead of a guess.
+- [ ] H04 **P1 · runtime** — Confirm that D1 accepts the JSON expression indexes and `INDEXED BY` hints in `deploy/migrations/0008_incident_geography.sql`. Accept when a local D1 migration and an EXPLAIN on the hosted engine show the same plans as the SQLite tests.
+- [ ] H05 **P1 · runtime** — Measure the Sites Worker bundle (5.8 MB raw, 2.55 MB gzip after the worldwide gazetteer) and module start-up against the target plan's limits. Accept when the limit, the measured size and the start-up time are recorded together.
+- [ ] H06 **P1 · satellite** — Report how many Copernicus activations and AOIs a refresh skipped, so a truncated source shows a real lower bound instead of its returned count.
+- [ ] H07 **P1 · quality** — Have native speakers review the 22 severity lexicon tables in `src/shared/severity.ts`. Accept when each table has a named reviewer, a dated sign-off and regression cases for every term it removes.
+- [ ] H08 **P2 · contracts** — Add the six hazard activities to the v2 taxonomy mapping in `docs/plans/PR1-v2-contracts.md`.
