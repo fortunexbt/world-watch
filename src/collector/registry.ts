@@ -9,6 +9,7 @@ import { CATALUNYA_BOMBERS_QUERY } from "./adapters/catalunya-bombers.js";
 import { ZWAAILICHT_URL } from "./adapters/zwaailicht.js";
 import { USGS_FEED_URL } from "./adapters/usgs.js";
 import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
+import { NWS_ALERTS_URL } from "./adapters/nws.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
 const rights = (
   basis: string,
@@ -439,6 +440,32 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "structured_natural_hazard",
       coverage:
         "Current Orange and Red events for EQ, TC, FL, VO, DR and WF, read in pages of 100 and live while GDACS lists them as current. Green events are excluded: on 22 October 2026 they added over 300 current events, mostly small wildfires, at impact minor. Points are GDACS centroids, not impact footprints; country only when GDACS lists exactly one affected country.",
+    },
+  },
+  {
+    ...base,
+    id: "us-nws-warnings",
+    name: "NWS — storm-based warnings, United States",
+    owner: "NOAA National Weather Service",
+    url: NWS_ALERTS_URL,
+    docs: "https://www.weather.gov/documentation/services-web-api",
+    countries: ["US", "PR", "GU", "AS", "VI", "MP"],
+    languages: ["en"],
+    categories: ["natural_hazard", "severe_weather", "flood"],
+    family: "rss",
+    verified_at: "2026-10-22T18:30:00Z",
+    rights: rights(
+      "NWS information is U.S. public domain and may be used for any lawful purpose, provided it is not claimed as one's own, does not imply NOAA/NWS endorsement and is not modified and then presented as official material. https://www.weather.gov/disclaimer . The API is described as open data, free to use for any purpose, with a User-Agent required. https://www.weather.gov/documentation/services-web-api . Warning text is reproduced unchanged; derived labels are World Watch's. Deterministic structured publication; no model analysis.",
+      "NOAA National Weather Service. Warning text unchanged; impact labels and map points are World Watch derivations, not NWS products.",
+      false,
+    ),
+    config: {
+      format: "nws_geojson",
+      accept: "application/geo+json",
+      max_bytes: 4 * 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Active tornado, severe thunderstorm, flash flood, flood, extreme wind, snow squall and dust storm warnings that carry an NWS polygon. Watches, advisories, statements and zone-only warnings (winter, heat, tropical, marine) are not collected. Points are polygon bounding-box centres with a radius to the farthest vertex.",
     },
   },
   {

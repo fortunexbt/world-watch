@@ -12,6 +12,12 @@ import {
   GDACS_IMPACT,
   GDACS_EVENTS_URL,
 } from "../src/collector/adapters/gdacs.js";
+import {
+  parseNws,
+  NWS_IMPACT,
+  NWS_ALERTS_URL,
+} from "../src/collector/adapters/nws.js";
+import { polygonArea } from "../src/collector/adapters/area.js";
 import { collectSources } from "../src/collector/index.js";
 import {
   configuredRegistry,
@@ -33,6 +39,11 @@ const usgs = JSON.parse(
 const gdacs = JSON.parse(
   readFileSync("tests/fixtures/gdacs-events.json", "utf8"),
 );
+// Trimmed from api.weather.gov on 2026-10-22: the active storm-based warnings query, the past
+// week's tornado and severe thunderstorm messages for their cancellations, and one test message,
+// zone-only watch and unlinked statement from the unfiltered active list.
+const nws = JSON.parse(readFileSync("tests/fixtures/nws-alerts.json", "utf8"));
+const nwsSource = sourceRegistry.find((s) => s.id === "us-nws-warnings")!;
 const usgsSource = sourceRegistry.find(
   (s) => s.id === "global-usgs-earthquakes",
 )!;
@@ -656,6 +667,229 @@ test("a GDACS event stays live while listed as current, however old, and ends wi
     assert.equal(back.version, 3);
     assert.equal(back.current_listing, true);
     assert.equal(back.expires_at, null);
+  } finally {
+    s.db.close();
+  }
+});
+
+test("NWS warnings keep the VTEC event as identity, the latest message as revision and the polygon as a labelled area", () => {
+  const rows = parseNws(nwsSource, nws);
+  // A repeated flood warning collapses to one event; the test message, zone-only watch and statement without VTEC are dropped.
+  assert.deepEqual(
+    rows.map((r) => r.native_id),
+    [
+      "KFGZ.SV.W.0202.2026",
+      "KSLC.FF.W.0154.2026",
+      "KMLB.FL.W.0003.2026",
+      "KGJT.FA.W.0008.2026",
+      "KFGZ.TO.W.0012.2026",
+      "KFGZ.SV.W.0201.2026",
+    ],
+  );
+  const storm = byId(rows, "KFGZ.SV.W.0202.2026");
+  assert.equal(storm.source_event_id, storm.native_id);
+  assert.equal(
+    storm.canonical_url,
+    "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.2fcc7e3f79c5056c446c86c78ad5929c296d4d9c.001.1",
+  );
+  assert.equal(
+    storm.title,
+    "Severe Thunderstorm Warning issued October 22 at 11:09AM MST until October 22 at 11:15AM MST by NWS Flagstaff AZ",
+  );
+  // The warning dates from its first message, which the update references.
+  assert.equal(storm.official?.effective_at, "2026-10-22T17:54:00.000Z");
+  assert.equal(storm.published_at, "2026-10-22T18:09:00.000Z");
+  assert.equal(storm.official?.expires_at, "2026-10-22T18:15:00.000Z");
+  assert.equal(storm.official?.activity, "severe_weather");
+  assert.equal(storm.official?.impact, "significant");
+  assert.equal(storm.official?.cancelled, false);
+  const geo = storm.source_geo!;
+  assert.equal(geo.accuracy, "area");
+  assert.equal(geo.country, "US");
+  assert.equal(geo.name, "Navajo, AZ");
+  assert(Math.abs(geo.lon - -110.29) < 1e-9 && Math.abs(geo.lat - 34.48) < 1e-9);
+  assert(geo.radius_km! > 15 && geo.radius_km! < 16);
+  const excerpt = record(storm);
+  assert.equal(excerpt.vtec_action, "CON");
+  assert.equal(excerpt.maxHailSize, "1.00");
+  assert.match(excerpt.description, /Quarter size hail/);
+  assert.match(excerpt.notice, /reproduced unchanged/);
+  assert.match(excerpt.notice, /wider than the warned area/);
+  const flash = byId(rows, "KSLC.FF.W.0154.2026");
+  assert.equal(flash.official?.activity, "flood");
+  assert.equal(record(flash).flashFloodDamageThreat, "CONSIDERABLE");
+  // A river flood warning with no stated end lasts until its message expires.
+  assert.equal(
+    byId(rows, "KMLB.FL.W.0003.2026").official?.expires_at,
+    "2026-10-23T15:00:00.000Z",
+  );
+});
+
+test("an NWS cancellation is the latest revision of its warning, and CAP severity maps one step down and never to critical", () => {
+  const rows = parseNws(nwsSource, nws);
+  const tornado = byId(rows, "KFGZ.TO.W.0012.2026");
+  assert.equal(tornado.title, "The Tornado Warning has been cancelled.");
+  assert.equal(tornado.official?.cancelled, true);
+  assert.equal(tornado.official?.message_type, "Cancel");
+  assert.equal(tornado.official?.impact, "informational");
+  assert.equal(tornado.official?.effective_at, "2026-10-22T16:30:00.000Z");
+  const issued = structuredClone(nws);
+  issued.features = issued.features.filter(
+    (f: any) => f.properties.messageType !== "Cancel",
+  );
+  const live = byId(parseNws(nwsSource, issued), "KFGZ.TO.W.0012.2026");
+  assert.equal(live.official?.cancelled, false);
+  assert.equal(live.official?.impact, "severe");
+  assert.equal(record(live).tornadoDetection, "RADAR INDICATED");
+  for (const [severity, impact] of Object.entries(NWS_IMPACT)) {
+    const copy = structuredClone(nws);
+    copy.features[0].properties.severity = severity;
+    assert.equal(parseNws(nwsSource, copy)[0].official?.impact, impact);
+  }
+  assert.equal(NWS_IMPACT.Extreme, "severe");
+  const odd = structuredClone(nws);
+  odd.features[0].properties.severity = "Unknown";
+  // Test-class VTEC and a December first message both change what is admitted or identified.
+  odd.features[1].properties.parameters.VTEC = [
+    "/T.EXT.KSLC.FF.W.0154.000000T0000Z-261022T2145Z/",
+  ];
+  odd.features[2].properties.references[0].sent = "2025-12-31T12:00:00-04:00";
+  const oddRows = parseNws(nwsSource, odd);
+  assert.equal(oddRows[0].official?.impact, "unknown");
+  assert(!oddRows.some((r) => r.native_id.startsWith("KSLC.FF.W.0154")));
+  assert(oddRows.some((r) => r.native_id === "KMLB.FL.W.0003.2025"));
+  assert.throws(() => parseNws(nwsSource, { features: {} }), /invalid_nws_response/);
+});
+
+test("polygon areas unwrap the 180° line and cover every part of a multipolygon", () => {
+  const fiji = polygonArea({
+    type: "Polygon",
+    coordinates: [[[179.5, -17], [-179.5, -17], [-179.5, -16], [179.5, -16], [179.5, -17]]],
+  })!;
+  assert.equal(fiji.lon, 180);
+  assert.equal(fiji.lat, -16.5);
+  assert(fiji.radius_km < 100);
+  const pair = polygonArea({
+    type: "MultiPolygon",
+    coordinates: [
+      [[[0, 0], [1, 0], [1, 1], [0, 0]]],
+      [[[3, 0], [4, 0], [4, 1], [3, 0]]],
+    ],
+  })!;
+  assert.equal(pair.lon, 2);
+  assert(pair.radius_km > 220);
+  assert.equal(polygonArea({ type: "Point", coordinates: [0, 0] }), null);
+  assert.equal(
+    polygonArea({ type: "Polygon", coordinates: [[[0, 0], [200, 0], [0, 1]]] }),
+    null,
+  );
+});
+
+test("NWS collection asks for GeoJSON from the approved host and admits warnings as structured hazard records", async () => {
+  assert.deepEqual(nwsSource.countries, ["US", "PR", "GU", "AS", "VI", "MP"]);
+  assert.equal(nwsSource.rights.ai, false);
+  assert.equal(nwsSource.rights.redistribute, true);
+  assert(configuredRegistry({ countries: ["PR"] }).includes(nwsSource));
+  assert(!configuredRegistry({ countries: ["IT"] }).includes(nwsSource));
+  const accepted: ObservationInput[] = [];
+  const requests: [string, string | null][] = [];
+  const results = await collectSources(
+    {
+      EW_API_URL: "https://isolated.invalid",
+      EW_COLLECTOR_TOKEN: "isolated-fixture",
+    },
+    {
+      sources: [nwsSource],
+      register: async () => {},
+      checkpoint: async () => ({}),
+      recordHealth: async () => {},
+      ingest: async (rows) => {
+        accepted.push(...rows);
+      },
+      fetch: async (url, init) => {
+        requests.push([
+          String(url),
+          new Headers(init?.headers).get("accept"),
+        ]);
+        return new Response(JSON.stringify(nws), {
+          headers: { "content-type": "application/geo+json" },
+        });
+      },
+      maxRequests: 40,
+      now: () => Date.parse("2026-10-22T18:10:00Z"),
+    },
+  );
+  assert.deepEqual(requests, [[NWS_ALERTS_URL, "application/geo+json"]]);
+  assert.deepEqual(
+    results.map((r) => [r.source_id, r.status, r.received]),
+    [["us-nws-warnings", "ok", 6]],
+  );
+  assert(
+    accepted.every(
+      (x) => x.eligibility?.reason === "structured_natural_hazard_record",
+    ),
+  );
+});
+
+test("NWS warnings publish without analysis, and a later cancellation revises the same incident", async () => {
+  const s = fixtureServer();
+  try {
+    assert.equal(
+      (await s.api("/api/sources", { sources: [nwsSource] }, "fixture-collector"))
+        .status,
+      200,
+    );
+    const issued = structuredClone(nws);
+    issued.features = issued.features.filter(
+      (f: any) => f.properties.messageType !== "Cancel",
+    );
+    const ingest = async (rows: ObservationInput[]) => {
+      for (let i = 0; i < rows.length; i += 3)
+        assert.equal(
+          (
+            await s.api(
+              "/api/ingest",
+              { observations: rows.slice(i, i + 3) },
+              "fixture-collector",
+            )
+          ).status,
+          200,
+        );
+    };
+    await ingest(parseNws(nwsSource, issued));
+    let incidents: IncidentView[] = (await s.api("/api/snapshot")).body
+      .incidents;
+    assert.equal(incidents.length, 5);
+    const tornado = () =>
+      incidents.find((i) => i.location?.name === "Yavapai, AZ")!;
+    assert.equal(tornado().activity, "severe_weather");
+    assert.equal(tornado().impact, "severe");
+    assert.equal(tornado().cancelled, false);
+    assert.equal(tornado().location?.accuracy, "area");
+    assert.equal(tornado().location?.country, "US");
+    assert(tornado().location!.radius_km > 10);
+    assert.equal(tornado().expires_at, "2026-10-22T17:00:00.000Z");
+    const flood = incidents.find((i) => i.headline.startsWith("Flash Flood"))!;
+    assert.equal(flood.activity, "flood");
+    assert.equal(flood.impact, "significant");
+    await ingest(parseNws(nwsSource, nws));
+    incidents = (await s.api("/api/snapshot")).body.incidents;
+    assert.equal(incidents.length, 6);
+    assert.equal(tornado().cancelled, true);
+    assert.equal(tornado().version, 2);
+    assert.equal(tornado().headline, "The Tornado Warning has been cancelled.");
+    assert.deepEqual(
+      s.db
+        .prepare("SELECT DISTINCT state,error_kind FROM analysis_jobs")
+        .all()
+        .map((r) => ({ ...r })),
+      [{ state: "blocked", error_kind: "rights" }],
+    );
+    assert.equal(
+      (await s.api("/api/worker/claim", { worker_id: "mac" }, "fixture-worker"))
+        .body.leases.length,
+      0,
+    );
   } finally {
     s.db.close();
   }

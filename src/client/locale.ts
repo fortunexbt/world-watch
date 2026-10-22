@@ -197,6 +197,7 @@ export const italian: Record<string, string> = {
   wildfire: "incendio boschivo",
   volcanic_eruption: "eruzione vulcanica",
   drought: "siccità",
+  severe_weather: "maltempo intenso",
   worldwide: "tutto il mondo",
   unverified: "non verificato",
   corroborated: "con riscontri",

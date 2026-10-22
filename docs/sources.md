@@ -13,6 +13,7 @@ The executable inventory is [`src/collector/registry.ts`](../src/collector/regis
 | Public cameras                      | Statens vegvesen, Digitraffic                                      | Selected public publisher-operated imagery. Snapshot time, update cadence and playback permission vary.                                   |
 | Satellite/context                   | NASA FIRMS, Copernicus Emergency Management Service                | Thermal observations and emergency mapping areas; neither establishes incident severity or affected population.                           |
 | Worldwide natural hazards           | USGS earthquakes, GDACS alerts                                     | Structured records published without a model. Points are epicentres or alert centroids, not impact footprints.                            |
+| Regional hazard warnings            | NWS storm-based warnings                                           | Issuer warnings published without a model. Points are polygon centres with a radius covering the warned area, not exact locations.        |
 
 Passenger-train circulation and institutional-announcement feeds were disabled after they overwhelmed the feed. Fire/thermal coverage can still dominate. Adding more endpoints without a usefulness test would repeat that failure.
 
@@ -40,6 +41,26 @@ Both sources set impact from the native alert level and never ask a model.
 | None or unrecognised                | unknown     |
 
 Alert levels are modelled estimates of losses or humanitarian impact, not observed harm. They never map to critical, which needs stated mass-casualty evidence. GDACS reports the highest alert across an event's episodes, and the current episode level stays in the record.
+
+## United States warnings
+
+NWS supplies its active storm-based warnings through `api.weather.gov`: tornado, severe thunderstorm, flash flood, flood, extreme wind, snow squall and dust storm warnings. NWS draws each of these as its own polygon. On 22 October 2026 the unfiltered active list held 403 alerts in 1.9 MB, and 371 had no geometry. Those are zone-based alerts (watches, advisories, statements and winter, heat, tropical and marine warnings) whose areas exist only as forecast-zone codes, and mapping them would take a further request per zone, so they are not collected. Filtering by severity instead would have kept 83 Severe and Extreme alerts, 66 of them without a polygon, and would also drop every cancellation, because NWS issues cancellations at severity Minor. The storm-based query returned 16 messages in 117 kB that day. Two were repeats of the same message, which left 14 warnings. The `status=actual` filter keeps test, exercise and system messages out, and the parser checks status again.
+
+The API returns Atom unless asked for GeoJSON, so this source sends `Accept: application/geo+json`. The parser drops messages without an operational VTEC warning code or without a polygon. Each warning is identified by its VTEC office, phenomenon, significance and event number plus the year of its first message, because event numbers restart every January. Every NWS message about the warning is a revision of that one record, and the latest message wins when the active list repeats one. The event starts when NWS first issued the warning, taken from the earliest message the latest one references. It ends at the issuer's stated hazard end, or at the message expiry for a river flood warning with no stated end. A VTEC `CAN` or `UPG` marks the warning cancelled. An `EXP` message is not a cancellation. It leaves the warning to lapse at its stated end. Each record keeps the NWS message ID, event, VTEC string, CAP severity, certainty and urgency, issuing office, area description, times, the issuer's hazard tags (hail size, wind gust, tornado and flash-flood detection and damage threat) and the description and instruction text unchanged. The country is US, or the territory code for Puerto Rico, Guam, American Samoa, the U.S. Virgin Islands or the Northern Mariana Islands, when every UGC code in the warning names the same one.
+
+The map point is the centre of the polygon's bounding box. The radius reaches the polygon's farthest vertex, so the circle covers the whole warned area and some ground outside it. The incident contract carries points, not polygons, and the excerpt says so.
+
+NWS content is U.S. public domain and may be used for any lawful purpose as long as it isn't claimed as one's own, doesn't imply NOAA or NWS endorsement and isn't modified and then presented as official ([NWS disclaimer](https://www.weather.gov/disclaimer), checked 22 October 2026). The [API documentation](https://www.weather.gov/documentation/services-web-api) describes the data as open and free to use for any purpose, with a User-Agent required and an unpublished rate limit. The collector's existing User-Agent names the application but carries no contact address, which NWS recommends and does not require. Warning text is kept unchanged, and World Watch's impact labels and points are marked as its own.
+
+| CAP severity | Impact        |
+| ------------ | ------------- |
+| Minor        | informational |
+| Moderate     | minor         |
+| Severe       | significant   |
+| Extreme      | severe        |
+| Unknown      | unknown       |
+
+CAP severity states a threat to life or property, not observed harm, so each level maps one step down and Extreme never reaches critical. In the messages checked on 22 October 2026, severe thunderstorm, flash flood and flood warnings were Severe, tornado warnings were Extreme and cancellations were Minor. Tornado and flash flood emergencies don't change the mapping, because their wording states a threat rather than counted casualties. VTEC TO, SV, EW, SQ and DS warnings map to the `severe_weather` activity, and FF, FA and FL warnings map to `flood`.
 
 ## Admission contract
 

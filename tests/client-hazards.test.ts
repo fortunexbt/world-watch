@@ -14,6 +14,7 @@ import {
 import { translate } from "../src/client/locale.js";
 import { parseUsgs } from "../src/collector/adapters/usgs.js";
 import { parseGdacs } from "../src/collector/adapters/gdacs.js";
+import { parseNws } from "../src/collector/adapters/nws.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import { Impact } from "../src/shared/contracts.js";
 
@@ -25,6 +26,10 @@ const usgs = parseUsgs(
 const gdacs = parseGdacs(
   source("global-gdacs-alerts"),
   JSON.parse(readFileSync("tests/fixtures/gdacs-events.json", "utf8")),
+);
+const warnings = parseNws(
+  source("us-nws-warnings"),
+  JSON.parse(readFileSync("tests/fixtures/nws-alerts.json", "utf8")),
 );
 
 test("earthquake markers grow with magnitude between a floor and a ceiling", () => {
@@ -58,7 +63,7 @@ test("magnitude comes from the USGS record and nothing else", () => {
 
 test("every hazard the structured adapters publish has a glyph, a map image per impact and both interface languages", () => {
   assert.deepEqual(Object.keys(glyphs), [...HAZARDS]);
-  for (const row of [...usgs, ...gdacs])
+  for (const row of [...usgs, ...gdacs, ...warnings])
     assert.ok(isHazard(row.official?.activity ?? ""), row.native_id);
   for (const hazard of HAZARDS) {
     assert.match(glyphs[hazard], /^M[\d\s.,a-zA-Z-]+$/);

@@ -2,7 +2,7 @@
 
 ![World Watch showing live earthquakes and a Red typhoon alert on a world map](docs/media/world.jpg)
 
-World Watch puts what's happening in the world on one flat map, and each marker links back to the public record behind it. Earthquakes from USGS, disaster alerts from GDACS, heat detections from three NASA satellites and Copernicus emergency mapping areas reach the map without a language model in the loop. News and other narrative reports take a separate path, where a model extracts claims and the host checks each claim against the text it cites before anything is published.
+World Watch puts what's happening in the world on one flat map, and each marker links back to the public record behind it. Earthquakes from USGS, disaster alerts from GDACS, US storm and flood warnings from the National Weather Service, heat detections from three NASA satellites and Copernicus emergency mapping areas reach the map without a language model in the loop. News and other narrative reports take a separate path, where a model extracts claims and the host checks each claim against the text it cites before anything is published.
 
 It started as Europe Watch, a Europe-only prototype that wasn't useful enough. Routine notices crowded its feed. This version covers the world and is built as a hackathon showcase. The hosted deployment stays paused.
 
@@ -17,7 +17,7 @@ npm ci
 npm run demo
 ```
 
-The demo starts a throwaway local server and database, pulls the live USGS and GDACS feeds and opens a signed-in view at `http://127.0.0.1:4319/?hours=168`. It refreshes every five minutes. It makes its own random tokens and config in a temporary directory. It doesn't read your private files or call a model. Ctrl-C stops the demo's processes and deletes its data.
+The demo starts a throwaway local server and database, pulls the live USGS, GDACS and NWS feeds and opens a signed-in view at `http://127.0.0.1:4319/?hours=168`. It refreshes every five minutes. It makes its own random tokens and config in a temporary directory. It doesn't read your private files or call a model. Ctrl-C stops the demo's processes and deletes its data.
 
 On 22 October 2026 a run published 21 earthquakes of magnitude 4.5 or more, from Vanuatu and the Kuril Islands to the Reykjanes Ridge and Namibia. It also published Red Typhoon CHAMPI-26, affecting the Philippines, Guam, Japan and Taiwan. Turning on the thermal layer loaded 123,015 detections from the last 24 hours across NOAA-20, NOAA-21 and Suomi NPP.
 
@@ -34,7 +34,7 @@ Screenshots show data from USGS (public domain), GDACS and the European Commissi
 ```mermaid
 flowchart LR
   subgraph Sources
-    S1[USGS, GDACS<br/>structured records]
+    S1[USGS, GDACS, NWS<br/>structured records]
     S2[News and local<br/>narrative reports]
     S3[NASA FIRMS, Copernicus EMS<br/>on demand]
   end
@@ -60,7 +60,7 @@ The parts worth a closer look:
 - Snapshot queries filter by area in SQL before their 1,000-row limit, so a quiet region still shows up beside a busy one. The project exhausted the free D1 read allowance once, and the read path is built around that lesson.
 - The pipeline treats source text as evidence and ignores instructions inside it. The extraction worker runs without tools or file access, and a malicious-input evaluation recorded zero tool attempts.
 
-The test suite has 296 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
+The test suite has 301 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
 
 ## Honest status
 
@@ -70,7 +70,7 @@ The map, the structured hazard path and the satellite layers work live, as the d
 - Recall, relevance precision, severity calibration and multilingual accuracy haven't been measured against a held-out set.
 - Most earthquakes show impact unknown, because USGS only issues PAGER alerts for damaging quakes.
 - GDACS events stay live while GDACS lists them as current and end when it stops, which relies on the collector reading GDACS. A stopped collector leaves the last current set on the map.
-- Only USGS and GDACS feed the map worldwide today. The other enabled sources are European city and agency feeds.
+- Only USGS and GDACS feed the map worldwide today. NWS adds polygon warnings for the United States, and the other enabled sources are European city and agency feeds.
 - No week-long endurance run, restore drill or production capacity measurement has been done. Read [the handoff](docs/HANDOFF.md) and [verification notes](docs/verification.md) before resuming anything.
 
 ## Source atlas

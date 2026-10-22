@@ -21,6 +21,7 @@ export const APPROVED_HOSTS = new Set([
   "data.humdata.org",
   "earthquake.usgs.gov",
   "www.gdacs.org",
+  "api.weather.gov",
 ]);
 function idmcFilestore(u: URL) {
   return (
@@ -76,6 +77,8 @@ export type FetchOptions = {
   allowHTML?: boolean;
   /** A paged API that answers 204 past its last page; the result text is empty. */
   allowNoContent?: boolean;
+  /** Replaces the default Accept header for an API that negotiates its format, such as NWS returning Atom unless GeoJSON is asked for. */
+  accept?: string;
   /** Only the documented public, read-only Demos event query; never arbitrary POST. */
   demosQuery?: boolean;
 };
@@ -103,6 +106,7 @@ export async function fetchSource(
   const headers: Record<string, string> = {
     "User-Agent": "EuropeWatch/0.1 (public-source incident awareness)",
     Accept:
+      options.accept ??
       "application/atom+xml, application/rss+xml, application/xml, text/xml, application/json",
   };
   if (options.demosQuery) headers["Content-Type"] = "application/json";

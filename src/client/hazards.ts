@@ -8,6 +8,7 @@ export const HAZARDS = [
   "wildfire",
   "volcanic_eruption",
   "drought",
+  "severe_weather",
 ] as const;
 export type Hazard = (typeof HAZARDS)[number];
 export const isHazard = (activity: string): activity is Hazard =>
@@ -26,6 +27,8 @@ export const glyphs: Record<Hazard, string> = {
     "M3 21l5.5-10h7L21 21zM12 8V3M8.5 7.5 6.5 5M15.5 7.5l2-2.5",
   drought:
     "M15.5 10a3.5 3.5 0 1 1-7 0 3.5 3.5 0 1 1 7 0M12 2.5v1M4.5 10h1M18.5 10h1M6.7 4.7l.7.7M17.3 4.7l-.7.7M2 18h7.5l2.5 3 2.5-3H22",
+  severe_weather:
+    "M7 15.5a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 6.5a4.5 4.5 0 0 1 .5 9M13 11.5l-3 5h4l-3 5",
 };
 
 /** Map image for an incident: a hazard glyph when the activity has one, otherwise the impact shape alone. */

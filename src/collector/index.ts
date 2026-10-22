@@ -18,6 +18,7 @@ import { configuredRegistry } from "./registry.js";
 import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
 import { parseUsgs } from "./adapters/usgs.js";
 import { GDACS_PAGE_SIZE, parseGdacs } from "./adapters/gdacs.js";
+import { parseNws } from "./adapters/nws.js";
 import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
@@ -208,6 +209,10 @@ export async function collectSources(
         ...options,
         fetch: fetcher,
         demosQuery: source.config.format === "demos_json",
+        accept:
+          typeof source.config.accept === "string"
+            ? source.config.accept
+            : undefined,
         maxBytes: Number(source.config.max_bytes) || options.maxBytes,
       });
       if (response.notModified) {
@@ -274,6 +279,9 @@ export async function collectSources(
           ];
           break;
         }
+        case "nws_geojson":
+          observations = parseNws(source, JSON.parse(response.text));
+          break;
         case "paris_json": {
           const first = JSON.parse(response.text);
           let all = Array.isArray(first.results) ? first.results : [];
@@ -614,8 +622,7 @@ export function sourceEligibility(
       ? keep("publisher_selected_public_fire_service")
       : exclude("missing_public_fire_episode_identity");
   if (
-    source.id === "global-usgs-earthquakes" ||
-    source.id === "global-gdacs-alerts"
+    source.config.operational_role === "structured_natural_hazard"
   )
     return observation.source_event_id
       ? keep("structured_natural_hazard_record")
