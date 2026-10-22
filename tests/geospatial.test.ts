@@ -195,7 +195,10 @@ test("CEMS displays only public recent source AOI geometry and never thirdparty 
       0,
     );
 });
-/** FIRMS bodies keyed by satellite code; 30 recent CEMS activations, EMSR950 mapped near Fiji. */
+/**
+ * FIRMS bodies keyed by satellite code; 30 recent CEMS activations, EMSR950 mapped near Fiji.
+ * The list reports n_aois as a string: EMSR950 lists 102 AOIs, EMSR926 an unreadable count.
+ */
 const upstream = (firmsRows: Record<string, string[]>, calls: string[] = []) =>
   (async (url: any, init: any) => {
     calls.push(String(url));
@@ -222,7 +225,7 @@ const upstream = (firmsRows: Record<string, string[]>, calls: string[] = []) =>
         results: Array.from({ length: 30 }, (_, n) => ({
           code: "EMSR" + (950 - n),
           eventTime,
-          n_aois: 1,
+          n_aois: n === 0 ? "102" : n === 24 ? "unknown" : "1",
         })),
       });
     const code = new URL(String(url)).searchParams.get("code");
@@ -288,6 +291,8 @@ test("catalog acquires every sensor's global file and a bounded CEMS budget, coa
   assert.equal(cems.id, "copernicus");
   assert.equal(cems.truncated, true);
   assert.equal(cems.features_count, 10);
+  // 2 AOIs past EMSR950's cap and one each for 14 of the 15 unfetched listed activations.
+  assert.equal(cems.total_available, 26);
   assert.doesNotMatch(cems.attribution, /—/);
   assert.equal(firmsSource.id, "firms");
   assert.equal(firmsSource.status, "ok");
@@ -338,6 +343,13 @@ test("bbox filters before capping, across the antimeridian and in the southern h
   );
   const firmsSource = pacific.sources.find((s) => s.id === "firms")!;
   assert.equal(firmsSource.total_available, 3);
+  const pacificCems = pacific.sources.find((s) => s.id === "copernicus")!;
+  assert.equal(pacificCems.truncated, true);
+  assert.equal(
+    pacificCems.total_available,
+    1,
+    "skipped AOIs have no geometry to place inside a smaller view",
+  );
   assert.deepEqual(
     firmsSource.sensors!.map((s) => s.total_available),
     [2, 1, 0],
