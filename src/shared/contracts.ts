@@ -128,7 +128,7 @@ export type ObservationInput = {
     name: string;
     accuracy: "point" | "city" | "country" | "area";
     radius_km?: number;
-    /** ISO 3166-1 alpha-2 code stated by the source; null when the source states none or several. */
+    /** ISO 3166-1 alpha-2 code stated by the source or derived offline from its exact point; null when neither settles one country. */
     country?: string | null;
   };
   official?: {

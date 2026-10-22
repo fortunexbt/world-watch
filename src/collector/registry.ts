@@ -400,7 +400,7 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "structured_natural_hazard",
       declared_refresh_seconds: 60,
       coverage:
-        "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points only; no shaking footprint, no country attribution. Preferred event IDs can change when the authoritative network changes.",
+        "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points only; no shaking footprint. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. Preferred event IDs can change when the authoritative network changes.",
     },
   },
   {

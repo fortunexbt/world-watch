@@ -437,3 +437,28 @@ test("archived GDACS events are not published to the live map", () => {
     [`${gdacs.features[0].properties.eventtype}-${gdacs.features[0].properties.eventid}`],
   );
 });
+
+test("USGS epicentres take a country only well inside one map polygon, never offshore or near a border", () => {
+  // Real-shaped: the fixture's Vanuatu trench and Texas events, plus clones moved to inland
+  // Honshu, inland Namibia and the Iran-Iraq border region.
+  const copy = structuredClone(usgs);
+  const moved = [
+    [138.12, 36.58, "12 km SW of Nagano, Japan"],
+    [16.7, -22.9, "48 km W of Rehoboth, Namibia"],
+    [45.9, 34.9, "Iran-Iraq border region"],
+  ] as const;
+  moved.forEach(([lon, lat, place], i) => {
+    copy.features[i + 2].geometry.coordinates = [lon, lat, 10];
+    copy.features[i + 2].properties.place = place;
+  });
+  const rows = parseUsgs(usgsSource, copy);
+  const country = (place: string) =>
+    rows.find((r) => r.source_geo?.name === place)?.source_geo?.country;
+  assert.equal(country("208 km WNW of Port-Olry, Vanuatu"), null);
+  assert.equal(country("49 km NW of Toyah, Texas"), "US");
+  assert.equal(country("12 km SW of Nagano, Japan"), "JP");
+  assert.equal(country("48 km W of Rehoboth, Namibia"), "NA");
+  assert.equal(country("Iran-Iraq border region"), null);
+  assert.equal(country("39 km W of Mosteiros, Portugal"), null);
+  assert.match(record(rows[0]).notice, /left empty offshore or near a coast or border/);
+});
