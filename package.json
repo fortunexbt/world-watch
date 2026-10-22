@@ -13,6 +13,7 @@
     "migrate": "wrangler d1 migrations apply europe-watch --local",
     "preview": "vite --host 127.0.0.1 --port 5173",
     "open": "tsx src/operator/preview.ts",
+    "demo": "tsx scripts/demo.ts",
     "test:browser": "tsx tests/browser-verify.ts",
     "build:sites": "npm run build && node scripts/build-sites.mjs",
     "audit:public": "node scripts/audit-public.mjs",
