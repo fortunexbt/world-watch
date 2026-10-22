@@ -4,6 +4,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import server, { type Env } from "../src/server/index";
 import { inBbox, bboxCandidates } from "../src/server/geo";
+import { incidentInWindow } from "../src/shared/temporal";
 import { intersects } from "../src/server/alerts";
 import type { IncidentView } from "../src/shared/contracts";
 
@@ -274,4 +275,49 @@ test("snapshot filters bbox and window in indexed SQL so busy regions cannot hid
     both.incidents.map((i) => i.location?.lon),
     [10, 10],
   );
+});
+
+test("the SQL window keeps every incident incidentInWindow keeps, including issuer-current ones", async () => {
+  const s = store();
+  const now = Date.now(),
+    hour = 3600000,
+    iso = (ms: number) => new Date(ms).toISOString();
+  // Offsets avoid window edges so the two clocks cannot disagree.
+  const offsets = [-4000, -500, -100, -30, -5.5, -0.5, 0.5, 5.5, 30, 100, 500, 4000];
+  const starts = [
+    null,
+    ...offsets.map((h) => iso(now + h * hour)),
+    ...offsets.map((h) => iso(now + h * hour).slice(0, 10)),
+  ];
+  const expiries = [null, ...[-30, -0.5, 0.5, 4000].map((h) => iso(now + h * hour))];
+  for (const start of starts)
+    for (const expires_at of expiries)
+      for (const current_listing of [undefined, true, false])
+        for (const published_at of start ? [null] : [null, iso(now - 50 * hour)])
+          s.add(
+            at(10, 50),
+            {
+              event_start: start,
+              published_at,
+              expires_at,
+              ...(current_listing === undefined ? {} : { current_listing }),
+            },
+            iso(now),
+          );
+  const views = s.db
+    .prepare("SELECT view FROM incidents")
+    .all()
+    .map((r) => JSON.parse(String(r.view)) as IncidentView);
+  assert.ok(views.length < 1000);
+  for (const hours of [1, 6, 24, 72, 168]) {
+    const found = (await s.snapshot(`include_incoming=0&hours=${hours}`))
+      .incidents.map((i) => i.id)
+      .sort();
+    const kept = views
+      .filter((v) => incidentInWindow(v, hours))
+      .map((v) => v.id)
+      .sort();
+    assert.deepEqual(found, kept, `hours=${hours}`);
+    assert.ok(kept.some((id) => views.find((v) => v.id === id)!.current_listing));
+  }
 });

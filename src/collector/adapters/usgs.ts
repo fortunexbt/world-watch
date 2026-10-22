@@ -1,4 +1,5 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
+import { countryAt } from "../../shared/borders.js";
 
 /** Complete past-day ComCat summary; M4.5 is the global completeness level, smaller events are mostly US-network only. */
 export const USGS_FEED_URL =
@@ -73,7 +74,7 @@ export function parseUsgs(
               review_status: text(p.status) || null,
               network_ids: text(p.ids).split(",").filter(Boolean),
               notice:
-                "U.S. Geological Survey earthquake record. The point is the epicentre, not the shaking footprint. A PAGER alert is a modelled estimate of fatalities and losses, not observed harm, and null means none was issued. The tsunami flag marks a large oceanic event and does not mean a tsunami occurred.",
+                "U.S. Geological Survey earthquake record. The point is the epicentre, not the shaking footprint. Any country is derived from the epicentre and the map's Natural Earth boundaries, and is left empty offshore or near a coast or border. A PAGER alert is a modelled estimate of fatalities and losses, not observed harm, and null means none was issued. The tsunami flag marks a large oceanic event and does not mean a tsunami occurred.",
             }),
           },
         ],
@@ -84,7 +85,8 @@ export function parseUsgs(
                 lat,
                 name: place || "Epicentre",
                 accuracy: "point" as const,
-                country: null,
+                // USGS states no country; this is the map's own boundary data, never a geocoding service.
+                country: countryAt(lon, lat),
               },
             }
           : {}),

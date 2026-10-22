@@ -1,5 +1,6 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type { ObservationInput, SourceRecord } from "../shared/contracts.js";
+import { polygonArea } from "./adapters/area.js";
 const list = (x: any): any[] =>
   x === undefined || x === null ? [] : Array.isArray(x) ? x : [x];
 const text = (x: any): string =>
@@ -220,35 +221,16 @@ export function parseBbk(
   if (x.status !== "Actual" || x.scope !== "Public") return [];
   const info = list(x.info).find((i) => i.language === "de") ?? list(x.info)[0];
   if (!info || !x.identifier) throw Error("invalid_bbk_warning");
-  const coords = geo?.features?.[0]?.geometry?.coordinates;
-  const ring =
-    geo?.features?.[0]?.geometry?.type === "Polygon" ? coords?.[0] : undefined;
-  let source_geo: ObservationInput["source_geo"];
-  if (ring?.length) {
-    const xs = ring.map((p: number[]) => p[0]),
-      ys = ring.map((p: number[]) => p[1]);
-    const lon = (Math.min(...xs) + Math.max(...xs)) / 2,
-      lat = (Math.min(...ys) + Math.max(...ys)) / 2;
-    const radius = Math.max(
-      ...ring.map(
-        (p: number[]) =>
-          111.32 *
-          Math.hypot(
-            (p[0] - lon) * Math.cos((lat * Math.PI) / 180),
-            p[1] - lat,
-          ),
-      ),
-    );
-    source_geo = {
-      lon,
-      lat,
-      name: list(info.area)
-        .map((a) => a.areaDesc)
-        .join("; "),
-      accuracy: "area",
-      radius_km: radius,
-    };
-  }
+  const area = polygonArea(geo?.features?.[0]?.geometry);
+  const source_geo: ObservationInput["source_geo"] = area
+    ? {
+        ...area,
+        name: list(info.area)
+          .map((a) => a.areaDesc)
+          .join("; "),
+        accuracy: "area",
+      }
+    : undefined;
   return [
     {
       source_id: source.id,

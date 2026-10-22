@@ -12,6 +12,17 @@ import {
   GDACS_IMPACT,
   GDACS_EVENTS_URL,
 } from "../src/collector/adapters/gdacs.js";
+import {
+  parseNws,
+  NWS_IMPACT,
+  NWS_ALERTS_URL,
+} from "../src/collector/adapters/nws.js";
+import {
+  parseEccc,
+  ECCC_IMPACT,
+  ECCC_ALERTS_URL,
+} from "../src/collector/adapters/eccc.js";
+import { polygonArea } from "../src/collector/adapters/area.js";
 import { collectSources } from "../src/collector/index.js";
 import {
   configuredRegistry,
@@ -33,6 +44,15 @@ const usgs = JSON.parse(
 const gdacs = JSON.parse(
   readFileSync("tests/fixtures/gdacs-events.json", "utf8"),
 );
+// Trimmed from api.weather.gov on 2026-10-22: the active storm-based warnings query, the past
+// week's tornado and severe thunderstorm messages for their cancellations, and one test message,
+// zone-only watch and unlinked statement from the unfiltered active list.
+const nws = JSON.parse(readFileSync("tests/fixtures/nws-alerts.json", "utf8"));
+const nwsSource = sourceRegistry.find((s) => s.id === "us-nws-warnings")!;
+// Trimmed from api.weather.gc.ca on 2026-10-22: five of the eleven warnings, plus an ended fog
+// advisory and a special weather statement from the unfiltered list; the match count is the trimmed one.
+const eccc = JSON.parse(readFileSync("tests/fixtures/eccc-alerts.json", "utf8"));
+const ecccSource = sourceRegistry.find((s) => s.id === "ca-eccc-warnings")!;
 const usgsSource = sourceRegistry.find(
   (s) => s.id === "global-usgs-earthquakes",
 )!;
@@ -142,7 +162,8 @@ test("GDACS events keep type plus event ID, episode revision, UTC dates, centroi
     "https://www.gdacs.org/report.aspx?eventid=1001338&episodeid=29&eventtype=TC",
   );
   assert.equal(champi.official?.effective_at, "2026-10-14T12:00:00.000Z");
-  assert.equal(champi.official?.expires_at, "2026-10-22T12:00:00.000Z");
+  assert.equal(champi.official?.expires_at, null);
+  assert.equal(champi.official?.current_listing, true);
   assert.equal(champi.source_updated_at, "2026-10-21T15:01:38.000Z");
   assert.equal(champi.official?.activity, "tropical_cyclone");
   assert.equal(champi.official?.impact, "severe");
@@ -158,6 +179,7 @@ test("GDACS events keep type plus event ID, episode revision, UTC dates, centroi
   assert.match(excerpt.notice, /not for decision making without confirmation/);
   assert.match(excerpt.notice, /not an impact footprint/);
   assert.match(excerpt.notice, /third-party material/);
+  assert.match(excerpt.notice, /while GDACS lists it as current/);
   const japan = byId(rows, "EQ-1572939");
   assert.equal(japan.source_geo?.country, "JP");
   assert.equal(japan.official?.activity, "earthquake");
@@ -196,15 +218,7 @@ test("a new GDACS episode is a new revision of the same event, and every listed 
   assert(rows.every((r) => r.official?.impact !== "critical"));
 });
 
-test("a full GDACS page fails visibly instead of silently dropping events", () => {
-  const full = {
-    ...gdacs,
-    features: Array.from({ length: 100 }, () => gdacs.features[0]),
-  };
-  assert.throws(
-    () => parseGdacs(gdacsSource, full),
-    /gdacs_pagination_required/,
-  );
+test("malformed GDACS pages fail visibly and invalid points are dropped", () => {
   assert.throws(
     () => parseGdacs(gdacsSource, { features: {} }),
     /invalid_gdacs_response/,
@@ -242,13 +256,20 @@ test("worldwide sources survive country filtering and collect through dedicated 
       },
       fetch: async (url) => {
         requested.push(String(url));
+        if (String(url).endsWith("/reconcile"))
+          return Response.json({ changed: 0, more: false });
         return Response.json(String(url) === USGS_FEED_URL ? usgs : gdacs);
       },
       maxRequests: 40,
       now: () => Date.parse("2026-10-21T18:00:00Z"),
     },
   );
-  assert.deepEqual(requested, [USGS_FEED_URL, GDACS_EVENTS_URL]);
+  // GDACS states which events are current, so a complete read reconciles that set; USGS is a rolling window.
+  assert.deepEqual(requested, [
+    USGS_FEED_URL,
+    GDACS_EVENTS_URL,
+    "https://isolated.invalid/api/sources/global-gdacs-alerts/reconcile",
+  ]);
   assert.deepEqual(
     results.map((r) => [r.source_id, r.status, r.received]),
     [
@@ -436,4 +457,608 @@ test("archived GDACS events are not published to the live map", () => {
     parseGdacs(gdacsSource, archived).map((row) => row.native_id),
     [`${gdacs.features[0].properties.eventtype}-${gdacs.features[0].properties.eventid}`],
   );
+});
+
+test("USGS epicentres take a country only well inside one map polygon, never offshore or near a border", () => {
+  // Real-shaped: the fixture's Vanuatu trench and Texas events, plus clones moved to inland
+  // Honshu, inland Namibia and the Iran-Iraq border region.
+  const copy = structuredClone(usgs);
+  const moved = [
+    [138.12, 36.58, "12 km SW of Nagano, Japan"],
+    [16.7, -22.9, "48 km W of Rehoboth, Namibia"],
+    [45.9, 34.9, "Iran-Iraq border region"],
+  ] as const;
+  moved.forEach(([lon, lat, place], i) => {
+    copy.features[i + 2].geometry.coordinates = [lon, lat, 10];
+    copy.features[i + 2].properties.place = place;
+  });
+  const rows = parseUsgs(usgsSource, copy);
+  const country = (place: string) =>
+    rows.find((r) => r.source_geo?.name === place)?.source_geo?.country;
+  assert.equal(country("208 km WNW of Port-Olry, Vanuatu"), null);
+  assert.equal(country("49 km NW of Toyah, Texas"), "US");
+  assert.equal(country("12 km SW of Nagano, Japan"), "JP");
+  assert.equal(country("48 km W of Rehoboth, Namibia"), "NA");
+  assert.equal(country("Iran-Iraq border region"), null);
+  assert.equal(country("39 km W of Mosteiros, Portugal"), null);
+  assert.match(record(rows[0]).notice, /left empty offshore or near a coast or border/);
+});
+
+/** A GDACS page of `count` current events, cloned from a real current earthquake record. */
+const gdacsPage = (count: number, first = 0) => ({
+  ...gdacs,
+  features: Array.from({ length: count }, (_, i) => {
+    const feature = structuredClone(gdacs.features[3]);
+    feature.properties.eventid = 2000000 + first + i;
+    return feature;
+  }),
+});
+async function collectGdacs(
+  pages: Record<string, unknown>,
+  options: { maxRequests?: number; source?: SourceRecord } = {},
+) {
+  const requested: string[] = [];
+  const accepted: ObservationInput[] = [];
+  const reconciled: string[][] = [];
+  const health: { error: string | null }[] = [];
+  const results = await collectSources(
+    {
+      EW_API_URL: "https://isolated.invalid",
+      EW_COLLECTOR_TOKEN: "isolated-fixture",
+    },
+    {
+      sources: [options.source ?? gdacsSource],
+      register: async () => {},
+      checkpoint: async () => ({}),
+      recordHealth: async (_, h) => {
+        health.push(h);
+      },
+      ingest: async (rows) => {
+        accepted.push(...rows);
+      },
+      fetch: async (url, init) => {
+        requested.push(String(url));
+        if (String(url).endsWith("/reconcile")) {
+          reconciled.push(JSON.parse(String(init?.body)).active_native_ids);
+          return Response.json({ changed: 0, more: false });
+        }
+        const page = pages[String(url)];
+        return page === undefined
+          ? new Response(null, { status: 204 })
+          : Response.json(page);
+      },
+      maxRequests: options.maxRequests ?? 40,
+      now: () => Date.parse("2026-10-21T18:00:00Z"),
+    },
+  );
+  return { results, requested, accepted, reconciled, health };
+}
+const page = (n: number) => `${GDACS_EVENTS_URL}&pagenumber=${n}`;
+
+test("GDACS pages past 100 events and publishes and reconciles all 101", async () => {
+  const run = await collectGdacs({
+    [GDACS_EVENTS_URL]: gdacsPage(100),
+    [page(2)]: gdacsPage(1, 100),
+  });
+  assert.deepEqual(run.requested.slice(0, 2), [GDACS_EVENTS_URL, page(2)]);
+  assert.deepEqual(
+    run.results.map((r) => [r.status, r.received]),
+    [["ok", 101]],
+  );
+  assert.equal(new Set(run.accepted.map((o) => o.native_id)).size, 101);
+  assert.equal(run.reconciled.length, 1);
+  assert.equal(run.reconciled[0].length, 101);
+  // Exactly 100 events: GDACS answers the next page with 204 No Content.
+  const exact = await collectGdacs({ [GDACS_EVENTS_URL]: gdacsPage(100) });
+  assert.deepEqual(exact.requested.slice(0, 2), [GDACS_EVENTS_URL, page(2)]);
+  assert.equal(exact.results[0].received, 100);
+  assert.equal(exact.reconciled[0].length, 100);
+  // An event updated between page requests can move pages; it is published once.
+  const shifted = await collectGdacs({
+    [GDACS_EVENTS_URL]: gdacsPage(100),
+    [page(2)]: gdacsPage(2, 99),
+  });
+  assert.equal(shifted.results[0].received, 101);
+});
+
+test("an unfinished GDACS paging run publishes and reconciles nothing", async () => {
+  const full = Object.fromEntries(
+    [1, 2, 3, 4, 5, 6, 7].map((n) => [
+      n === 1 ? GDACS_EVENTS_URL : page(n),
+      gdacsPage(100, n * 100),
+    ]),
+  );
+  const capped = await collectGdacs(full);
+  assert.equal(capped.requested.length, 3);
+  assert.deepEqual(capped.results[0].status, "error");
+  assert.equal(capped.results[0].error, "gdacs_source_page_budget");
+  assert.equal(capped.accepted.length, 0);
+  assert.equal(capped.reconciled.length, 0);
+  // The run-wide request budget stops paging even when the source allows more pages.
+  const exhausted = await collectGdacs(full, {
+    maxRequests: 6,
+    source: {
+      ...gdacsSource,
+      config: { ...gdacsSource.config, max_pages: 10 },
+    },
+  });
+  assert.equal(exhausted.requested.length, 6);
+  assert.equal(exhausted.results[0].error, "collector_request_budget");
+  assert.equal(exhausted.accepted.length, 0);
+  assert.equal(exhausted.reconciled.length, 0);
+  assert.equal(exhausted.health.at(-1)?.error, "collector_request_budget");
+});
+
+test("a GDACS event stays live while listed as current, however old, and ends without cancellation when GDACS stops listing it", async () => {
+  const s = fixtureServer();
+  try {
+    const day = 86400000;
+    let clock = Date.now();
+    // GDACS writes UTC without a zone designator.
+    const gdacsTime = (ms: number) => new Date(ms).toISOString().slice(0, 19);
+    const listed = structuredClone(gdacs);
+    const tc = listed.features.find(
+      (f: any) => f.properties.eventid === 1001338,
+    );
+    tc.properties.fromdate = gdacsTime(clock - 10 * day);
+    tc.properties.todate = gdacsTime(clock - 3 * day);
+    tc.properties.datemodified = gdacsTime(clock - 3 * day);
+    const withdrawn = {
+      ...listed,
+      features: listed.features.filter((f: any) => f !== tc),
+    };
+    const checkpoints = new Map<string, any>();
+    const run = (payload: unknown) =>
+      collectSources(
+        {
+          EW_API_URL: "https://isolated.invalid",
+          EW_COLLECTOR_TOKEN: "isolated-fixture",
+        },
+        {
+          sources: [gdacsSource],
+          register: (sources) =>
+            s.api("/api/sources", { sources }, "fixture-collector"),
+          checkpoint: async (id) => checkpoints.get(id) ?? {},
+          recordHealth: async (id, h) => {
+            checkpoints.set(id, h.checkpoint);
+          },
+          request: async (path, body) => {
+            const r = await s.api(path, body, "fixture-collector");
+            if (r.status !== 200) throw Error(`fixture_api_${r.status}`);
+            return r.body;
+          },
+          fetch: async () => Response.json(payload),
+          now: () => clock,
+        },
+      );
+    const live = async () =>
+      ((await s.api("/api/snapshot?hours=24&include_incoming=0")).body
+        .incidents as IncidentView[]).map((i) => i.headline);
+    const champi = "Tropical Cyclone CHAMPI-26";
+    await s.api("/api/alert-rules", { id: "severe", rule: { impacts: ["severe"] } });
+
+    assert.equal((await run(listed))[0].received, 6);
+    assert.deepEqual((await live()).sort(), listed.features.map((f: any) => f.properties.name).sort());
+
+    clock += 11 * 60000;
+    assert.equal((await run(withdrawn))[0].status, "ok");
+    assert.deepEqual((await live()).sort(), withdrawn.features.map((f: any) => f.properties.name).sort());
+    const ended = ((await s.api("/api/snapshot?include_incoming=0")).body
+      .incidents as IncidentView[]).find((i) => i.headline === champi)!;
+    assert.equal(ended.version, 2);
+    assert.equal(ended.current_listing, false);
+    assert.equal(ended.cancelled, false);
+    assert.equal(ended.evidence_status, "official_advisory");
+    assert.equal(ended.impact, "severe");
+    assert.ok(Date.parse(ended.expires_at!) <= Date.now());
+    assert.deepEqual(
+      { ...s.db.prepare("SELECT reason FROM incident_revisions WHERE incident_id=? AND version=2").get(ended.id) },
+      { reason: "issuer no longer lists the event as current" },
+    );
+    assert.equal(
+      s.db.prepare("SELECT count(*) AS n FROM outbox WHERE entity_id=? AND event_type='incident.updated'").get(ended.id)?.n,
+      1,
+    );
+    // An ended event cannot raise an urgent alert.
+    assert.deepEqual(
+      { ...s.db.prepare("SELECT state,reason FROM alert_deliveries WHERE incident_id=? AND incident_version=2").get(ended.id) },
+      { state: "suppressed", reason: "expired" },
+    );
+
+    // A further complete read changes nothing, and a new episode brings the event back.
+    clock += 11 * 60000;
+    await run(withdrawn);
+    tc.properties.episodeid = 30;
+    clock += 11 * 60000;
+    await run(listed);
+    const back = ((await s.api("/api/snapshot?hours=24&include_incoming=0")).body
+      .incidents as IncidentView[]).find((i) => i.headline === champi)!;
+    assert.equal(back.version, 3);
+    assert.equal(back.current_listing, true);
+    assert.equal(back.expires_at, null);
+  } finally {
+    s.db.close();
+  }
+});
+
+test("NWS warnings keep the VTEC event as identity, the latest message as revision and the polygon as a labelled area", () => {
+  const rows = parseNws(nwsSource, nws);
+  // A repeated flood warning collapses to one event; the test message, zone-only watch and statement without VTEC are dropped.
+  assert.deepEqual(
+    rows.map((r) => r.native_id),
+    [
+      "KFGZ.SV.W.0202.2026",
+      "KSLC.FF.W.0154.2026",
+      "KMLB.FL.W.0003.2026",
+      "KGJT.FA.W.0008.2026",
+      "KFGZ.TO.W.0012.2026",
+      "KFGZ.SV.W.0201.2026",
+    ],
+  );
+  const storm = byId(rows, "KFGZ.SV.W.0202.2026");
+  assert.equal(storm.source_event_id, storm.native_id);
+  assert.equal(
+    storm.canonical_url,
+    "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.2fcc7e3f79c5056c446c86c78ad5929c296d4d9c.001.1",
+  );
+  assert.equal(
+    storm.title,
+    "Severe Thunderstorm Warning issued October 22 at 11:09AM MST until October 22 at 11:15AM MST by NWS Flagstaff AZ",
+  );
+  // The warning dates from its first message, which the update references.
+  assert.equal(storm.official?.effective_at, "2026-10-22T17:54:00.000Z");
+  assert.equal(storm.published_at, "2026-10-22T18:09:00.000Z");
+  assert.equal(storm.official?.expires_at, "2026-10-22T18:15:00.000Z");
+  assert.equal(storm.official?.activity, "severe_weather");
+  assert.equal(storm.official?.impact, "significant");
+  assert.equal(storm.official?.cancelled, false);
+  const geo = storm.source_geo!;
+  assert.equal(geo.accuracy, "area");
+  assert.equal(geo.country, "US");
+  assert.equal(geo.name, "Navajo, AZ");
+  assert(Math.abs(geo.lon - -110.29) < 1e-9 && Math.abs(geo.lat - 34.48) < 1e-9);
+  assert(geo.radius_km! > 15 && geo.radius_km! < 16);
+  const excerpt = record(storm);
+  assert.equal(excerpt.vtec_action, "CON");
+  assert.equal(excerpt.maxHailSize, "1.00");
+  assert.match(excerpt.description, /Quarter size hail/);
+  assert.match(excerpt.notice, /reproduced unchanged/);
+  assert.match(excerpt.notice, /wider than the warned area/);
+  const flash = byId(rows, "KSLC.FF.W.0154.2026");
+  assert.equal(flash.official?.activity, "flood");
+  assert.equal(record(flash).flashFloodDamageThreat, "CONSIDERABLE");
+  // A river flood warning with no stated end lasts until its message expires.
+  assert.equal(
+    byId(rows, "KMLB.FL.W.0003.2026").official?.expires_at,
+    "2026-10-23T15:00:00.000Z",
+  );
+});
+
+test("an NWS cancellation is the latest revision of its warning, and CAP severity maps one step down and never to critical", () => {
+  const rows = parseNws(nwsSource, nws);
+  const tornado = byId(rows, "KFGZ.TO.W.0012.2026");
+  assert.equal(tornado.title, "The Tornado Warning has been cancelled.");
+  assert.equal(tornado.official?.cancelled, true);
+  assert.equal(tornado.official?.message_type, "Cancel");
+  assert.equal(tornado.official?.impact, "informational");
+  assert.equal(tornado.official?.effective_at, "2026-10-22T16:30:00.000Z");
+  const issued = structuredClone(nws);
+  issued.features = issued.features.filter(
+    (f: any) => f.properties.messageType !== "Cancel",
+  );
+  const live = byId(parseNws(nwsSource, issued), "KFGZ.TO.W.0012.2026");
+  assert.equal(live.official?.cancelled, false);
+  assert.equal(live.official?.impact, "severe");
+  assert.equal(record(live).tornadoDetection, "RADAR INDICATED");
+  for (const [severity, impact] of Object.entries(NWS_IMPACT)) {
+    const copy = structuredClone(nws);
+    copy.features[0].properties.severity = severity;
+    assert.equal(parseNws(nwsSource, copy)[0].official?.impact, impact);
+  }
+  assert.equal(NWS_IMPACT.Extreme, "severe");
+  const odd = structuredClone(nws);
+  odd.features[0].properties.severity = "Unknown";
+  // Test-class VTEC and a December first message both change what is admitted or identified.
+  odd.features[1].properties.parameters.VTEC = [
+    "/T.EXT.KSLC.FF.W.0154.000000T0000Z-261022T2145Z/",
+  ];
+  odd.features[2].properties.references[0].sent = "2025-12-31T12:00:00-04:00";
+  const oddRows = parseNws(nwsSource, odd);
+  assert.equal(oddRows[0].official?.impact, "unknown");
+  assert(!oddRows.some((r) => r.native_id.startsWith("KSLC.FF.W.0154")));
+  assert(oddRows.some((r) => r.native_id === "KMLB.FL.W.0003.2025"));
+  assert.throws(() => parseNws(nwsSource, { features: {} }), /invalid_nws_response/);
+});
+
+test("polygon areas unwrap the 180° line and cover every part of a multipolygon", () => {
+  const fiji = polygonArea({
+    type: "Polygon",
+    coordinates: [[[179.5, -17], [-179.5, -17], [-179.5, -16], [179.5, -16], [179.5, -17]]],
+  })!;
+  assert.equal(fiji.lon, 180);
+  assert.equal(fiji.lat, -16.5);
+  assert(fiji.radius_km < 100);
+  const pair = polygonArea({
+    type: "MultiPolygon",
+    coordinates: [
+      [[[0, 0], [1, 0], [1, 1], [0, 0]]],
+      [[[3, 0], [4, 0], [4, 1], [3, 0]]],
+    ],
+  })!;
+  assert.equal(pair.lon, 2);
+  assert(pair.radius_km > 220);
+  assert.equal(polygonArea({ type: "Point", coordinates: [0, 0] }), null);
+  assert.equal(
+    polygonArea({ type: "Polygon", coordinates: [[[0, 0], [200, 0], [0, 1]]] }),
+    null,
+  );
+});
+
+test("NWS collection asks for GeoJSON from the approved host and admits warnings as structured hazard records", async () => {
+  assert.deepEqual(nwsSource.countries, ["US", "PR", "GU", "AS", "VI", "MP"]);
+  assert.equal(nwsSource.rights.ai, false);
+  assert.equal(nwsSource.rights.redistribute, true);
+  assert(configuredRegistry({ countries: ["PR"] }).includes(nwsSource));
+  assert(!configuredRegistry({ countries: ["IT"] }).includes(nwsSource));
+  const accepted: ObservationInput[] = [];
+  const requests: [string, string | null][] = [];
+  const results = await collectSources(
+    {
+      EW_API_URL: "https://isolated.invalid",
+      EW_COLLECTOR_TOKEN: "isolated-fixture",
+    },
+    {
+      sources: [nwsSource],
+      register: async () => {},
+      checkpoint: async () => ({}),
+      recordHealth: async () => {},
+      ingest: async (rows) => {
+        accepted.push(...rows);
+      },
+      fetch: async (url, init) => {
+        requests.push([
+          String(url),
+          new Headers(init?.headers).get("accept"),
+        ]);
+        return new Response(JSON.stringify(nws), {
+          headers: { "content-type": "application/geo+json" },
+        });
+      },
+      maxRequests: 40,
+      now: () => Date.parse("2026-10-22T18:10:00Z"),
+    },
+  );
+  assert.deepEqual(requests, [[NWS_ALERTS_URL, "application/geo+json"]]);
+  assert.deepEqual(
+    results.map((r) => [r.source_id, r.status, r.received]),
+    [["us-nws-warnings", "ok", 6]],
+  );
+  assert(
+    accepted.every(
+      (x) => x.eligibility?.reason === "structured_natural_hazard_record",
+    ),
+  );
+});
+
+test("NWS warnings publish without analysis, and a later cancellation revises the same incident", async () => {
+  const s = fixtureServer();
+  try {
+    assert.equal(
+      (await s.api("/api/sources", { sources: [nwsSource] }, "fixture-collector"))
+        .status,
+      200,
+    );
+    const issued = structuredClone(nws);
+    issued.features = issued.features.filter(
+      (f: any) => f.properties.messageType !== "Cancel",
+    );
+    const ingest = async (rows: ObservationInput[]) => {
+      for (let i = 0; i < rows.length; i += 3)
+        assert.equal(
+          (
+            await s.api(
+              "/api/ingest",
+              { observations: rows.slice(i, i + 3) },
+              "fixture-collector",
+            )
+          ).status,
+          200,
+        );
+    };
+    await ingest(parseNws(nwsSource, issued));
+    let incidents: IncidentView[] = (await s.api("/api/snapshot")).body
+      .incidents;
+    assert.equal(incidents.length, 5);
+    const tornado = () =>
+      incidents.find((i) => i.location?.name === "Yavapai, AZ")!;
+    assert.equal(tornado().activity, "severe_weather");
+    assert.equal(tornado().impact, "severe");
+    assert.equal(tornado().cancelled, false);
+    assert.equal(tornado().location?.accuracy, "area");
+    assert.equal(tornado().location?.country, "US");
+    assert(tornado().location!.radius_km > 10);
+    assert.equal(tornado().expires_at, "2026-10-22T17:00:00.000Z");
+    const flood = incidents.find((i) => i.headline.startsWith("Flash Flood"))!;
+    assert.equal(flood.activity, "flood");
+    assert.equal(flood.impact, "significant");
+    await ingest(parseNws(nwsSource, nws));
+    incidents = (await s.api("/api/snapshot")).body.incidents;
+    assert.equal(incidents.length, 6);
+    assert.equal(tornado().cancelled, true);
+    assert.equal(tornado().version, 2);
+    assert.equal(tornado().headline, "The Tornado Warning has been cancelled.");
+    assert.deepEqual(
+      s.db
+        .prepare("SELECT DISTINCT state,error_kind FROM analysis_jobs")
+        .all()
+        .map((r) => ({ ...r })),
+      [{ state: "blocked", error_kind: "rights" }],
+    );
+    assert.equal(
+      (await s.api("/api/worker/claim", { worker_id: "mac" }, "fixture-worker"))
+        .body.leases.length,
+      0,
+    );
+  } finally {
+    s.db.close();
+  }
+});
+
+test("ECCC warnings keep ECCC's per-region alert ID, bilingual text unchanged and the region as a labelled area", () => {
+  const rows = parseEccc(ecccSource, eccc);
+  // The ended fog advisory and the special weather statement are not warnings.
+  assert.equal(rows.length, 5);
+  const wind = byId(rows, "190122771851897148202610210501_fea1-2532");
+  const feature = eccc.features[0].properties;
+  assert.equal(wind.source_event_id, wind.native_id);
+  assert.equal(
+    wind.canonical_url,
+    "https://api.weather.gc.ca/collections/weather-alerts/items/190122771851897148202610210501_fea1-2532",
+  );
+  assert.equal(wind.title, "Wind warning, Resolute");
+  assert.equal(wind.published_at, "2026-10-22T08:42:16.793Z");
+  assert.equal(wind.official?.effective_at, "2026-10-22T16:00:00.000Z");
+  assert.equal(wind.official?.expires_at, "2026-10-23T01:00:00.000Z");
+  assert.equal(wind.official?.activity, "severe_weather");
+  assert.equal(wind.official?.impact, "minor");
+  assert.equal(wind.official?.cancelled, false);
+  assert.equal(wind.source_geo?.accuracy, "area");
+  assert.equal(wind.source_geo?.country, "CA");
+  assert.equal(wind.source_geo?.name, "Resolute");
+  assert(wind.source_geo!.radius_km! > 40 && wind.source_geo!.radius_km! < 42);
+  const excerpt = record(wind);
+  assert.equal(excerpt.text_en, feature.alert_text_en.trim());
+  assert.equal(excerpt.text_fr, feature.alert_text_fr.trim());
+  assert.equal(excerpt.status, "continued");
+  assert.equal(excerpt.impact, "Moderate");
+  assert.match(excerpt.notice, /reproduced unchanged/);
+  // A blizzard warning for the same region is a separate ECCC alert.
+  const blizzard = byId(rows, "185815178851897148202610210501_fea1-2532");
+  assert.equal(blizzard.title, "Blizzard warning, Resolute");
+  assert.deepEqual(blizzard.source_geo, wind.source_geo);
+});
+
+test("ECCC colour maps to impact without reaching critical, an ended warning is cancelled and a short page fails visibly", () => {
+  for (const [colour, impact] of Object.entries(ECCC_IMPACT)) {
+    const copy = structuredClone(eccc);
+    copy.features[0].properties.risk_colour_en = colour;
+    assert.equal(parseEccc(ecccSource, copy)[0].official?.impact, impact);
+  }
+  assert.equal(ECCC_IMPACT.red, "severe");
+  const variants = structuredClone(eccc);
+  variants.features[0].properties.risk_colour_en = null;
+  variants.features[1].properties.alert_name_en = "hurricane warning";
+  variants.features[2].properties.alert_name_en = "storm surge warning";
+  variants.features[3].properties.status_en = "ended";
+  variants.features[4].geometry = null;
+  const rows = parseEccc(ecccSource, variants);
+  assert.equal(rows.length, 4);
+  assert.equal(rows[0].official?.impact, "unknown");
+  assert.equal(rows[1].official?.activity, "tropical_cyclone");
+  assert.equal(rows[2].official?.activity, "flood");
+  assert.equal(rows[3].official?.cancelled, true);
+  assert.throws(
+    () => parseEccc(ecccSource, { ...eccc, numberMatched: 8 }),
+    /eccc_pagination_required/,
+  );
+  assert.throws(() => parseEccc(ecccSource, { features: {} }), /invalid_eccc_response/);
+});
+
+test("ECCC collection reads the approved warnings query and admits warnings as structured hazard records", async () => {
+  assert.deepEqual(ecccSource.countries, ["CA"]);
+  assert.equal(ecccSource.rights.ai, false);
+  assert.match(
+    ecccSource.rights.attribution,
+    /^Data Source: Environment and Climate Change Canada\./,
+  );
+  const accepted: ObservationInput[] = [];
+  const requested: string[] = [];
+  const results = await collectSources(
+    {
+      EW_API_URL: "https://isolated.invalid",
+      EW_COLLECTOR_TOKEN: "isolated-fixture",
+    },
+    {
+      sources: [ecccSource],
+      register: async () => {},
+      checkpoint: async () => ({}),
+      recordHealth: async () => {},
+      ingest: async (rows) => {
+        accepted.push(...rows);
+      },
+      fetch: async (url) => {
+        requested.push(String(url));
+        return Response.json(eccc);
+      },
+      maxRequests: 40,
+      now: () => Date.parse("2026-10-22T18:10:00Z"),
+    },
+  );
+  assert.deepEqual(requested, [ECCC_ALERTS_URL]);
+  assert.deepEqual(
+    results.map((r) => [r.source_id, r.status, r.received]),
+    [["ca-eccc-warnings", "ok", 5]],
+  );
+  assert(
+    accepted.every(
+      (x) => x.eligibility?.reason === "structured_natural_hazard_record",
+    ),
+  );
+});
+
+test("ECCC warnings publish without analysis, and ECCC ending a warning revises the same incident", async () => {
+  const s = fixtureServer();
+  try {
+    assert.equal(
+      (await s.api("/api/sources", { sources: [ecccSource] }, "fixture-collector"))
+        .status,
+      200,
+    );
+    const ingest = async (rows: ObservationInput[]) => {
+      for (let i = 0; i < rows.length; i += 3)
+        assert.equal(
+          (
+            await s.api(
+              "/api/ingest",
+              { observations: rows.slice(i, i + 3) },
+              "fixture-collector",
+            )
+          ).status,
+          200,
+        );
+    };
+    await ingest(parseEccc(ecccSource, eccc));
+    let incidents: IncidentView[] = (await s.api("/api/snapshot")).body
+      .incidents;
+    assert.equal(incidents.length, 5);
+    const wind = () =>
+      incidents.find((i) => i.headline === "Wind warning, Resolute")!;
+    assert.equal(wind().activity, "severe_weather");
+    assert.equal(wind().impact, "minor");
+    assert.equal(wind().location?.country, "CA");
+    assert.equal(wind().location?.accuracy, "area");
+    assert.equal(wind().expires_at, "2026-10-23T01:00:00.000Z");
+    assert.equal(
+      wind().reports[0].rights.attribution,
+      ecccSource.rights.attribution,
+    );
+    const ended = structuredClone(eccc);
+    ended.features[0].properties.status_en = "ended";
+    ended.features[0].properties.publication_datetime =
+      "2026-10-22T20:00:00.000Z";
+    await ingest(parseEccc(ecccSource, ended).slice(0, 1));
+    incidents = (await s.api("/api/snapshot")).body.incidents;
+    assert.equal(incidents.length, 5);
+    assert.equal(wind().cancelled, true);
+    assert.equal(wind().version, 2);
+    assert.deepEqual(
+      s.db
+        .prepare("SELECT DISTINCT state,error_kind FROM analysis_jobs")
+        .all()
+        .map((r) => ({ ...r })),
+      [{ state: "blocked", error_kind: "rights" }],
+    );
+  } finally {
+    s.db.close();
+  }
 });

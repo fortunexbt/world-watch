@@ -38,6 +38,7 @@ import {
 } from "./time";
 import { validBounds } from "./bounds";
 import WorldMap, { colors } from "./Map";
+import { glyphs, HAZARDS, isHazard, type Hazard } from "./hazards";
 import countryRegistry from "../shared/countries.json";
 import type { IncidentView, JobInput } from "../shared/contracts";
 type Snapshot = {
@@ -95,14 +96,6 @@ let apiQuotaBlocked = false;
 try {
   apiQuotaBlocked = sessionStorage.getItem("ew-database-quota") === "paused";
 } catch {}
-const HAZARDS = [
-  "earthquake",
-  "tropical_cyclone",
-  "flood",
-  "wildfire",
-  "volcanic_eruption",
-  "drought",
-];
 /** Records from sources that never go to a model are complete without analysis. */
 const structuredOnly = (i: IncidentView) =>
   i.reports.length > 0 && i.reports.every((r: any) => r.rights?.ai === false);
@@ -138,6 +131,7 @@ export default function App() {
   const [showCameras,setShowCameras]=useState(new URLSearchParams(location.search).get("layer")==="cameras" || new URLSearchParams(location.search).has("camera")),[density,setDensity]=useState(false),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(new URLSearchParams(location.search).get("camera")),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
   const [geoLayers,setGeoLayers]=useState<string[]>([]),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
   const [clock, setClock] = useState(Date.now);
+  const [legendOpen, setLegendOpen] = useState(false);
   const [language, setLanguage] = useState<Language>(() =>
       readLocal<Language>("ew-language", "en") === "it" ? "it" : "en",
     ),
@@ -664,7 +658,7 @@ export default function App() {
       : filter === "disruptions"
         ? ["disruption", "strike"].includes(i.activity)
         : filter === "hazards"
-          ? HAZARDS.includes(i.activity)
+          ? isHazard(i.activity)
           : ["severe", "critical"].includes(i.impact),
   );
   const incident = snapshot.incidents.find((i) => i.id === selected);
@@ -883,7 +877,7 @@ export default function App() {
           <SlidersHorizontal size={18} />
         </button>
       </header>
-      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} language={language} request={api} onSelect={select}/>
+      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select}/>
       <aside
         id="activity"
         tabIndex={-1}
@@ -1822,13 +1816,17 @@ export default function App() {
                           className="feed-item"
                           data-incident-id={i.id}
                           onClick={() => select(i.id)}
-                          aria-label={`${i.headline}, ${tr(i.impact)}, ${tr(i.evidence_status)}`}
+                          aria-label={`${i.headline}, ${isHazard(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}`}
                         >
                           <div
                             className="incident-symbol"
                             style={{ color: colors[i.impact] }}
                           >
-                            {symbols[i.impact]}
+                            {isHazard(i.activity) ? (
+                              <HazardGlyph hazard={i.activity} size={16} />
+                            ) : (
+                              symbols[i.impact]
+                            )}
                           </div>
                           <div className="feed-item-body">
                             <span className="report-meta">
@@ -1916,13 +1914,39 @@ export default function App() {
           Natural Earth
         </a>
       </div>
-      <div className="legend" aria-label={tr("Reported impact legend")}>
-        {Object.entries(colors).map(([k, v]) => (
-          <span key={k} title={`${tr(k)} ${tr("reported impact")}`}>
-            <i style={{ color: v }}>{symbols[k]}</i>
-            {tr(k)}
+      <div
+        className={`legend${legendOpen ? " open" : ""}`}
+        role="group"
+        aria-label={tr("Map legend")}
+      >
+        <button
+          className="legend-toggle"
+          aria-expanded={legendOpen}
+          onClick={() => setLegendOpen(!legendOpen)}
+        >
+          {tr("Legend")}
+          <ChevronDown size={12} />
+        </button>
+        <div className="legend-row">
+          {Object.entries(colors).map(([k, v]) => (
+            <span key={k} title={`${tr(k)} ${tr("reported impact")}`}>
+              <i style={{ color: v }}>{symbols[k]}</i>
+              {tr(k)}
+            </span>
+          ))}
+        </div>
+        <div className="legend-row">
+          {HAZARDS.map((h) => (
+            <span key={h}>
+              <HazardGlyph hazard={h} />
+              {tr(h)}
+            </span>
+          ))}
+          <span>
+            <i className="area-swatch" />
+            {tr("approximate area")}
           </span>
-        ))}
+        </div>
       </div>
       <button
         className="health-pill"
@@ -2342,6 +2366,23 @@ function QueueReports({
   );
 }
 
+function HazardGlyph({ hazard, size = 13 }: { hazard: Hazard; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={glyphs[hazard]} />
+    </svg>
+  );
+}
 /** Structured adapters store their record as JSON; show its fields instead of raw text. */
 function EvidenceText({
   text,

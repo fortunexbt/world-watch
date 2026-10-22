@@ -26,6 +26,7 @@ export const Activity = z.enum([
   "wildfire",
   "volcanic_eruption",
   "drought",
+  "severe_weather",
   "other_unknown",
 ]);
 export const Evidence = z.object({ id: z.string(), text: z.string() }).strict();
@@ -128,7 +129,7 @@ export type ObservationInput = {
     name: string;
     accuracy: "point" | "city" | "country" | "area";
     radius_km?: number;
-    /** ISO 3166-1 alpha-2 code stated by the source; null when the source states none or several. */
+    /** ISO 3166-1 alpha-2 code stated by the source or derived offline from its exact point; null when neither settles one country. */
     country?: string | null;
   };
   official?: {
@@ -139,6 +140,8 @@ export type ObservationInput = {
     activity?: z.infer<typeof Activity>;
     impact?: z.infer<typeof Impact>;
     cancelled?: boolean;
+    /** The issuer lists the event as current and states no expiry. It stays live until reconciliation of the issuer's complete current list no longer finds it. */
+    current_listing?: boolean;
     references?: string[];
     message_type?: string;
   };
@@ -210,6 +213,8 @@ export type IncidentView = {
   superseded_by?: string;
   review_needed: boolean;
   cancelled: boolean;
+  /** Live while its issuer lists it as current; false once the issuer stops listing it. */
+  current_listing?: boolean;
 };
 export type SourceRecord = {
   id: string;

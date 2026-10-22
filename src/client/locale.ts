@@ -13,6 +13,10 @@ export const italian: Record<string, string> = {
   "Waiting for analyzed updates from a completed five-minute window.":"In attesa di aggiornamenti analizzati in un intervallo di cinque minuti concluso.",
   "Processed updates, not event occurrence times.":"Orari di elaborazione, non di accadimento degli eventi.",
   "further updates outside this brief":"ulteriori aggiornamenti fuori da questa sintesi",
+  "further records outside this brief":"ulteriori record fuori da questa sintesi",
+  "Structured brief":"Sintesi strutturata",
+  "Built from issuer fields, no model":"Composta dai campi degli enti emittenti, senza modello",
+  Generated:"Generata alle",
   "Priority incidents":"Eventi prioritari",
   "Newer evidence available":"Sono disponibili evidenze più recenti",
   "Open evidence":"Apri le evidenze",
@@ -35,8 +39,8 @@ export const italian: Record<string, string> = {
   "structured source": "fonte strutturata",
   "Structured source record, published without model analysis.":
     "Record di fonte strutturata, pubblicato senza analisi del modello.",
-  "Briefs need the analysis worker, which is not connected. Source records on the map are live.":
-    "Le sintesi richiedono il worker di analisi, che non è collegato. I record delle fonti sulla mappa sono in tempo reale.",
+  "No issuer records in this window. News briefs need the analysis worker, which is not connected.":
+    "Nessun record degli enti emittenti in questo intervallo. Le sintesi delle notizie richiedono il worker di analisi, che non è collegato.",
   Disruption: "Disagi",
   "Time window": "Intervallo temporale",
   "24 hours": "24 ore",
@@ -158,7 +162,9 @@ export const italian: Record<string, string> = {
   "Open contextual search": "Apri ricerca contestuale",
   "Public gatherings, disruption & official notices":
     "Raduni pubblici, disagi e avvisi ufficiali",
-  "Reported impact legend": "Legenda dell’impatto segnalato",
+  "Map legend": "Legenda della mappa",
+  Legend: "Legenda",
+  "approximate area": "area approssimativa",
   "reported impact": "impatto segnalato",
   pending: "in attesa",
   Connecting: "Connessione in corso",
@@ -191,6 +197,7 @@ export const italian: Record<string, string> = {
   wildfire: "incendio boschivo",
   volcanic_eruption: "eruzione vulcanica",
   drought: "siccità",
+  severe_weather: "maltempo intenso",
   worldwide: "tutto il mondo",
   unverified: "non verificato",
   corroborated: "con riscontri",
