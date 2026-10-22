@@ -95,6 +95,17 @@ let apiQuotaBlocked = false;
 try {
   apiQuotaBlocked = sessionStorage.getItem("ew-database-quota") === "paused";
 } catch {}
+const HAZARDS = [
+  "earthquake",
+  "tropical_cyclone",
+  "flood",
+  "wildfire",
+  "volcanic_eruption",
+  "drought",
+];
+/** Records from sources that never go to a model are complete without analysis. */
+const structuredOnly = (i: IncidentView) =>
+  i.reports.length > 0 && i.reports.every((r: any) => r.rights?.ai === false);
 function quotaResponse(body: string) {
   if (
     !/storage_quota_paused|database_quota|D1[^\n]*(?:read[^\n]*limit|daily|quota)|daily[^\n]*(?:read|row)[^\n]*limit/i.test(
@@ -652,7 +663,9 @@ export default function App() {
         i.activity === "gathering"
       : filter === "disruptions"
         ? ["disruption", "strike"].includes(i.activity)
-        : ["severe", "critical"].includes(i.impact),
+        : filter === "hazards"
+          ? HAZARDS.includes(i.activity)
+          : ["severe", "critical"].includes(i.impact),
   );
   const incident = snapshot.incidents.find((i) => i.id === selected);
   const countryCode =
@@ -825,6 +838,12 @@ export default function App() {
           >
             {tr("Disruption")}
           </button>
+          <button
+            aria-pressed={filter === "hazards"}
+            onClick={() => setFilter("hazards")}
+          >
+            {tr("Hazards")}
+          </button>
         </div>
         <label className="time-control">
           <Clock3 size={15} />
@@ -864,7 +883,7 @@ export default function App() {
           <SlidersHorizontal size={18} />
         </button>
       </header>
-      <RollingBrief ready={ready&&!auth&&!at} language={language} request={api} onSelect={select}/>
+      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} language={language} request={api} onSelect={select}/>
       <aside
         id="activity"
         tabIndex={-1}
@@ -968,9 +987,17 @@ export default function App() {
             <h1 tabIndex={-1}>{incident.headline}</h1>
             {incident.analyzed_at === null && (
               <p className="notice">
-                {tr("AI pending")}.{" "}
-                {tr(
-                  "Issuer fields are shown unchanged; analysis is still pending.",
+                {structuredOnly(incident) ? (
+                  tr(
+                    "Structured source record, published without model analysis.",
+                  )
+                ) : (
+                  <>
+                    {tr("AI pending")}.{" "}
+                    {tr(
+                      "Issuer fields are shown unchanged; analysis is still pending.",
+                    )}
+                  </>
                 )}
               </p>
             )}
@@ -1019,7 +1046,7 @@ export default function App() {
               <p>
                 {tr(
                   incident.analysis_status === "source_only" ? "Official record retained; AI extraction needs review" : incident.analyzed_at === null
-                    ? incident.reports.every((r:any)=>r.rights?.ai===false) ? "Official source fields; AI processing not enabled" : "AI pending"
+                    ? structuredOnly(incident) ? "Official source fields; AI processing not enabled" : "AI pending"
                     : "Analyzed from source evidence",
                 )}
               </p>
@@ -1821,7 +1848,12 @@ export default function App() {
                               <span className="evidence-state">
                                 {tr(i.evidence_status)}
                                 {i.analyzed_at === null
-                                  ? " · " + tr("AI pending")
+                                  ? " · " +
+                                    tr(
+                                      structuredOnly(i)
+                                        ? "structured source"
+                                        : "AI pending",
+                                    )
                                   : ""}
                               </span>
                             </span>

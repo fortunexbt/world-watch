@@ -31,6 +31,12 @@ export const italian: Record<string, string> = {
   "Search events, places and sources": "Cerca eventi, luoghi e fonti",
   "All activity": "Tutte le attività",
   Gatherings: "Raduni",
+  Hazards: "Rischi naturali",
+  "structured source": "fonte strutturata",
+  "Structured source record, published without model analysis.":
+    "Record di fonte strutturata, pubblicato senza analisi del modello.",
+  "Briefs need the analysis worker, which is not connected. Source records on the map are live.":
+    "Le sintesi richiedono il worker di analisi, che non è collegato. I record delle fonti sulla mappa sono in tempo reale.",
   Disruption: "Disagi",
   "Time window": "Intervallo temporale",
   "24 hours": "24 ore",
