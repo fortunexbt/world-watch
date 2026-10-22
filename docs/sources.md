@@ -79,6 +79,14 @@ The [ECCC Data Services End-use Licence](https://eccc-msc.github.io/open-data/li
 
 ECCC's colour is its own rating of expected impact, not observed harm. Red, ECCC's "very dangerous" level, still maps to severe and never to critical. Hurricane and tropical storm warnings map to the `tropical_cyclone` activity, storm surge warnings to `flood`, and every other warning, including rainfall, wind, blizzard, heat and cold, to `severe_weather`. A rainfall warning forecasts heavy rain and does not state flooding, so it isn't mapped to `flood`.
 
+## Reviewed and not integrated
+
+These hazard feeds were checked on 22 October 2026 and left out.
+
+- NOAA tsunami warning centres (`tsunami.gov` Atom feeds `PHEBAtom.xml` and `PAAQAtom.xml`). The content is U.S. public domain, but each feed holds only the latest bulletin from its centre, and both held information statements saying there was no tsunami threat. With no live warning, advisory or watch to sample, the warning categories, cancellation and expiry couldn't be verified against real bulletins, and the epicentre point would misplace a threat to distant coasts. NWS still carries US tsunami alerts, but as zone-based alerts without polygons.
+- USGS volcano alert levels (HANS public API at `volcanoes.usgs.gov/hans-public/api`). The content is U.S. public domain, but the yield was four volcanoes, one at Watch/Orange and three at Advisory/Yellow. The elevated list has no coordinates, so a second catalogue request would be needed, and the CAP list covers only Watch and Warning. Advisory and Watch describe unrest as well as eruption, which the `volcanic_eruption` activity would overstate, and GDACS already maps Orange and Red volcanic events worldwide.
+- Smithsonian Global Volcanism Program. A bounded request for its terms of use returned a bot challenge instead of the terms, so reuse rights couldn't be established.
+
 ## Admission contract
 
 Before enabling a source, establish its geographic scope, publisher and upstream origin, update semantics, typical latency, reliability, terms, attribution, and separate permissions for access, storage, model use, display and redistribution. Record the specific grant or blocker. Public reachability is not a grant.
