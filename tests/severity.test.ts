@@ -171,3 +171,87 @@ test("a matching official directive supports severe impact without a stated cons
   assert.throws(() => withClaim("The Regional Authority told residents to stay indoors.", claim), /unsupported_escalation/);
   assert.throws(() => withClaim("Residents may need to stay indoors later.", claim, { official }), /unsupported_escalation/);
 });
+
+type Case = [text: string, impact: string];
+const languages: Record<string, { affirmed: Case[]; negated: Case; hypothetical: Case; critical: Case }> = {
+  fr: { affirmed: [["L'incendie a fait 3 morts.", "3 morts"], ["Pas moins de 10 morts ont été recensés.", "10 morts"]], negated: ["Il n'y a pas eu de blessés.", "blessés"], hypothetical: ["L'incendie pourrait faire des morts.", "morts"], critical: ["Une catastrophe a fait 50 morts.", "catastrophe a fait 50 morts"] },
+  es: { affirmed: [["El incendio dejó 3 muertos.", "3 muertos"]], negated: ["No hubo heridos.", "heridos"], hypothetical: ["El sismo podría causar muertos.", "muertos"], critical: ["Una catástrofe dejó 50 muertos.", "catástrofe dejó 50 muertos"] },
+  pt: { affirmed: [["O incêndio deixou 12 mortos e 30 feridos.", "12 mortos"]], negated: ["Não houve feridos.", "feridos"], hypothetical: ["O sismo poderia ter causado mortes.", "mortes"], critical: ["Uma catástrofe deixou 80 mortos.", "catástrofe deixou 80 mortos"] },
+  it: { affirmed: [["L'esplosione ha causato 3 morti.", "3 morti"], ["Non meno di 10 feriti in ospedale.", "10 feriti"]], negated: ["Non ci sono feriti.", "feriti"], hypothetical: ["La frana potrebbe causare morti.", "morti"], critical: ["Una catastrofe con 50 morti.", "catastrofe con 50 morti"] },
+  de: { affirmed: [["Bei dem Brand wurden 3 Menschen getötet.", "3 menschen getötet"]], negated: ["Es gab keine Verletzten.", "verletzten"], hypothetical: ["Der Sturm könnte Tote fordern.", "tote"], critical: ["Eine Katastrophe mit 50 Toten.", "katastrophe mit 50 toten"] },
+  nl: { affirmed: [["Bij de brand vielen 3 doden.", "3 doden"]], negated: ["Er vielen geen gewonden.", "gewonden"], hypothetical: ["De storm kan doden veroorzaken.", "doden"], critical: ["Een catastrofale overstroming eiste 50 doden.", "catastrofale overstroming eiste 50 doden"] },
+  ru: { affirmed: [["При пожаре погибли пять человек.", "погибли пять человек"], ["Не менее 10 человек погибли.", "10 человек погибли"]], negated: ["Погибших нет.", "погибших"], hypothetical: ["Ураган может привести к жертвам.", "жертвам"], critical: ["Произошла катастрофическая авария, погибли 50 человек.", "катастрофическая авария, погибли 50 человек"] },
+  uk: { affirmed: [["Внаслідок обстрілу загинули троє людей.", "загинули троє людей"]], negated: ["Загиблих немає.", "загиблих"], hypothetical: ["Обстріл може спричинити жертви.", "жертви"], critical: ["Масові жертви: загинули 40 людей.", "масові жертви: загинули 40 людей"] },
+  ar: { affirmed: [["وأعلنت الشرطة سقوط 12 قتيلاً في الهجوم.", "12 قتيلاً"], ["سقط ما لا يقل عن 10 قتلى.", "10 قتلى"], ["وقد تم نقل الجرحى. وأفادت الشرطة بسقوط قَتْلَى.", "قتلى"]], negated: ["لم يسفر الحادث عن سقوط قتلى.", "قتلى"], hypothetical: ["قد يؤدي الحريق إلى سقوط قتلى.", "سقوط قتلى"], critical: ["أسفرت مجزرة مروعة عن مقتل 40 شخصا.", "مجزرة مروعة عن مقتل 40 شخصا"] },
+  fa: { affirmed: [["در این حمله ۵ نفر کشته شدند.", "۵ نفر کشته شدند"]], negated: ["در این حادثه کسی کشته نشد.", "کشته"], hypothetical: ["ممکن است این سیل تلفات داشته باشد.", "تلفات"], critical: ["این فاجعه ۵۰ کشته بر جای گذاشت.", "فاجعه ۵۰ کشته"] },
+  ur: { affirmed: [["دھماکے میں 5 افراد ہلاک ہو گئے۔", "5 افراد ہلاک"]], negated: ["واقعے میں کوئی زخمی نہیں ہوا۔", "زخمی"], hypothetical: ["سیلاب سے ہلاکتوں کا امکان ہے۔", "ہلاکتوں"], critical: ["تباہ کن زلزلے میں 100 افراد ہلاک ہو گئے۔", "تباہ کن زلزلے میں 100 افراد ہلاک"] },
+  hi: { affirmed: [["हमले में 5 लोगों की मौत हो गई।", "5 लोगों की मौत"]], negated: ["हादसे में कोई घायल नहीं हुआ।", "घायल"], hypothetical: ["बाढ़ से मौतों की आशंका है।", "मौतों"], critical: ["विनाशकारी भूकंप में 200 लोगों की मौत हो गई।", "विनाशकारी भूकंप में 200 लोगों की मौत"] },
+  bn: { affirmed: [["অগ্নিকাণ্ডে ৫ জন নিহত হয়েছেন।", "৫ জন নিহত"]], negated: ["দুর্ঘটনায় কেউ আহত হয়নি।", "আহত"], hypothetical: ["ঘূর্ণিঝড়ে প্রাণহানির আশঙ্কা রয়েছে।", "প্রাণহানির"], critical: ["ভূমিকম্পে ব্যাপক প্রাণহানি হয়েছে।", "ব্যাপক প্রাণহানি"] },
+  tr: { affirmed: [["Saldırıda 4 kişi hayatını kaybetti.", "4 kişi hayatını kaybetti"]], negated: ["Kazada ölü yok.", "ölü"], hypothetical: ["Fırtına can kaybına neden olabilir.", "can kaybına"], critical: ["Felaket boyutundaki selde 30 kişi öldü.", "felaket boyutundaki selde 30 kişi öldü"] },
+  "id/ms": { affirmed: [["Sebanyak 7 orang tewas dalam kebakaran itu.", "7 orang tewas"], ["Tidak kurang dari 10 orang tewas.", "10 orang tewas"]], negated: ["Tidak ada korban jiwa dalam kejadian itu.", "korban jiwa"], hypothetical: ["Banjir berpotensi menyebabkan korban jiwa.", "korban jiwa"], critical: ["Gempa itu menyebabkan korban massal dan 300 orang tewas.", "korban massal dan 300 orang tewas"] },
+  sw: { affirmed: [["Watu watano waliuawa katika shambulio hilo.", "watano waliuawa"]], negated: ["Hakuna aliyejeruhiwa katika ajali hiyo.", "aliyejeruhiwa"], hypothetical: ["Mafuriko huenda yakasababisha vifo.", "vifo"], critical: ["Maafa makubwa yalitokea na watu 40 walifariki.", "maafa makubwa yalitokea na watu 40 walifariki"] },
+  zh: { affirmed: [["火灾已造成3人死亡。", "3人死亡"], ["无人机袭击造成5人死亡。", "5人死亡"], ["大火造成5人受傷！", "5人受傷"]], negated: ["事故未造成人员伤亡。", "人员伤亡"], hypothetical: ["暴雨可能造成人员伤亡。", "人员伤亡"], critical: ["地震造成重大伤亡，至少50人死亡。", "重大伤亡"] },
+  ja: { affirmed: [["火災で3人が死亡した。", "3人が死亡"], ["少なくとも3人が死亡した。", "3人が死亡"]], negated: ["この事故によるけが人はいない。", "けが人"], hypothetical: ["建物が倒壊するおそれがある。", "倒壊"], critical: ["地震で多数の死者が確認された。", "多数の死者"] },
+  ko: { affirmed: [["화재로 3명이 사망했다.", "3명이 사망했다"]], negated: ["이번 사고로 인한 사상자는 없었다.", "사상자"], hypothetical: ["태풍으로 이재민이 발생할 우려가 있다.", "이재민"], critical: ["이번 참사로 150명이 숨졌다.", "참사로 150명이 숨졌다"] },
+  th: { affirmed: [["เหตุไฟไหม้ทำให้มีผู้เสียชีวิต 3 ราย", "ผู้เสียชีวิต 3 ราย"]], negated: ["ไม่มีผู้ได้รับบาดเจ็บ", "บาดเจ็บ"], hypothetical: ["พายุอาจทำให้มีผู้เสียชีวิต", "ผู้เสียชีวิต"], critical: ["หายนะครั้งนี้มีผู้เสียชีวิตกว่า 100 ราย", "หายนะครั้งนี้มีผู้เสียชีวิต"] },
+  vi: { affirmed: [["Vụ cháy khiến 5 người thiệt mạng.", "5 người thiệt mạng"], ["Cuộc không kích khiến 5 người thiệt mạng.", "5 người thiệt mạng"]], negated: ["Không có ai bị thương.", "bị thương"], hypothetical: ["Bão có thể gây thương vong.", "thương vong"], critical: ["Thảm họa khiến 100 người thiệt mạng.", "thảm họa khiến 100 người thiệt mạng"] },
+};
+
+for (const [language, { affirmed, negated, hypothetical, critical }] of Object.entries(languages)) {
+  test(`${language}: affirmed consequences escalate; negated, hypothetical and unscaled critical claims do not`, () => {
+    for (const [text, impact] of affirmed) {
+      assert.doesNotThrow(() => withClaim(text, { impacts: [impact] }), `${text} / ${impact}`);
+      assert.throws(() => withClaim(text, { impacts: [impact], impact: "critical" }), /unsupported_escalation/, `${text} critical`);
+    }
+    for (const [text, impact] of [negated, hypothetical]) {
+      assert.doesNotThrow(() => withClaim(impact, { impacts: [impact] }), `${impact} is a recognized consequence on its own`);
+      assert.throws(() => withClaim(text, { impacts: [impact] }), /unsupported_escalation/, `${text} / ${impact}`);
+    }
+    assert.doesNotThrow(() => withClaim(critical[0], { impacts: [critical[1]], impact: "critical" }), critical[0]);
+  });
+}
+
+test("ambiguous or out-of-lexicon wording fails closed", () => {
+  for (const [text, impact] of [
+    ["10 إصابات جديدة بكورونا.", "10 إصابات"],
+    ["Pengunjuk rasa membayar maut.", "maut"],
+    ["参赞参加了会议。", "参赞"],
+    ["대사관 참사관이 회의에 참석했다.", "참사관이"],
+  ])
+    assert.throws(() => withClaim(text, { impacts: [impact] }), /unsupported_escalation/, text);
+  assert.throws(
+    () => withClaim("Авиакатастрофа: погибли 2 человека.", { impacts: ["погибли 2 человека"], impact: "critical" }),
+    /unsupported_escalation/,
+  );
+});
+
+test("drills are hypothetical in non-European scripts", () => {
+  for (const [text, impact] of [
+    ["避難訓練で住民が避難した。", "住民が避難"],
+    ["消防演练中疏散了200人。", "疏散了200人"],
+    ["대피 훈련으로 주민들이 대피했다.", "주민들이 대피했다"],
+    ["Tatbikatta bina tahliye edildi.", "tahliye edildi"],
+  ]) {
+    const claim = { activity: "displacement", violence_mentioned: "no", impacts: [impact] };
+    assert.doesNotThrow(() => withClaim(impact, claim), impact);
+    assert.throws(() => withClaim(text, claim), /unsupported_escalation/, text);
+  }
+});
+
+test("official directives are recognized in source-language wording", () => {
+  const official = { issuer: "Authority", effective_at: null, expires_at: null };
+  for (const [text, instruction] of [
+    ["Authorityは住民に直ちに避難してくださいと呼びかけた。", "直ちに避難してください"],
+    ["Authority: أخلوا المنطقة فوراً.", "أخلوا المنطقة"],
+    ["Authority: оставайтесь дома.", "оставайтесь дома"],
+    ["Authority: 就地避难。", "就地避难"],
+  ]) {
+    const claim = {
+      activity: "official_advisory",
+      violence_mentioned: "no",
+      impacts: [instruction],
+      official_instruction: { issuer: "Authority", instruction, effective_at: null, expires_at: null, evidence_ids: ["e1"] },
+    };
+    assert.doesNotThrow(() => withClaim(text, claim, { official }), text);
+  }
+});
