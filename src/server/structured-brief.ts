@@ -36,6 +36,13 @@ function issuer(view: IncidentView): Record<string, any> {
     return {};
   }
 }
+/** NWS and ECCC warning records, recognised by their own fields, are counted per issuer, hazard and country. */
+function warningIssuer(record: Record<string, any>) {
+  if (typeof record.vtec === "string") return "NWS";
+  if (typeof record.alert === "string" && "risk_colour" in record)
+    return "ECCC";
+  return null;
+}
 function countries(codes: unknown) {
   const names = [
     ...new Set(
@@ -89,14 +96,26 @@ export function structuredBrief(
         incidents: [v],
       });
     } else {
-      const key =
-        v.activity === "earthquake" && Number.isFinite(record.magnitude)
+      const warning = warningIssuer(record);
+      const key = warning
+        ? `warning|${warning}|${v.activity}|${v.location?.country ?? ""}`
+        : v.activity === "earthquake" && Number.isFinite(record.magnitude)
           ? "magnitude"
           : v.activity;
       groups.set(key, [...(groups.get(key) ?? []), v]);
     }
   }
   for (const [key, incidents] of groups) {
+    if (key.startsWith("warning|")) {
+      const [, by, activity, country] = key.split("|"),
+        n = incidents.length,
+        where = countries([country]);
+      statements.push({
+        text: `${n} ${by} ${activity.replaceAll("_", " ")} ${n === 1 ? "warning" : "warnings"}${where ? " in " + where : ""}.`,
+        incidents,
+      });
+      continue;
+    }
     if (key !== "magnitude") {
       const n = incidents.length;
       statements.push({

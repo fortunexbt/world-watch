@@ -60,7 +60,7 @@ The parts worth a closer look:
 - Snapshot queries filter by area in SQL before their 1,000-row limit, so a quiet region still shows up beside a busy one. The project exhausted the free D1 read allowance once, and the read path is built around that lesson.
 - The pipeline treats source text as evidence and ignores instructions inside it. The extraction worker runs without tools or file access, and a malicious-input evaluation recorded zero tool attempts.
 
-The test suite has 305 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
+The test suite has 306 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
 
 ## Honest status
 

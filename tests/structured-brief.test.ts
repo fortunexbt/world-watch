@@ -5,6 +5,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { structuredBrief } from "../src/server/structured-brief.js";
 import { parseUsgs } from "../src/collector/adapters/usgs.js";
 import { parseGdacs } from "../src/collector/adapters/gdacs.js";
+import { parseNws } from "../src/collector/adapters/nws.js";
+import { parseEccc } from "../src/collector/adapters/eccc.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import server, { type Env } from "../src/server/index.js";
 import type { IncidentView } from "../src/shared/contracts.js";
@@ -158,6 +160,40 @@ test("counts pluralise and the magnitude floor never overstates the smallest eve
   assert.equal(
     brief([view({}, displacement), view({}, displacement), quake(Number.NaN, "x")]).headline,
     "2 displacement records. 1 earthquake record.",
+  );
+});
+
+test("NWS and ECCC warnings are counted per issuer, hazard and country", () => {
+  const source = (id: string) => sourceRegistry.find((s) => s.id === id)!;
+  const published = (row: ReturnType<typeof parseNws>[number]) =>
+    view(JSON.parse(row.excerpts[0].text), {
+      activity: row.official!.activity!,
+      impact: row.official!.impact!,
+      cancelled: row.official!.cancelled ?? false,
+      event_start: row.official!.effective_at,
+      location: { ...row.source_geo!, country: row.source_geo!.country ?? null, radius_km: row.source_geo!.radius_km ?? 20 },
+    });
+  const nws = parseNws(
+    source("us-nws-warnings"),
+    JSON.parse(readFileSync("tests/fixtures/nws-alerts.json", "utf8")),
+  ).map(published);
+  const eccc = parseEccc(
+    source("ca-eccc-warnings"),
+    JSON.parse(readFileSync("tests/fixtures/eccc-alerts.json", "utf8")),
+  ).map(published);
+  // The fixture's two cancelled NWS warnings are left out, and the severe thunderstorm warning, issued last, leads its equals.
+  const b = structuredBrief([...nws, ...eccc], 168, Date.parse("2026-10-22T16:00:00Z"))!;
+  assert.deepEqual(
+    b.statements.map((s) => s.text),
+    [
+      "1 NWS severe weather warning in the United States.",
+      "3 NWS flood warnings in the United States.",
+      "5 ECCC severe weather warnings in Canada.",
+    ],
+  );
+  assert.deepEqual(
+    b.statements.flatMap((s) => s.incident_ids).sort(),
+    [...nws.filter((v) => !v.cancelled), ...eccc].map((v) => v.id).sort(),
   );
 });
 
