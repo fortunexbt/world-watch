@@ -379,3 +379,78 @@ test("Paris road-closure subtype alone never becomes crowd OSINT; exact signal/g
   );
   assert.equal(parsed[1].native_id, "public-gathering");
 });
+test("archive cutoff keeps future dates written in non-European languages, scripts and calendars", () => {
+  const published_at = "2026-01-05T00:00:00Z";
+  for (const text of [
+    "Демонстрация запланирована на 25 октября 2026 года.",
+    "Мітинг відбудеться 25 жовтня 2026 року.",
+    "Manifestação marcada para 25 de outubro de 2026.",
+    "مظاهرة يوم ٢٥ أكتوبر ٢٠٢٦ في وسط المدينة.",
+    "تجمع در ۲۵ اکتبر ۲۰۲۶ برگزار می‌شود.",
+    "集会定于2026年10月25日举行。",
+    "2026年10月25日にデモが行われる。",
+    "2026년 10월 25일 집회가 열린다.",
+    "การชุมนุมวันที่ 25 ตุลาคม 2569",
+    "การชุมนุมวันที่ 25 ต.ค. 2569",
+    "Maandamano tarehe 25 Oktoba 2026.",
+    "Aksi unjuk rasa pada 25 Oktober 2026.",
+    "Miting 25 Ekim 2026'da yapılacak.",
+    "२५ अक्टूबर २०२६ को प्रदर्शन होगा।",
+    "২৫ অক্টোবর ২০২৬ তারিখে সমাবেশ।",
+    "Biểu tình ngày 25 tháng 10 năm 2026.",
+    "Rally on 2026/10/25.",
+    "Забастовка запланирована на 2027 год.",
+    "罢工计划于2027年举行。",
+    "การชุมนุมมีกำหนดจัดในปี 2570",
+  ])
+    assert.equal(
+      sourceEligibility(dpc, row(text, { published_at }), clock).eligible,
+      true,
+      text,
+    );
+  for (const text of [
+    "Демонстрация прошла 5 января 2026 года.",
+    "集会于2026年1月5日举行。",
+    "การชุมนุมวันที่ 5 ม.ค. 2569",
+  ])
+    assert.equal(
+      sourceEligibility(dpc, row(text, { published_at }), clock).reason,
+      "archive_outside_monitoring_window",
+      text,
+    );
+});
+test("public-safety and protest keywords are recognized beyond European languages", () => {
+  const routine = "Updated entry requirements for passports.";
+  assert.equal(sourceEligibility(fcdo, row(routine), clock).eligible, false);
+  assert.equal(
+    sourceEligibility(
+      fcdo,
+      row("Updated entry requirements for selected passports."),
+      clock,
+    ).eligible,
+    false,
+  );
+  for (const signal of [
+    "Protesto no centro.",
+    "Протесты в центре города.",
+    "Обстріл міста.",
+    "مظاهرات في وسط المدينة.",
+    "تظاهرات در مرکز شهر.",
+    "شہر میں ہڑتال۔",
+    "市中心发生抗议。",
+    "デモが行われた。",
+    "도심에서 시위가 열렸다.",
+    "มีการชุมนุมในเมือง",
+    "Maandamano mjini.",
+    "Unjuk rasa di pusat kota.",
+    "Şehir merkezinde gösteri.",
+    "शहर में विरोध प्रदर्शन।",
+    "শহরে বিক্ষোভ।",
+    "Biểu tình ở trung tâm.",
+  ])
+    assert.equal(
+      sourceEligibility(fcdo, row(`${routine} ${signal}`), clock).eligible,
+      true,
+      signal,
+    );
+});

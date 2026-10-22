@@ -646,9 +646,7 @@ export function sourceEligibility(
     return exclude("outside_selected_public_order_safety_scope");
   }
   // Peaceful protest, strikes and explicit broad safety effects override routine operational notices.
-  const relevant =
-    /\b(protests?|demonstrations?|manifestations?|manifestant\w*|rassembl\w*|manifestaciones|manifestazion[ei]|kundgebung\w*|betoging\w*|streiks?|strikes?|greves?|huelgas?|scioper[oi]|staking|curfews?|couvre.feu|toque de queda|coprifuoco|evacuat\w*|evacuaz\w*|evaku\w*|violence|violent|gewalt|unrest|riots?|emeutes?|troubles|terror\w*|safety|security|danger|hazards?|shelter|outbreak\w*|epidem\w*|kidnap\w*|shoot\w*|bomb\w*|roadblocks?|attacks?|attentats?|incend\w*|fire|flood\w*|inond\w*|accident\w*|derail\w*|entgleis\w*)\b/u;
-  if (relevant.test(text))
+  if (RELEVANT.test(text))
     return keep("explicit_public_safety_protest_or_strike");
   if (
     /(?:acces|accesso|zugang|toegang).{0,80}(?:bloqu\w*|interdit\w*|gesperrt|afgesloten)/su.test(
@@ -739,7 +737,141 @@ export function sourceEligibility(
   return keep("source_not_subject_to_cheap_exclusion");
 }
 
-function mentionsCurrentOrFutureDate(text: string, clock: number) {
+/** Folds keywords the way sourceEligibility folds observation text. */
+const foldKeyword = (value: string) =>
+  value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/** Whole words for spaced scripts (`~` completes a word); substrings for scripts written without spaces or with attached clitics. */
+function keywords(spaced: string[], attached: string[]) {
+  const word = spaced
+    .map((term) => foldKeyword(term).replaceAll("~", "\\p{L}*"))
+    .join("|");
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}])(?:${word})(?![\\p{L}\\p{N}])|${attached.map(foldKeyword).join("|")}`,
+    "u",
+  );
+}
+
+// prettier-ignore
+const RELEVANT = keywords(
+  [
+    // en fr es it de nl
+    "protests?", "demonstrations?", "manifestations?", "manifestant~",
+    "rassembl~", "manifestaciones", "manifestazion[ei]", "kundgebung~",
+    "betoging~", "streiks?", "strikes?", "greves?", "huelgas?", "scioper[oi]",
+    "staking", "curfews?", "couvre.feu", "toque de queda", "coprifuoco",
+    "evacuat~", "evacuaz~", "evaku~", "violence", "violent", "gewalt",
+    "unrest", "riots?", "emeutes?", "troubles", "terror~", "safety",
+    "security", "danger", "hazards?", "shelter", "outbreak~", "epidem~",
+    "kidnap~", "shoot~", "bomb~", "roadblocks?", "attacks?", "attentats?",
+    "incend~", "fire", "flood~", "inond~", "accident~", "derail~", "entgleis~",
+    "protesta~", "disturbios", "tiroteo~", "explos~", "ataques?", "violencia",
+    "evacuac~", "demonstratie~", "avondklok", "evacuatie", "geweld", "rellen",
+    "aanslag~", "overstroming~", "explosie~", "schietpartij~",
+    "ausgangssperre", "unruhen", "anschlag~", "hochwasser", "überschwemmung~",
+    // pt
+    "protesto~", "manifestaç~", "toque de recolher", "tumulto~", "tiroteio~",
+    "inundaç~",
+    // ru uk
+    "протест~", "демонстрац~", "митинг~", "забастов~", "комендантск~ час",
+    "эвакуац~", "насили~", "беспорядк~", "теракт~", "взрыв~", "обстрел~",
+    "нападени~", "атак~", "пожар~", "наводнени~", "стрельб~", "опасност~",
+    "мітинг~", "страйк~", "комендантськ~ годин~", "евакуац~", "насильств~",
+    "заворушен~", "вибух~", "обстріл~", "напад~", "пожеж~", "повін~",
+    "стрілянин~", "небезпек~", "тривог~",
+    // tr
+    "gösteri~", "miting~", "grev~", "sokağa çıkma yasağı", "tahliye~",
+    "şiddet~", "ayaklanma~", "terör~", "patlama~", "saldırı~", "yangın~",
+    "sel(?:de|i|in)?", "su baskın~", "tehlike~",
+    // id ms
+    "unjuk rasa", "demonstrasi", "demo", "protes", "mogok", "jam malam",
+    "evakuasi", "kekerasan", "kerusuhan", "rusuhan", "teror~", "ledakan",
+    "letupan", "serangan", "kebakaran", "banjir", "penembakan", "tembakan",
+    "bahaya",
+    // sw
+    "maandamano", "mgomo", "migomo", "amri ya kutotoka nje", "vurugu",
+    "ghasia", "ugaidi", "mlipuko", "shambulio", "mashambulizi", "moto",
+    "mafuriko", "risasi", "hatari",
+    // hi bn
+    "प्रदर्शन~", "विरोध~", "हड़ताल~", "कर्फ्यू", "निकासी", "हिंसा~", "दंगा~",
+    "दंगे", "आतंक~", "विस्फोट~", "धमाका~", "धमाके", "हमला~", "हमले",
+    "आगजनी", "आग लग~", "बाढ़~", "गोलीबारी", "खतरा~", "বিক্ষোভ~", "হরতাল~",
+    "ধর্মঘট~", "কারফিউ~", "সহিংসতা~", "দাঙ্গা~", "সন্ত্রাস~", "বিস্ফোরণ~",
+    "হামলা~", "অগ্নিকাণ্ড~", "আগুন~", "বন্যা~", "গুলি~", "বিপদ~",
+    // vi
+    "biểu tình", "đình công", "giới nghiêm", "sơ tán", "bạo lực", "bạo loạn",
+    "khủng bố", "vụ nổ", "tấn công", "hỏa hoạn", "hoả hoạn", "lũ lụt",
+    "xả súng", "nguy hiểm",
+  ],
+  [
+    // ar fa ur
+    "مظاهر", "احتجاج", "إضراب", "حظر تجول", "حظر التجول", "إخلاء", "عنف",
+    "شغب", "إرهاب", "انفجار", "هجوم", "حريق", "فيضان", "سيول", "إطلاق نار",
+    "قصف", "خطر", "تظاهرات", "اعتراض", "اعتصاب", "منع رفت و آمد", "تخلیه",
+    "خشونت", "آشوب", "اغتشاش", "تروریست", "حمله", "آتش", "سیل",
+    "تیراندازی", "مظاہر", "ہڑتال", "کرفیو", "انخلا", "تشدد", "فسادات",
+    "دہشت", "دھماک", "حملہ", "حملے", "آگ", "سیلاب", "فائرنگ",
+    // zh ja ko th
+    "抗议", "抗議", "示威", "游行", "遊行", "罢工", "罷工", "宵禁", "撤离",
+    "撤離", "疏散", "暴力", "骚乱", "騷亂", "暴乱", "暴亂", "恐怖", "爆炸",
+    "袭击", "襲擊", "火灾", "火災", "起火", "洪水", "洪灾", "洪災", "枪击",
+    "槍擊", "危险", "危險", "デモ", "ストライキ", "外出禁止", "避難", "暴動",
+    "テロ", "爆発", "襲撃", "攻撃", "火事", "浸水", "銃撃", "発砲", "危険",
+    "시위", "집회", "파업", "통행금지", "대피", "폭력", "폭동", "테러", "폭발",
+    "공격", "습격", "화재", "홍수", "총격", "위험", "ประท้วง", "ชุมนุม",
+    "นัดหยุดงาน", "เคอร์ฟิว", "อพยพ", "ความรุนแรง", "จลาจล", "ก่อการร้าย",
+    "ระเบิด", "โจมตี", "ไฟไหม้", "น้ำท่วม", "ยิง", "อันตราย",
+  ],
+);
+
+// prettier-ignore
+const PLANNED = keywords(
+  [
+    "planned", "scheduled", "previst~", "programmat~", "prochain~", "prevu~",
+    "programad~", "planificad~", "planejad~", "agendad~", "geplant~",
+    "gepland~", "planerad~", "запланирован~", "планиру~", "намечен~",
+    "запланован~", "планує~", "planlan~", "direncanakan", "dijadwalkan",
+    "dirancang", "~pangwa", "निर्धारित", "प्रस्तावित", "নির্ধারিত",
+    "পরিকল্পিত", "dự kiến", "kế hoạch",
+  ],
+  [
+    "مقرر", "مخطط", "برنامه", "قرار است", "طے شدہ", "计划", "計劃", "計畫",
+    "预定", "預定", "将于", "將於", "予定", "예정", "กำหนดการ", "มีกำหนด",
+  ],
+);
+
+/** Month names by month, as written in dates across the supported languages (Gregorian calendar only). */
+// prettier-ignore
+const MONTHS = [
+  ["january", "janvier", "gennaio", "januar", "enero", "januari", "janeiro", "января", "січня", "ocak", "januari", "januari", "يناير", "كانون الثاني", "ژانویه", "جنوری", "जनवरी", "জানুয়ারি", "มกราคม", "ม.ค."],
+  ["february", "fevrier", "febbraio", "februar", "febrero", "februari", "fevereiro", "февраля", "лютого", "şubat", "فبراير", "شباط", "فوریه", "فروری", "फ़रवरी", "फरवरी", "ফেব্রুয়ারি", "กุมภาพันธ์", "ก.พ."],
+  ["march", "mars", "marzo", "marz", "maart", "março", "марта", "березня", "mart", "maret", "mac", "machi", "مارس", "آذار", "مارچ", "मार्च", "মার্চ", "มีนาคม", "มี.ค."],
+  ["april", "avril", "aprile", "abril", "апреля", "квітня", "nisan", "aprili", "أبريل", "ابريل", "نيسان", "آوریل", "اپریل", "अप्रैल", "এপ্রিল", "เมษายน", "เม.ย."],
+  ["may", "mai", "maggio", "mayo", "mei", "maio", "мая", "травня", "mayıs", "مايو", "أيار", "مه", "مئی", "मई", "মে", "พฤษภาคม", "พ.ค."],
+  ["june", "juin", "giugno", "juni", "junio", "junho", "июня", "червня", "haziran", "jun", "يونيو", "يونيه", "حزيران", "ژوئن", "جون", "जून", "জুন", "มิถุนายน", "มิ.ย."],
+  ["july", "juillet", "luglio", "juli", "julio", "julho", "июля", "липня", "temmuz", "julai", "يوليو", "يوليه", "تموز", "ژوئیه", "جولائی", "जुलाई", "জুলাই", "กรกฎาคม", "ก.ค."],
+  ["august", "aout", "agosto", "augustus", "августа", "серпня", "ağustos", "agustus", "ogos", "agosti", "أغسطس", "آب", "اوت", "اگست", "अगस्त", "আগস্ট", "สิงหาคม", "ส.ค."],
+  ["september", "septembre", "settembre", "septiembre", "setembro", "сентября", "вересня", "eylül", "septemba", "سبتمبر", "أيلول", "سپتامبر", "ستمبر", "सितंबर", "सितम्बर", "সেপ্টেম্বর", "กันยายน", "ก.ย."],
+  ["october", "octobre", "ottobre", "oktober", "octubre", "outubro", "октября", "жовтня", "ekim", "oktoba", "أكتوبر", "تشرين الأول", "اکتبر", "اکتوبر", "अक्टूबर", "अक्तूबर", "অক্টোবর", "ตุลาคม", "ต.ค."],
+  ["november", "novembre", "noviembre", "novembro", "ноября", "листопада", "kasım", "novemba", "نوفمبر", "تشرين الثاني", "نوامبر", "نومبر", "नवंबर", "नवम्बर", "নভেম্বর", "พฤศจิกายน", "พ.ย."],
+  ["december", "decembre", "dicembre", "dezember", "diciembre", "desember", "dezembro", "декабря", "грудня", "aralık", "disember", "desemba", "ديسمبر", "كانون الأول", "دسامبر", "دسمبر", "दिसंबर", "दिसम्बर", "ডিসেম্বর", "ธันวาคม", "ธ.ค."],
+].map((names) => [...new Set(names.map(foldKeyword))]);
+
+const DIGIT_ZEROS = [0x660, 0x6f0, 0x966, 0x9e6, 0xe50, 0xff10];
+
+/** Arabic-Indic, Persian, Devanagari, Bengali, Thai and fullwidth digits as ASCII. */
+const asciiDigits = (text: string) =>
+  text.replace(/\p{Nd}/gu, (digit) => {
+    const code = digit.codePointAt(0)!;
+    const zero = DIGIT_ZEROS.find((z) => code >= z && code <= z + 9);
+    return zero === undefined ? digit : String(code - zero);
+  });
+
+/** Thai dates use the Buddhist Era, 543 years ahead of the Gregorian year. */
+const gregorian = (year: number) => (year >= 2500 ? year - 543 : year);
+
+function mentionsCurrentOrFutureDate(folded: string, clock: number) {
+  const text = asciiDigits(folded);
   const today = new Date(clock);
   const cutoff = Date.UTC(
     today.getUTCFullYear(),
@@ -755,46 +887,42 @@ function mentionsCurrentOrFutureDate(text: string, clock: number) {
       v.getTime() >= cutoff
     );
   };
-  for (const m of text.matchAll(/\b(20\d{2})-(\d{2})-(\d{2})\b/g))
-    if (validFuture(+m[1], +m[2], +m[3])) return true;
+  for (const m of text.matchAll(/\b(20\d{2})([-/.])(\d{1,2})\2(\d{1,2})\b/g))
+    if (validFuture(+m[1], +m[3], +m[4])) return true;
   for (const m of text.matchAll(/\b(\d{1,2})[./](\d{1,2})[./](20\d{2})\b/g))
     if (validFuture(+m[3], +m[2], +m[1]) || validFuture(+m[3], +m[1], +m[2]))
       return true;
-  const months = [
-    ["january", "janvier", "gennaio", "januar", "enero", "januari"],
-    ["february", "fevrier", "febbraio", "februar", "febrero", "februari"],
-    ["march", "mars", "marzo", "marz", "maart"],
-    ["april", "avril", "aprile", "abril"],
-    ["may", "mai", "maggio", "mayo", "mei"],
-    ["june", "juin", "giugno", "juni", "junio"],
-    ["july", "juillet", "luglio", "juli", "julio"],
-    ["august", "aout", "agosto", "augustus"],
-    ["september", "septembre", "settembre", "septiembre"],
-    ["october", "octobre", "ottobre", "oktober", "octubre"],
-    ["november", "novembre", "noviembre"],
-    ["december", "decembre", "dicembre", "dezember", "diciembre", "desember"],
-  ];
-  for (let index = 0; index < months.length; index++)
-    for (const name of months[index]) {
+  const eastAsian = new RegExp(
+    foldKeyword(
+      "\\b(20\\d{2}) ?(?:年|년) ?(\\d{1,2}) ?(?:月|월) ?(\\d{1,2})|\\b(\\d{1,2}) tháng (\\d{1,2}),? năm (20\\d{2})\\b",
+    ),
+    "g",
+  );
+  for (const m of text.matchAll(eastAsian))
+    if (
+      m[1] ? validFuture(+m[1], +m[2], +m[3]) : validFuture(+m[6], +m[5], +m[4])
+    )
+      return true;
+  for (let index = 0; index < MONTHS.length; index++)
+    for (const name of MONTHS[index]) {
+      const escaped = name.replace(/[.]/g, "\\.");
       const r = new RegExp(
-        `\\b(\\d{1,2})(?:er)?[ .-]+${name}[ ,.-]+(20\\d{2})\\b`,
+        `\\b(\\d{1,2})(?:er)?[ .-]+(?:de )?${escaped}[ ,.-]+(?:de |del )?(20\\d{2}|25\\d{2})\\b`,
         "g",
       );
       for (const m of text.matchAll(r))
-        if (validFuture(+m[2], index + 1, +m[1])) return true;
+        if (validFuture(gregorian(+m[2]), index + 1, +m[1])) return true;
       const english = new RegExp(
-        `\\b${name} +(\\d{1,2})(?:st|nd|rd|th)?[, ]+(20\\d{2})\\b`,
+        `\\b${escaped} +(\\d{1,2})(?:st|nd|rd|th)?[, ]+(20\\d{2})\\b`,
         "g",
       );
       for (const m of text.matchAll(english))
         if (validFuture(+m[2], index + 1, +m[1])) return true;
     }
   return (
-    /\b(?:planned|scheduled|previst\w*|programmat\w*|prochain\w*|geplant\w*)\b/u.test(
-      text,
-    ) &&
-    [...text.matchAll(/\b(20\d{2})\b/g)].some(
-      (m) => +m[1] > today.getUTCFullYear(),
+    PLANNED.test(text) &&
+    [...text.matchAll(/\b(20\d{2}|25\d{2})\b/g)].some(
+      (m) => gregorian(+m[1]) > today.getUTCFullYear(),
     )
   );
 }
