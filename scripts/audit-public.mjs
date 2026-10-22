@@ -9,6 +9,15 @@ const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .filter(Boolean);
 const forbiddenPath =
   /(^|\/)(?:\.openai|\.runtime|\.wrangler|work|node_modules|dist|test-results|playwright-report|evidence)(?:\/|$)|(^|\/)\.(?:worker\.env|dev\.vars(?:\..*)?|env(?:\..*)?)$|\.(?:sqlite(?:3)?|db|pem|p12|key|log)$/i;
+// Screenshots reviewed for public release on 22 October 2026. They show only
+// public source data and the app UI, with no browser chrome, tokens or paths.
+// A new binary fails until it is reviewed and listed here.
+const reviewedBinaries = new Set([
+  "docs/media/world.jpg",
+  "docs/media/thermal.jpg",
+  "docs/media/detail.jpg",
+  "docs/media/mobile.jpg",
+]);
 const patterns = [
   ["private-key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
   [
@@ -35,7 +44,8 @@ for (const file of files) {
   }
   const bytes = readFileSync(file);
   if (bytes.includes(0)) {
-    failures.push(`${file}: binary requires explicit public-release review`);
+    if (!reviewedBinaries.has(file))
+      failures.push(`${file}: binary requires explicit public-release review`);
     continue;
   }
   const content = bytes.toString("utf8");
