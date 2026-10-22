@@ -11,29 +11,38 @@ type City = {
   lon: number;
   lat: number;
 };
-const names = new Map<string, City[]>(),
-  aliases = new Map<string, City[]>();
-const add = (map: Map<string, City[]>, k: string, city: City) => {
-  const list = map.get(k);
-  if (list) list.push(city);
-  else map.set(k, [city]);
-};
-// Indexed in global scope, which Workers bill to startup rather than to request CPU.
-for (const row of places) {
-  const [id, name, country, admin, lat, lon, alternates] = row.split("|");
-  const city = {
-    id,
-    name,
-    aliases: alternates ? alternates.split(",") : [],
-    country,
-    admin,
-    lon: Number(lon),
-    lat: Number(lat),
+let index:
+  { names: Map<string, City[]>; aliases: Map<string, City[]> } | undefined;
+export const gazetteerIndexed = () => index !== undefined;
+// Built on first lookup, not in global scope, which Workers must finish within one second; that lookup pays it as request CPU.
+function gazetteer() {
+  if (index) return index;
+  const names = new Map<string, City[]>(),
+    aliases = new Map<string, City[]>();
+  const add = (map: Map<string, City[]>, k: string, city: City) => {
+    const list = map.get(k);
+    if (list) list.push(city);
+    else map.set(k, [city]);
   };
-  add(names, key(name), city);
-  for (const alias of new Set(city.aliases.map(key))) add(aliases, alias, city);
+  for (const row of places) {
+    const [id, name, country, admin, lat, lon, alternates] = row.split("|");
+    const city = {
+      id,
+      name,
+      aliases: alternates ? alternates.split(",") : [],
+      country,
+      admin,
+      lon: Number(lon),
+      lat: Number(lat),
+    };
+    add(names, key(name), city);
+    for (const alias of new Set(city.aliases.map(key)))
+      add(aliases, alias, city);
+  }
+  return (index = { names, aliases });
 }
 function cityCandidates(p: EventClaim["places"][number]) {
+  const { names, aliases } = gazetteer();
   const direct = names.get(key(p.name)) ?? [];
   const exact = direct.filter((c) => !p.country || c.country === p.country);
   const options = exact.length

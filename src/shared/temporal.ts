@@ -29,12 +29,12 @@ export function temporalStatus(
   return claim.temporal_status;
 }
 
-/** A live window includes recent events and planned events no farther ahead than the selected span. */
-export function incidentInWindow(incident: {event_start:string|null;published_at:string|null;expires_at:string|null},hours:number,at=Date.now()):boolean {
+/** A live window includes recent events, planned events no farther ahead than the selected span, and started events that are unexpired or still listed as current by their issuer. */
+export function incidentInWindow(incident: {event_start:string|null;published_at:string|null;expires_at:string|null;current_listing?:boolean},hours:number,at=Date.now()):boolean {
   if(!(hours>0))return true;
   if(!incident.event_start&&!incident.published_at)return true;
   const time=Date.parse(incident.event_start??incident.published_at??"");
   const span=hours*3600000;
   if(Number.isFinite(time)&&time>=at-span&&time<=at+span)return true;
-  return Number.isFinite(time)&&time<=at&&!!incident.expires_at&&Date.parse(incident.expires_at)>at;
+  return Number.isFinite(time)&&time<=at&&(incident.current_listing===true||!!incident.expires_at&&Date.parse(incident.expires_at)>at);
 }

@@ -43,6 +43,8 @@ export type ThermalSensorHealth = {
  * features_count is what this response returns; total_available counts features
  * inside the requested bbox before the response cap. truncated is also true when an
  * acquisition budget skipped upstream records, making total_available a lower bound.
+ * Copernicus counts AOIs it skipped only for a whole-world bbox, because a skipped
+ * AOI's geometry was never fetched and cannot be placed inside a smaller view.
  * A thermal source is "ok" while any sensor is; per-sensor health is in sensors.
  */
 export type LayerSourceHealth = {

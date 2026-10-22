@@ -167,7 +167,8 @@ test(
         viewport: { width: 1440, height: 1000 },
       });
       const writes: { path: string; body: any }[] = [];
-      let snapshotQuery = "";
+      let snapshotQuery = "",
+        briefQuery = "";
       const claim = (id: string) => ({
         id,
         summary: "Fixture claim " + id,
@@ -294,10 +295,39 @@ test(
           });
           return;
         }
+        if (url.pathname === "/api/brief") {
+          briefQuery = url.search;
+          await route.fulfill({
+            json: {
+              current: {
+                kind: "structured",
+                id: "structured:2026-10-22T12:00:00.000Z",
+                headline: "Red tropical cyclone alert for CHAMPI-26 affecting the Philippines.",
+                statements: [{ text: "Red tropical cyclone alert for CHAMPI-26 affecting the Philippines.", incident_ids: ["b"] }],
+                references: [{ incident_id: "b", headline: "Isolated fixture b", version: 3 }],
+                pins: [{ incident_id: "b", headline: "Isolated fixture b", impact: "severe", evidence_status: "official_advisory", version: 3 }],
+                counts: { reports: 3, incidents: 3, pending: 0, omitted: 2 },
+                window_start: "2026-10-15T12:00:00.000Z",
+                window_end: "2026-10-22T12:00:00.000Z",
+                generated_at: "2026-10-22T12:00:00.000Z",
+              },
+              pending: false,
+              updated_at: null,
+            },
+          });
+          return;
+        }
         const id = url.pathname.split("/").pop();
         await route.fulfill({ json: incidents.find((i) => i.id === id) ?? {} });
       });
       await page.goto("http://127.0.0.1:5199");
+      const brief = page.locator(".rolling-brief.has-brief");
+      await brief.waitFor();
+      assert.equal(new URLSearchParams(briefQuery).get("hours"), "168");
+      assert.equal(
+        await brief.innerText(),
+        "Structured brief\n15 Oct, 12:00 – 22 Oct, 12:00 UTC\n\nRed tropical cyclone alert for CHAMPI-26 affecting the Philippines.\n\nBuilt from issuer fields, no model · Generated 12:00 UTC\n2 further records outside this brief\nsevere · official advisory\nIsolated fixture b\nEvidence · 1",
+      );
       await page
         .getByRole("button", {
           name: "Isolated fixture a, informational, unverified",
@@ -418,6 +448,14 @@ test(
         .getByRole("heading", { name: "Esplora e filtra", exact: true })
         .waitFor();
       assert.equal(await page.locator("html").getAttribute("lang"), "it");
+      assert.equal(
+        await brief.locator(".brief-meta strong").innerText(),
+        "Sintesi strutturata",
+      );
+      assert.equal(
+        await brief.locator(".brief-footnote").first().innerText(),
+        "Composta dai campi degli enti emittenti, senza modello · Generata alle 12:00 UTC",
+      );
       await page.setViewportSize({ width: 390, height: 844 });
       await page
         .getByRole("button", { name: "Torna alle attività", exact: true })

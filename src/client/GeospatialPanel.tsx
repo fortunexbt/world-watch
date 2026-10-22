@@ -216,7 +216,7 @@ export default function GeospatialPanel({
               </small>
               {s.truncated && (
                 <p className="caution">
-                  {s.features_count < s.total_available
+                  {s.id === "firms"
                     ? fill(
                         "Showing {shown} of {total} in this view. Zoom in for complete coverage.",
                         { shown: s.features_count, total: s.total_available },

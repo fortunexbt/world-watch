@@ -793,6 +793,12 @@ export const TAXONOMY_TYPES = {
   fire_or_property_damage: { id: "fire_or_property_damage", domains: ["unclassified"], /* … */ },
   displacement: { id: "displacement", domains: ["unclassified"], /* … */ },
   advisory: { id: "advisory", domains: ["unclassified"], /* … */ },
+  earthquake: { id: "earthquake", domains: ["hazards"], /* … */ },
+  tropical_cyclone: { id: "tropical_cyclone", domains: ["hazards"], /* … */ },
+  flood: { id: "flood", domains: ["hazards"], /* … */ },
+  wildfire: { id: "wildfire", domains: ["hazards"], /* … */ },
+  volcanic_eruption: { id: "volcanic_eruption", domains: ["hazards"], /* … */ },
+  drought: { id: "drought", domains: ["hazards"], /* … */ },
   unknown: { id: "unknown", domains: ["unclassified"], /* … */ },
 } as const satisfies Record<string, TaxonomyType>;
 
@@ -824,6 +830,8 @@ export const TaxonomyRef = z
 
 Every value of `Activity` (contracts.ts:12-24) maps through one table, typed with `satisfies Record<z.infer<typeof Activity>, …>` so a new ew-1 value fails compilation.
 
+The six hazard values were added to ew-1 after `889bd29`, in the worldwide pass (`70da0d9`), and are already shipped. Only the structured USGS (`src/collector/adapters/usgs.ts`) and GDACS (`src/collector/adapters/gdacs.ts`) adapters emit them, from the issuer's own event type. The analyst prompt does not offer them. They need no wire contract change, because they are existing ew-1 values.
+
 | ew-1 `Activity` | Domain | Type | Claim modality | Reason |
 |---|---|---|---|---|
 | `planned_demonstration` | `public_activity` | `demonstration` | `planned` | Phase moves out of the type into modality |
@@ -836,6 +844,12 @@ Every value of `Activity` (contracts.ts:12-24) maps through one table, typed wit
 | `property_damage_fire` | `unclassified` | `fire_or_property_damage` | from `temporal_status` | The prompt uses it for fire reports and forbids inferring damage (analyst.ts:2). The compound value cannot be split after the fact |
 | `displacement` | `unclassified` | `displacement` | from `temporal_status` | See open question 2 |
 | `official_advisory` | `unclassified` | `advisory` | from `temporal_status` | Issuer authority is carried by `source_authority`, not the type |
+| `earthquake` | `hazards` | `earthquake` | from `temporal_status` | The value names a natural hazard, so the domain is entailed. Set from the USGS feed or GDACS type `EQ` |
+| `tropical_cyclone` | `hazards` | `tropical_cyclone` | from `temporal_status` | Same, GDACS type `TC`. Weather domain not inferred |
+| `flood` | `hazards` | `flood` | from `temporal_status` | Same, GDACS type `FL` |
+| `wildfire` | `hazards` | `wildfire` | from `temporal_status` | Same, GDACS type `WF`. Kept apart from `fire_or_property_damage`, which the model assigns to fire reports of any kind |
+| `volcanic_eruption` | `hazards` | `volcanic_eruption` | from `temporal_status` | Same, GDACS type `VO` |
+| `drought` | `hazards` | `drought` | from `temporal_status` | Same, GDACS type `DR`. Environment domain not inferred |
 | `other_unknown` | `unclassified` | `unknown` | from `temporal_status` | Classifier output was unknown |
 
 Modality from `temporal_status` is `planned` for `planned`, `actual` for `current` or `historical`, and `unknown` for `unknown`. An activity-implied modality takes precedence, because "a demonstration was planned" stays true after its date passes. `TaxonomyRef.legacy` always keeps the original value, so the mapping is injective even where two values share a type.
@@ -1356,7 +1370,7 @@ ew-2 events and documents would keep using `incidents.view`, `incident_revisions
 
 Each has a proposed default that PR 1 assumes unless the owner decides otherwise.
 
-1. **Domain naming and rule.** Is `public_activity` the right id, and is entailment-only assignment acceptable even though it leaves 8 of 11 legacy values `unclassified`? Default is yes.
+1. **Domain naming and rule.** Is `public_activity` the right id, and is entailment-only assignment acceptable even though it leaves 7 of 17 legacy values `unclassified`? Default is yes.
 2. **Humanitarian domain.** Should `displacement` get a `humanitarian` domain? Default is no until a source needs it.
 3. **Meaning of `origin`.** The prompt never defines the ew-1 `origin` relationship. Default maps it to `derived_from` with `basis: legacy_ew1`.
 4. **Where ew-2 writes land.** Either D1 before PostgreSQL (needs migration 0008/0004 before PR 4) or PostgreSQL only after PR 3. Default assumes PR 4 follows PR 3, so D1 never receives ew-2 writes and no D1 migration is needed.

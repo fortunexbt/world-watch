@@ -1,11 +1,10 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 
-/** Orange and Red only. A Green-inclusive query returned exactly 100 events, mostly small wildfires, so an apparent page limit could silently drop a Red event. */
+/** Orange and Red only. Green adds hundreds of current events at impact minor, mostly small GWIS wildfires beside the FIRMS thermal layer. */
 export const GDACS_EVENTS_URL =
   "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=EQ;TC;FL;VO;DR;WF&alertlevel=Orange;Red";
-const PAGE_LIMIT = 100;
-/** Platform freshness rule, not a GDACS statement: a current event stays live for a day past its latest observation. */
-const VALIDITY_MS = 24 * 3600000;
+/** GDACS returns at most 100 events per page, even when asked for more. */
+export const GDACS_PAGE_SIZE = 100;
 const HAZARD = {
   EQ: "earthquake",
   TC: "tropical_cyclone",
@@ -35,7 +34,7 @@ const utc = (value: unknown): string | null => {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 };
 
-/** GDACS event list. One observation per event; the episode is its native revision. */
+/** One GDACS event-list page. One observation per event; the episode is its native revision. */
 export function parseGdacs(
   source: SourceRecord,
   payload: unknown,
@@ -43,8 +42,6 @@ export function parseGdacs(
   const data = payload as any;
   if (data?.type !== "FeatureCollection" || !Array.isArray(data.features))
     throw Error("invalid_gdacs_response");
-  if (data.features.length >= PAGE_LIMIT)
-    throw Error("gdacs_pagination_required");
   return data.features.flatMap((feature: any) => {
     const p = feature?.properties ?? {};
     const type = text(p.eventtype) as keyof typeof HAZARD;
@@ -111,7 +108,7 @@ export function parseGdacs(
               affected_countries: affected,
               glide: text(p.glide) || null,
               hazard_data_source: upstream,
-              notice: `GDACS automatic alert, provided as is and not for decision making without confirmation. The point is a GDACS centroid, not an impact footprint. The alert level is the event maximum across episodes and a modelled humanitarian-impact estimate, not observed harm. World Watch keeps the event live until 24 hours after the latest GDACS observation; each GDACS update extends it. Hazard data originates from ${upstream ?? "an unstated provider"} and is third-party material outside the GDACS licence.`,
+              notice: `GDACS automatic alert, provided as is and not for decision making without confirmation. The point is a GDACS centroid, not an impact footprint. The alert level is the event maximum across episodes and a modelled humanitarian-impact estimate, not observed harm. World Watch keeps the event live while GDACS lists it as current and ends it when GDACS stops listing it. Hazard data originates from ${upstream ?? "an unstated provider"} and is third-party material outside the GDACS licence.`,
             }),
           },
         ],
@@ -129,9 +126,9 @@ export function parseGdacs(
         official: {
           issuer: "GDACS — European Commission Joint Research Centre",
           effective_at: from,
-          expires_at: to
-            ? new Date(Date.parse(to) + VALIDITY_MS).toISOString()
-            : null,
+          // GDACS states no validity; the event lasts as long as GDACS lists it as current.
+          expires_at: null,
+          current_listing: true,
           activity: HAZARD[type],
           impact: level ? GDACS_IMPACT[level] : ("unknown" as const),
         },

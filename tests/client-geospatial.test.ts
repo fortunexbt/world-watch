@@ -107,7 +107,7 @@ test(
                   ...base,
                   id: "copernicus",
                   features_count: 12,
-                  total_available: 12,
+                  total_available: 26,
                   truncated: true,
                 },
                 {
@@ -182,7 +182,7 @@ test(
         .waitFor();
       await page
         .getByText(
-          "Showing 12 of at least 12 in this view. Some publisher records were not acquired in this refresh.",
+          "Showing 12 of at least 26 in this view. Some publisher records were not acquired in this refresh.",
           { exact: true },
         )
         .waitFor();

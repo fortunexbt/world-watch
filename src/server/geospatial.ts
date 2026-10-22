@@ -71,7 +71,12 @@ type Detections = {
 type Loaded = {
   checked_at: string;
   thermal: { sensor: ThermalSensor; data?: Detections; error?: string }[];
-  cems: { features: GeoFeature[]; truncated: boolean; error?: string };
+  cems: {
+    features: GeoFeature[];
+    truncated: boolean;
+    skipped_aois: number;
+    error?: string;
+  };
 };
 const cache = new WeakMap<
   typeof fetch,
@@ -402,6 +407,11 @@ const sourceError = (e: unknown) =>
   e instanceof Error && /^(source_|invalid_|csv_)/.test(e.message)
     ? e.message
     : "source_unavailable";
+// The list reports n_aois as a string; anything unreadable counts as none so the skip total stays a lower bound.
+const listedAois = (a: any) => {
+  const n = Number(a.n_aois);
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+};
 async function loadCems(
   fetcher: typeof fetch,
   now: number,
@@ -443,10 +453,23 @@ async function loadCems(
       truncated:
         recent.length > fetched.length ||
         (listed.length === CEMS_LIST_LIMIT && recent.includes(listed.at(-1))) ||
-        fetched.some((a: any) => Number(a.n_aois) > CEMS_AOIS),
+        fetched.some((a: any) => listedAois(a) > CEMS_AOIS),
+      skipped_aois:
+        recent
+          .slice(CEMS_DETAILS)
+          .reduce((n: number, a: any) => n + listedAois(a), 0) +
+        fetched.reduce(
+          (n: number, a: any) => n + Math.max(0, listedAois(a) - CEMS_AOIS),
+          0,
+        ),
     };
   } catch (e) {
-    return { features: [], truncated: false, error: sourceError(e) };
+    return {
+      features: [],
+      truncated: false,
+      skipped_aois: 0,
+      error: sourceError(e),
+    };
   }
 }
 async function load(fetcher: typeof fetch): Promise<Loaded> {
@@ -554,7 +577,9 @@ function thermalFeatures(thermal: Loaded["thermal"], bbox: Bbox) {
       totals[k]++;
       const x = Math.min(
           GRID_COLUMNS - 1,
-          Math.floor(((((lon - west) % 360) + 360) % 360 / width) * GRID_COLUMNS),
+          Math.floor(
+            (((((lon - west) % 360) + 360) % 360) / width) * GRID_COLUMNS,
+          ),
         ),
         y = Math.min(
           GRID_ROWS - 1,
@@ -638,7 +663,9 @@ export async function getGeospatialCatalog(
       checked_at,
       cadence_seconds: 600,
       features_count: mapping.length,
-      total_available: mapping.length,
+      // Skipped AOIs have no geometry yet, so only a whole-world request can count them as inside its view.
+      total_available:
+        mapping.length + (bbox.join() === WORLD.join() ? cems.skipped_aois : 0),
       truncated: cems.truncated,
       source_url: CEMS_URL,
       attribution: CEMS_CREDIT,
