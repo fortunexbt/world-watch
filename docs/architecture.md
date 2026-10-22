@@ -18,21 +18,22 @@ flowchart LR
 
 ## Modules
 
-| Path                           | Responsibility                                       | Current limit                                                        |
-| ------------------------------ | ---------------------------------------------------- | -------------------------------------------------------------------- |
-| `src/collector/registry.ts`    | Source policy and endpoints                          | Registry entries do not establish useful coverage                    |
-| `src/collector/index.ts`       | Bounded acquisition, admission and checkpoints       | Source mix and achieved polling latency need evaluation              |
-| `src/collector/remote.ts`      | Pausable hosted dispatcher                           | Empty schedules by default; requires operator configuration          |
-| `src/server/index.ts`          | HTTP API, authorization, persistence and publication | Large coupled module; D1-specific SQL                                |
-| `src/server/bundling.ts`       | Conservative evidence grouping                       | Similarity and cross-source event identity are incomplete            |
-| `src/server/geo.ts`            | Gazetteer-backed place resolution                    | Place centroids and uncertainty, not street-level verification       |
-| `src/server/brief.ts`          | Brief window claims and completion                   | Obsolete bootstrap-window scheduling bug remains                     |
-| `src/worker/worker.ts`         | Claims, renewals, analysis and result submission     | Runs only when its host, auth and quota are available                |
-| `src/worker/adapter.ts`        | Local supported Codex transport and isolation checks | Exact requested model is known; effective model/tier is not attested |
-| `src/client/App.tsx`           | Feed, selection and contextual tools                 | Large component; workflow and relevance need redesign                |
-| `src/client/Map.tsx`           | Flat MapLibre map                                    | Sparse source geography and uncertain locations limit value          |
-| `src/sites-entry.ts`           | Optional private Sites hosting wrapper               | Provider-specific identity and migration wiring                      |
-| `deploy/migrations`, `drizzle` | Cloudflare and Sites schema paths                    | Equivalent schema evolution needs continued testing                  |
+| Path                             | Responsibility                                                 | Current limit                                                        |
+| -------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `src/collector/registry.ts`      | Source policy and endpoints                                    | Registry entries do not establish useful coverage                    |
+| `src/collector/index.ts`         | Bounded acquisition, admission and checkpoints                 | Source mix and achieved polling latency need evaluation              |
+| `src/collector/remote.ts`        | Pausable hosted dispatcher                                     | Empty schedules by default; requires operator configuration          |
+| `src/server/index.ts`            | HTTP API, authorization, persistence and publication           | Large coupled module; D1-specific SQL                                |
+| `src/server/bundling.ts`         | Conservative evidence grouping                                 | Similarity and cross-source event identity are incomplete            |
+| `src/server/geo.ts`              | Gazetteer-backed place resolution                              | Place centroids and uncertainty, not street-level verification       |
+| `src/server/brief.ts`            | Brief window claims and completion                             | Obsolete bootstrap-window scheduling bug remains                     |
+| `src/server/structured-brief.ts` | Model-free headline from issuer fields until a worker connects | English only; one event reported by two issuers appears twice        |
+| `src/worker/worker.ts`           | Claims, renewals, analysis and result submission               | Runs only when its host, auth and quota are available                |
+| `src/worker/adapter.ts`          | Local supported Codex transport and isolation checks           | Exact requested model is known; effective model/tier is not attested |
+| `src/client/App.tsx`             | Feed, selection and contextual tools                           | Large component; workflow and relevance need redesign                |
+| `src/client/Map.tsx`             | Flat MapLibre map                                              | Sparse source geography and uncertain locations limit value          |
+| `src/sites-entry.ts`             | Optional private Sites hosting wrapper                         | Provider-specific identity and migration wiring                      |
+| `deploy/migrations`, `drizzle`   | Cloudflare and Sites schema paths                              | Equivalent schema evolution needs continued testing                  |
 
 The backend uses D1. PostgreSQL/PostGIS, a separate Redis queue and an always-on inference host are not implemented. The prototype's original free database exhausted its read allowance. Moving the private deployment to another managed binding did not prove sustained capacity or free continuous operation.
 

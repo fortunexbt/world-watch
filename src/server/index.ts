@@ -1,4 +1,5 @@
 import {claimBrief,renewBrief,completeBrief,failBrief,currentBrief,pruneBrief} from "./brief";
+import { structuredBrief } from "./structured-brief";
 import { sourceEligibility } from "../collector/index";
 import { stableBundlePayload } from "./bundling";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
@@ -1401,6 +1402,16 @@ async function liveScope(e: Env, hours: number, bbox?: number[]) {
     key: JSON.stringify(params),
   };
 }
+/** The live incident head shared by the snapshot and the structured brief, so one read serves both. */
+function liveHead(e: Env, scope: Awaited<ReturnType<typeof liveScope>>) {
+  return memoRead(e, `incident-head${scope.key}`, 1000, () =>
+    rows(
+      e,
+      `SELECT view FROM incidents${scope.index} WHERE deleted_at IS NULL${scope.where} ORDER BY updated_at DESC LIMIT 1000`,
+      ...scope.params,
+    ),
+  );
+}
 async function snapshot(e: Env, u: URL) {
   const at = u.searchParams.get("at");
   if (at && !Number.isFinite(Date.parse(at))) throw Error("invalid_time");
@@ -1433,13 +1444,7 @@ async function snapshot(e: Env, u: URL) {
           fts,
           ...scope.params,
         )
-      : await memoRead(e, `incident-head${scope.key}`, 1000, () =>
-          rows(
-            e,
-            `SELECT view FROM incidents${scope.index} WHERE deleted_at IS NULL${scope.where} ORDER BY updated_at DESC LIMIT 1000`,
-            ...scope.params,
-          ),
-        );
+      : await liveHead(e, scope);
   const rights = await currentRights(e);
   let incidents = records
     .map((v) => parse(v.view) as IncidentView)
@@ -1735,7 +1740,17 @@ async function routes(r: Request, e: Env) {
     return json({ error: "forbidden" }, 403);
   if (p === "/api/brief" && r.method === "GET") {
     if (who!=="owner")return json({error:"forbidden"},403);
-    return json(await currentBrief({stmt:(sql,...values)=>stmt(e,sql,...values)}));
+    const brief=await currentBrief({stmt:(sql,...values)=>stmt(e,sql,...values)});
+    // A model brief always wins; issuer fields stand in only while no analysis worker has ever connected.
+    if(brief.current||await stmt(e,"SELECT id FROM workers LIMIT 1").first())return json(brief);
+    const hours=Number(u.searchParams.get("hours"));
+    // Viewers poll every minute; one build per five minutes keeps the live read off that cadence.
+    const current=await memoRead(e,"structured-brief:"+hours,300000,async()=>{
+      const rights=await currentRights(e);
+      const views=(await liveHead(e,await liveScope(e,hours))).map(v=>parse(v.view) as IncidentView);
+      return structuredBrief(views.filter(i=>permittedView(i,rights)&&defaultSignalEligible(i)&&incidentInWindow(i,hours)),hours);
+    });
+    return json({current,pending:false,updated_at:null});
   }
   if (p.startsWith("/api/worker/brief/") && r.method === "POST") {
     const b=await r.json() as any;

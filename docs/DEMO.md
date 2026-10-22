@@ -31,7 +31,9 @@ Thermal dots spread across the continents. Tell the audience how many there were
 
 ## 2:00 What a model is allowed to do
 
-This part has no live screen in the demo, because the analysis worker isn't running. Show the brief panel, which says so instead of pretending.
+The analysis worker isn't running, so the brief panel at the top shows a structured brief instead. Read the label under the headline. It was built from issuer fields, with no model. Each statement counts records you can open from the pins and the evidence list.
+
+The model side has no live screen in the demo.
 
 Then explain the rule. When the worker reads news, a model can only call something severe if it quotes an affirmed consequence from the cited text, such as homes destroyed or people evacuated. "No injuries", "could cause" and "evacuation drill" are rejected in the same clause, in 23 languages. If a correction arrives later, each watch rule that received the first alert gets the correction, even if the event moved out of its area.
 

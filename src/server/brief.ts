@@ -649,6 +649,7 @@ export async function currentBrief(c: BriefContext, clock = Date.now()) {
   );
   return {
     current: {
+      kind: "model" as const,
       id: latest.id,
       window_start: latest.window_start,
       window_end: latest.window_end,

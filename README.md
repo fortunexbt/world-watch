@@ -60,13 +60,13 @@ The parts worth a closer look:
 - Snapshot queries filter by area in SQL before their 1,000-row limit, so a quiet region still shows up beside a busy one. The project exhausted the free D1 read allowance once, and the read path is built around that lesson.
 - The pipeline treats source text as evidence and ignores instructions inside it. The extraction worker runs without tools or file access, and a malicious-input evaluation recorded zero tool attempts.
 
-The test suite has 280 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
+The test suite has 289 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
 
 ## Honest status
 
 The map, the structured hazard path and the satellite layers work live, as the demo shows. Several things don't yet.
 
-- The five-minute brief and narrative claims need the local Codex worker. Without it, the brief panel says so.
+- The five-minute model brief and narrative claims need the local Codex worker. Until a worker has connected, the brief panel shows a structured brief built only from issuer fields, such as GDACS alert levels, affected countries and USGS magnitudes. It is labelled as built without a model, and each statement cites the records it counts.
 - Recall, relevance precision, severity calibration and multilingual accuracy haven't been measured against a held-out set.
 - Most earthquakes show impact unknown, because USGS only issues PAGER alerts for damaging quakes.
 - GDACS events stay live until 24 hours after their latest observation. That's a World Watch freshness rule, not a GDACS validity statement.

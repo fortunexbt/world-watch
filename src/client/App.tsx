@@ -877,7 +877,7 @@ export default function App() {
           <SlidersHorizontal size={18} />
         </button>
       </header>
-      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} language={language} request={api} onSelect={select}/>
+      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select}/>
       <aside
         id="activity"
         tabIndex={-1}
