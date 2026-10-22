@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveClaimLocation, resolveClaimLocations } from "../src/server/geo";
+import {
+  gazetteerIndexed,
+  resolveClaimLocation,
+  resolveClaimLocations,
+} from "../src/server/geo";
 import type { EventClaim, JobInput } from "../src/shared/contracts";
 const place = (
   name: string,
@@ -11,6 +15,12 @@ const claim = (places: EventClaim["places"]) =>
   ({ places, evidence_ids: ["e1"] }) as EventClaim;
 const input = (text: string) =>
   ({ excerpts: [{ id: "e1", text }] }) as JobInput;
+// First in the file: later tests build the index.
+test("importing geo leaves the gazetteer index to the first lookup, outside Worker start-up", () => {
+  assert.equal(gazetteerIndexed(), false);
+  resolveClaimLocations(claim([place("Paris", "FR")]), input("À Paris."));
+  assert.equal(gazetteerIndexed(), true);
+});
 test("two explicitly sourced cities yield separate city pins and no synthetic single location", () => {
   const c = claim([place("Paris", "FR"), place("Lyon", "FR")]);
   const i = input("Des rassemblements à Paris et Lyon.");
