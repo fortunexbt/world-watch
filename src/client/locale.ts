@@ -178,8 +178,8 @@ export const italian: Record<string, string> = {
   Legend: "Legenda",
   "approximate area": "area approssimativa",
   "issuer warning area": "area dell'avviso dell'ente",
-  "The area an NWS or ECCC warning applies to, as the issuer drew it, simplified for the map":
-    "L'area a cui si applica un avviso NWS o ECCC, come l'ha tracciata l'ente, semplificata per la mappa",
+  "The area an NWS, ECCC or SIGMET warning applies to, as the issuer drew it, simplified for the map":
+    "L'area a cui si applica un avviso NWS, ECCC o SIGMET, come l'ha tracciata l'ente, semplificata per la mappa",
   "modelled wind area": "area di vento modellata",
   "GDACS models where a cyclone's winds reach 60, 90 and 120 km/h along its past and forecast track":
     "GDACS modella dove i venti di un ciclone raggiungono 60, 90 e 120 km/h lungo la traiettoria passata e prevista",

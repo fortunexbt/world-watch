@@ -1,5 +1,6 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 import { countryAt } from "../../shared/borders.js";
+import { buildFootprint } from "../../shared/footprint.js";
 import { polygonArea } from "./area.js";
 
 /**
@@ -38,6 +39,16 @@ const ring = (points: unknown) =>
         p?.lat,
       ])
     : [];
+/** One AWC entry's cloud: AREA is one polygon, AREAS several. */
+const cloud = (entry: any) =>
+  entry.geom === "AREA"
+    ? { type: "Polygon", coordinates: [ring(entry.coords)] }
+    : {
+        type: "MultiPolygon",
+        coordinates: Array.isArray(entry.coords)
+          ? entry.coords.map((c: unknown) => [ring(c)])
+          : [],
+      };
 
 /**
  * One record per SIGMET. AWC lists a SIGMET's observed and forecast ash clouds as two entries with
@@ -76,14 +87,11 @@ export function parseAwcSigmets(
   }
   return [...groups].flatMap(([id, { series, parts }]) => {
     const first = parts[0];
+    const clouds = parts.map(cloud);
     const area = polygonArea({
       type: "MultiPolygon",
-      coordinates: parts.flatMap((p) =>
-        p.geom === "AREA"
-          ? [[ring(p.coords)]]
-          : Array.isArray(p.coords)
-            ? p.coords.map((c: unknown) => [ring(c)])
-            : [],
+      coordinates: clouds.flatMap((c) =>
+        c.type === "Polygon" ? [c.coordinates] : c.coordinates,
       ),
     });
     const received = parts
@@ -104,14 +112,24 @@ export function parseAwcSigmets(
     const validFrom = epoch(first.validTimeFrom)!;
     const validTo = epoch(first.validTimeTo);
     const name = volcano ? `${volcano}, ${fir}` : fir;
+    const url =
+      "https://aviationweather.gov/api/data/sigmet?format=raw&hazard=va&date=" +
+      validFrom.slice(0, 16).replace(/[-:]/g, "").replace("T", "_");
+    // Each cloud keeps AWC's label for it: OBS for the observed cloud, FCST for its forecast position.
+    const footprint = buildFootprint(
+      "advisory_area",
+      url,
+      parts.map((p, i) => ({
+        geometry: clouds[i],
+        label: text(p.sigmetType),
+      })),
+    );
     return [
       {
         source_id: source.id,
         native_id: id,
         source_event_id: id,
-        canonical_url:
-          "https://aviationweather.gov/api/data/sigmet?format=raw&hazard=va&date=" +
-          validFrom.slice(0, 16).replace(/[-:]/g, "").replace("T", "_"),
+        canonical_url: url,
         title: `Volcanic ash SIGMET ${series} from ${office}: ${name}`,
         original_language: "en",
         published_at: received,
@@ -146,7 +164,7 @@ export function parseAwcSigmets(
               change: text(first.chng) || null,
               sigmet: raw,
               notice:
-                "SIGMET relayed by the NOAA Aviation Weather Center from the meteorological watch office that issued it, reproduced unchanged. It warns aircraft of a volcanic ash cloud between the stated levels until its stated end. The point is the centre of the observed and forecast ash areas and the radius reaches their farthest vertex, so the circle is wider than the warned airspace. Base and top are in feet; in the level band, FL is hundreds of feet and SFC the surface. A SIGMET states no ash concentration and no harm on the ground, and the volcano's eruption itself is a separate record. The issuing office's cancellation messages are not in AWC's decoded feed, so a SIGMET cancelled early stays until its stated end.",
+                "SIGMET relayed by the NOAA Aviation Weather Center from the meteorological watch office that issued it, reproduced unchanged. It warns aircraft of a volcanic ash cloud between the stated levels until its stated end. The point is the centre of the observed and forecast ash areas and the radius reaches their farthest vertex, so the circle is wider than the warned airspace; the areas themselves are kept as drawn. Base and top are in feet; in the level band, FL is hundreds of feet and SFC the surface. A SIGMET states no ash concentration and no harm on the ground, and the volcano's eruption itself is a separate record. The issuing office's cancellation messages are not in AWC's decoded feed, so a SIGMET cancelled early stays until its stated end.",
             }),
           },
         ],
@@ -157,6 +175,7 @@ export function parseAwcSigmets(
           // The issuing state's FIR can extend over the sea or a neighbour; the country comes from the area's centre.
           country: countryAt(area.lon, area.lat),
         },
+        ...(footprint ? { footprint } : {}),
         official: {
           issuer: `Meteorological watch office ${office}, relayed by the NOAA Aviation Weather Center`,
           effective_at: validFrom,

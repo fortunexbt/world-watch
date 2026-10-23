@@ -2088,6 +2088,16 @@ test("AWC ash SIGMETs are one record per SIGMET with both clouds, the issuer's v
     for (const p of part.coords)
       assert(km(g, p.lon, p.lat) <= g.radius_km! + 0.01);
   assert.match(fields.notice, /cancelled early stays until its stated end/);
+  // The clouds are kept as drawn, each labelled as AWC labels it.
+  assert.equal(kilo3.footprint?.role, "advisory_area");
+  assert.deepEqual(
+    kilo3.footprint?.detail?.parts.map((p) => [p.geometry.type, p.label]),
+    [
+      ["Polygon", "FCST"],
+      ["Polygon", "OBS"],
+    ],
+  );
+  assert.equal(kilo3.footprint?.source_url, kilo3.canonical_url);
   // A record ends at its stated time, so it leaves the live window then.
   const view = {
     event_start: kilo3.official!.effective_at,
@@ -2217,6 +2227,8 @@ test("EASA bulletins join both exports, keep EASA's text unchanged and map affec
   assert.deepEqual(record(gulf).country_codes, ["BH", "KW", "QA", "OM", "AE"]);
   assert(km(gulf.source_geo!, 50.58565, 26.22787) < gulf.source_geo!.radius_km!);
   // A bulletin naming no affected country is kept without a map point.
+  // Countries are not drawn as footprints; EASA describes its airspace in text.
+  assert(rows.every((r) => r.footprint === undefined));
   const venezuela = byId(rows, "142977");
   assert.equal(venezuela.source_geo, undefined);
   assert.equal(venezuela.official?.cancelled, true);

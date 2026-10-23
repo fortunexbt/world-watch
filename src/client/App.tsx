@@ -2062,7 +2062,7 @@ export default function App() {
             {tr("approximate area")}
           </span>
           {footprintRoles.has("advisory_area") && (
-            <span title={tr("The area an NWS or ECCC warning applies to, as the issuer drew it, simplified for the map")}>
+            <span title={tr("The area an NWS, ECCC or SIGMET warning applies to, as the issuer drew it, simplified for the map")}>
               <i className="footprint-swatch" />
               {tr("issuer warning area")}
             </span>
