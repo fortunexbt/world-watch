@@ -1,7 +1,14 @@
 /** Static files of the public demo, written by scripts/public-snapshot.ts and read by the public client build. */
 import type { IncidentView } from "./contracts";
-import type { GeospatialCatalog, LayerSourceHealth } from "./geospatial";
+import type { CoverageStatus, Lag } from "./coverage";
+import type {
+  GeospatialCatalog,
+  LayerSourceHealth,
+  ThermalSensorId,
+} from "./geospatial";
 export const MANIFEST = "manifest.json";
+/** The scheduled workflow rebuilds the snapshot every ten minutes, so no source is read more often. */
+export const SNAPSHOT_CADENCE_SECONDS = 600;
 /** Byte ceilings. A snapshot over any of them fails and the last published one stays live. */
 export const PUBLIC_FILE_LIMITS = {
   [MANIFEST]: 64 * 1024,
@@ -36,6 +43,9 @@ export type PublicSourceSummary = {
   attribution: string;
   /** Shown in the demo, but excluded from any export or download it offers. */
   redistribute: boolean;
+  /** As of generated_at; a reader later than that should judge freshness again from last_success_at. */
+  coverage: CoverageStatus;
+  latency: { issuer_to_ingest: Lag; ingest_to_publication: Lag };
 };
 export type PublicManifest = {
   version: 1;
@@ -44,5 +54,8 @@ export type PublicManifest = {
   analysis: "none";
   files: Record<PublicFile, { bytes: number; sha256: string }>;
   sources: PublicSourceSummary[];
-  layers: Omit<LayerSourceHealth, "sensors">[];
+  layers: (Omit<LayerSourceHealth, "sensors"> & {
+    coverage: CoverageStatus;
+    sensors?: { id: ThermalSensorId; coverage: CoverageStatus }[];
+  })[];
 };

@@ -1,5 +1,6 @@
 import { IDMC_UKRAINE_URL } from "./adapters/idmc.js";
 import { DEMOS_QUERY_URL, DEMOS_READ_QUERY } from "./adapters/demos.js";
+import type { LagSample } from "../shared/coverage.js";
 /** Only registry-approved HTTPS origins may be contacted. Never accept source URLs from reports. */
 export const APPROVED_HOSTS = new Set([
   "api.protezionecivile.it",
@@ -77,6 +78,8 @@ export type FetchState = {
   routing?: { next: number; ongoing: string[] };
   /** GDELT file stamps already ingested among the newest listed. */
   news_files?: string[];
+  /** Recent issuer-time-to-ingest samples for new and changed records. */
+  issuer_lag?: LagSample[];
 };
 export type FetchOptions = {
   fetch?: typeof fetch;

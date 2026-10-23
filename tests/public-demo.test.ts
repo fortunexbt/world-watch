@@ -178,9 +178,13 @@ test("the snapshot publishes the API's projection, briefs for every window and a
   assert.deepEqual(Object.keys(briefs).sort(), [...BRIEF_WINDOWS].sort());
   assert.equal(briefs["0"].kind, "structured");
   const geo = JSON.parse(files.get("geospatial.json")!);
+  // Three detections per sensor still delivering; an ended sensor is not read.
   assert.equal(
     geo.features.filter((f: any) => f.layer === "thermal").length,
-    9,
+    3 *
+      FIRMS_SENSORS.filter(
+        (s) => !s.ended || Date.parse(s.ended.at) > Date.now(),
+      ).length,
   );
   assert.equal(
     geo.features.filter((f: any) => f.layer === "emergency_mapping").length,
@@ -295,6 +299,55 @@ test("a failed read keeps the source's last published records for an hour, then 
     stale.manifest.sources.find((s) => s.id === "global-gdacs-alerts")!
       .last_success_at,
     hourAgo,
+  );
+});
+
+test("the manifest states each source's and sensor's coverage, and lag counts only revisions new since the previous run", async () => {
+  const first = await buildPublicSnapshot({ fetch: upstream() });
+  for (const s of first.manifest.sources) {
+    assert(["observed", "quiet"].includes(s.coverage), s.id + " " + s.coverage);
+    // A run from an empty database holds the issuers' backlog, which is not latency.
+    assert.equal(s.latency.issuer_to_ingest.n, 0);
+    assert.equal(s.latency.ingest_to_publication.p90, 0);
+  }
+  const firms = first.manifest.layers.find((l) => l.id === "firms")!;
+  assert.equal(firms.coverage, "observed");
+  assert.deepEqual(
+    firms.sensors!.map((s) => s.id),
+    FIRMS_SENSORS.map((s) => s.id),
+  );
+  const previous = () => ({
+    manifest: JSON.parse(first.files.get(MANIFEST)!),
+    incidents: JSON.parse(first.files.get("incidents.json")!),
+  });
+  const updated = structuredClone(feeds[USGS_FEED_URL]) as any;
+  updated.features[0].properties.updated = Date.now() - 60000;
+  const revised = (async (input: any, init: any) =>
+    String(input) === USGS_FEED_URL
+      ? Response.json(updated)
+      : upstream()(input, init)) as typeof fetch;
+  const second = await buildPublicSnapshot({ fetch: revised, previous: previous() });
+  const usgs = second.manifest.sources.find(
+    (s) => s.id === "global-usgs-earthquakes",
+  )!;
+  assert.equal(usgs.latency.issuer_to_ingest.n, 1);
+  assert(usgs.latency.issuer_to_ingest.p50! >= 60 && usgs.latency.issuer_to_ingest.p50! < 120);
+  assert(
+    second.manifest.sources
+      .filter((s) => s.id !== usgs.id)
+      .every((s) => s.latency.issuer_to_ingest.n === 0),
+  );
+  // The samples ride in the published source health, so the next run keeps them.
+  const third = await buildPublicSnapshot({
+    fetch: revised,
+    previous: {
+      manifest: JSON.parse(second.files.get(MANIFEST)!),
+      incidents: JSON.parse(second.files.get("incidents.json")!),
+    },
+  });
+  assert.equal(
+    third.manifest.sources.find((s) => s.id === usgs.id)!.latency.issuer_to_ingest.n,
+    1,
   );
 });
 
@@ -460,6 +513,20 @@ test(
         "Sound volume",
       ])
         assert(!controls.includes(hidden), hidden);
+      // Every source the snapshot just read is on schedule, judged against the ten-minute rebuild.
+      assert.match(
+        await page.locator(".health-pill").innerText(),
+        new RegExp(`${PUBLIC_SOURCES.length}/${PUBLIC_SOURCES.length} sources fresh`),
+      );
+      for (const s of PUBLIC_SOURCES)
+        assert.match(
+          await page
+            .locator(".coverage .coverage-list li", { hasText: s.name })
+            .locator(".coverage-chip")
+            .innerText(),
+          /^(Observed|Quiet)$/,
+          s.id,
+        );
       await page.getByLabel("Satellite thermal detections").check();
       await page
         .getByRole("button", { name: "Explore geospatial context" })

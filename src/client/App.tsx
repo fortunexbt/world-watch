@@ -2,6 +2,7 @@ import MediaPanel from "./MediaPanel";
 import RollingBrief from "./RollingBrief";
 import GeospatialPanel from "./GeospatialPanel";
 import PublicBanner from "./PublicBanner";
+import { CountryCoverage, CoverageChip, CoverageView, freshness, sourceStatus } from "./Coverage";
 import { publicRequest } from "./public-data";
 import type {GeospatialCatalog} from "../shared/geospatial";
 import type {NewsSignalCatalog} from "../shared/news";
@@ -728,6 +729,10 @@ export default function App() {
         c.country === country ||
         c.aliases.includes(country),
     )?.country ?? country;
+  const sourceFreshness = useMemo(
+    () => freshness(snapshot.sources, clock),
+    [snapshot.sources, clock],
+  );
   const changedSince = lastSeen
     ? snapshot.incidents.filter(
         (i) => Date.parse(i.updated_at) > Date.parse(lastSeen),
@@ -1397,7 +1402,7 @@ export default function App() {
                   <ArrowUpRight size={14} />
                 </a>
                 <small>
-                  {tr(s.status)} ·{" "}
+                  <CoverageChip status={sourceStatus(s, clock)} language={language} /> ·{" "}
                   {s.countries?.includes("*")
                     ? tr("worldwide")
                     : s.countries?.join(", ")}
@@ -1423,6 +1428,7 @@ export default function App() {
           <section className="panel-content">
             <h1>{tr("Explore & focus")}</h1>
             <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button></>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
+            <CoverageView sources={snapshot.sources} incidents={snapshot.incidents} catalog={geoCatalog} now={clock} language={language} />
 
             <label htmlFor="query">{tr("Search reports and incidents")}</label>
             <input
@@ -1762,26 +1768,13 @@ export default function App() {
                 </button>
               ))}
             <h2>{tr("Coverage")}</h2>
-            <p>
-              {
-                snapshot.sources.filter(
-                  (s) =>
-                    s.status === "enabled" &&
-                    (s.countries?.includes(countryCode) ||
-                      s.countries?.includes("*")) &&
-                    s.health?.last_success_at,
-                ).length
-              }{" "}
-              {tr(
-                "monitored endpoints have a verified successful retrieval for this destination.",
-              )}
-            </p>
+            <CountryCoverage sources={snapshot.sources} country={countryCode} now={clock} language={language} />
             <p>
               {tr(
-                "Source scope does not establish complete local coverage. Open source health for monitored endpoints and current gaps.",
+                "Source scope does not establish complete local coverage. Open the coverage view for every source's status and what silence means.",
               )}
             </p>
-            <button onClick={() => setSurface("health")}>
+            <button onClick={() => setSurface("search")}>
               {tr("Inspect coverage")}
             </button>
           </section>
@@ -2087,6 +2080,15 @@ export default function App() {
             <span>
               {snapshot.status.pending_count ?? snapshot.status.pending ?? "—"}{" "}
               {tr("pending")}
+            </span>
+          </>
+        )}
+        {sourceFreshness.read > 0 && (
+          <>
+            <span className="health-divider" />
+            <span className={`coverage-dot ${sourceFreshness.worst}`} />
+            <span title={tr("Sources read successfully on schedule")}>
+              {sourceFreshness.fresh}/{sourceFreshness.read} {tr("sources fresh")}
             </span>
           </>
         )}

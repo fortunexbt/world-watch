@@ -19,6 +19,8 @@ export const FIRMS_SENSORS: readonly {
   satellite: string;
   label: string;
   url: string;
+  /** When the issuer stops delivering new data; the file is not read from then on. */
+  ended?: { at: string; notice_url: string };
 }[] = [
   {
     id: "noaa-20-viirs",
@@ -37,6 +39,13 @@ export const FIRMS_SENSORS: readonly {
     satellite: "N",
     label: "Suomi NPP VIIRS 375 m",
     url: `${FIRMS_DATA}/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Global_24h.csv`,
+    // FIRMS banner, read 23 October 2026: "Delivery of new Suomi NPP data ceases on Nov. 2, 2026." The linked
+    // NASA Earthdata notice gives 13:00 UTC and says the date may change.
+    ended: {
+      at: "2026-11-02T13:00:00Z",
+      notice_url:
+        "https://www.earthdata.nasa.gov/data/alerts-outages/reminder-new-suomi-npp-observations-cease-november-2-2026",
+    },
   },
 ];
 type ThermalSensor = (typeof FIRMS_SENSORS)[number];
@@ -70,7 +79,12 @@ type Detections = {
 };
 type Loaded = {
   checked_at: string;
-  thermal: { sensor: ThermalSensor; data?: Detections; error?: string }[];
+  thermal: {
+    sensor: ThermalSensor;
+    data?: Detections;
+    error?: string;
+    ended?: boolean;
+  }[];
   cems: {
     features: GeoFeature[];
     truncated: boolean;
@@ -472,11 +486,12 @@ async function loadCems(
     };
   }
 }
-async function load(fetcher: typeof fetch): Promise<Loaded> {
-  const now = Date.now();
+async function load(fetcher: typeof fetch, now: number): Promise<Loaded> {
   const [thermal, cems] = await Promise.all([
     Promise.all(
       FIRMS_SENSORS.map(async (sensor) => {
+        if (sensor.ended && Date.parse(sensor.ended.at) <= now)
+          return { sensor, ended: true };
         try {
           const parser = firmsParser(sensor, now);
           for await (const text of readSource(
@@ -613,14 +628,21 @@ function thermalFeatures(thermal: Loaded["thermal"], bbox: Bbox) {
   });
   return {
     features,
-    sensors: thermal.map(({ sensor, error }, k) => ({
+    sensors: thermal.map(({ sensor, error, ended }, k) => ({
       id: sensor.id,
       label: sensor.label,
-      status: error ? ("error" as const) : ("ok" as const),
+      status: ended
+        ? ("ended" as const)
+        : error
+          ? ("error" as const)
+          : ("ok" as const),
       features_count: returned[k],
       total_available: totals[k],
       source_url: sensor.url,
       ...(error ? { error } : {}),
+      ...(ended
+        ? { ended_at: sensor.ended!.at, notice_url: sensor.ended!.notice_url }
+        : {}),
     })),
   };
 }
@@ -644,18 +666,19 @@ export function parseBbox(value: string): Bbox | null {
 export async function getGeospatialCatalog(
   bbox: Bbox = WORLD,
   fetcher: typeof fetch = fetch,
+  now = Date.now(),
 ): Promise<GeospatialCatalog> {
-  const hit = cache.get(fetcher),
-    now = Date.now();
+  const hit = cache.get(fetcher);
   let loading = hit && hit.expires > now ? hit.value : undefined;
   if (!loading) {
-    loading = load(fetcher);
+    loading = load(fetcher, now);
     cache.set(fetcher, { expires: now + 600000, value: loading });
   }
   const { checked_at, thermal, cems } = await loading;
   const mapping = cems.features.filter((f) => intersects(f.geometry, bbox)),
     { features, sensors } = thermalFeatures(thermal, bbox);
-  const failed = sensors.find((s) => s.error);
+  const failed = sensors.find((s) => s.error),
+    read = thermal.filter((t) => !t.ended).map((t) => t.sensor.label);
   const sources: LayerSourceHealth[] = [
     {
       id: "copernicus",
@@ -674,14 +697,18 @@ export async function getGeospatialCatalog(
     },
     {
       id: "firms",
-      status: sensors.every((s) => s.error) ? "error" : "ok",
+      status: sensors.some((s) => s.status === "ok") ? "ok" : "error",
       checked_at,
       cadence_seconds: 600,
       features_count: features.length,
       total_available: sensors.reduce((n, s) => n + s.total_available, 0),
       truncated: sensors.some((s) => s.features_count < s.total_available),
       source_url: "https://firms.modaps.eosdis.nasa.gov/active_fire/",
-      attribution: firmsCredit("NOAA-20, NOAA-21 and Suomi NPP VIIRS 375 m"),
+      attribution: firmsCredit(
+        read.length > 1
+          ? `${read.slice(0, -1).map((l) => l.replace(/ VIIRS 375 m$/, "")).join(", ")} and ${read.at(-1)}`
+          : read.join(""),
+      ),
       license_url: NASA_LICENSE,
       ...(failed ? { error: failed.error } : {}),
       sensors,

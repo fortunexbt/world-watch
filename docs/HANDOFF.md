@@ -32,6 +32,7 @@ Public camera metadata/snapshots and selected provider-declared HLS video are co
 | API                | `src/server/index.ts`                                                            | Authentication/scopes, ingestion, jobs, snapshots, SSE, search, corrections, retention |
 | Brief jobs         | `src/server/brief.ts`                                                            | Closed processing windows, input selection, durable leases, publication fences         |
 | Collector          | `src/collector/index.ts`, `registry.ts`, `fetch.ts`, `parsers.ts`, `adapters/`   | Approved retrieval, parsing, admission, checkpoints and source health                  |
+| Coverage           | `src/shared/coverage.ts`, `src/client/Coverage.tsx`                              | Source and sensor status, issuer and publication latency, coverage view and legend     |
 | Remote trigger     | `src/collector/remote.ts`, `deploy/collector.wrangler.jsonc`                     | Small paused scheduled entry, no database binding                                      |
 | Inference          | `src/worker/adapter.ts`, `analyst.ts`, `wire.ts`, `worker.ts`, `brief.ts`        | Supported Codex transport, extraction, result validation and spooling                  |
 | Worker lifecycle   | `src/worker/cli.ts`, `supervisor.ts`, `budget.ts`                                | Local supervision, locks, daily accounting and recovery                                |

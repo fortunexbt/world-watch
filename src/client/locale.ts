@@ -137,10 +137,8 @@ export const italian: Record<string, string> = {
   "Observed activity and source coverage":
     "Attività osservate e copertura delle fonti",
   Coverage: "Copertura",
-  "monitored endpoints have a verified successful retrieval for this destination.":
-    "endpoint monitorati hanno un recupero riuscito verificato per questa destinazione.",
-  "Source scope does not establish complete local coverage. Open source health for monitored endpoints and current gaps.":
-    "L’ambito della fonte non dimostra una copertura locale completa. Consulta lo stato delle fonti per endpoint monitorati e lacune attuali.",
+  "Source scope does not establish complete local coverage. Open the coverage view for every source's status and what silence means.":
+    "L’ambito di una fonte non dimostra una copertura locale completa. Apri la vista della copertura per lo stato di ogni fonte e il significato dell’assenza di segnalazioni.",
   "Inspect coverage": "Esamina la copertura",
   "Public event awareness": "Informazioni sugli eventi pubblici",
   "Switch incoming reports and incidents":
@@ -561,6 +559,52 @@ Object.assign(italian, {
     "{shown} su {total} rilevamenti nel mondo",
   "This public snapshot is rebuilt from the sources below about every ten minutes. No model analysis runs in it.":
     "Questa istantanea pubblica viene ricostruita dalle fonti qui sotto circa ogni dieci minuti. Non contiene analisi di modelli.",
+});
+Object.assign(italian, {
+  Observed: "Osservata",
+  Quiet: "Silenziosa",
+  Stale: "Non aggiornata",
+  Failing: "In errore",
+  Ended: "Cessata",
+  "Not configured": "Non configurata",
+  "Access unresolved": "Accesso non definito",
+  "Read on schedule and listing records.":
+    "Letta nei tempi previsti, con record presenti.",
+  "Read on schedule and listing nothing.":
+    "Letta nei tempi previsti, senza record.",
+  "No successful read within two expected intervals.":
+    "Nessuna lettura riuscita entro due intervalli previsti.",
+  "The latest read failed.": "L’ultima lettura non è riuscita.",
+  "The issuer stopped delivering this data.":
+    "L’ente emittente ha smesso di fornire questi dati.",
+  "Not read: disabled or awaiting credentials.":
+    "Non letta: disattivata o in attesa di credenziali.",
+  "A licence or permission is not settled yet.":
+    "Una licenza o un’autorizzazione non è ancora definita.",
+  "No reports": "Nessuna segnalazione",
+  "A source that covers the place read it on schedule and listed nothing there.":
+    "Una fonte che copre il luogo lo ha letto nei tempi previsti e non vi ha trovato nulla.",
+  "Not covered": "Non coperto",
+  "No source being read covers the place or layer, so an empty map there says nothing.":
+    "Nessuna fonte letta copre il luogo o il livello, quindi una mappa vuota lì non dice nulla.",
+  never: "mai",
+  "expected every": "prevista ogni",
+  "Issuer to ingest": "Dall’ente all’acquisizione",
+  "Ingest to publication": "Dall’acquisizione alla pubblicazione",
+  "no samples yet": "ancora nessun campione",
+  Latency: "Latenza",
+  median: "mediana",
+  "Delivery ended": "Fornitura cessata il",
+  "Issuer notice": "Avviso dell’ente",
+  "in this view": "in questa vista",
+  "Satellite sensors and mapping areas are checked while their layer is on.":
+    "Sensori satellitari e aree di mappatura vengono verificati mentre il loro livello è attivo.",
+  "Not read": "Non lette",
+  "No source being read covers this country, so no reports here means not covered.":
+    "Nessuna fonte letta copre questo paese, quindi l’assenza di segnalazioni qui significa assenza di copertura.",
+  "Sources read successfully on schedule":
+    "Fonti lette con successo nei tempi previsti",
+  "sources fresh": "fonti aggiornate",
 });
 export function translate(language: Language, text: string) {
   return language === "it"

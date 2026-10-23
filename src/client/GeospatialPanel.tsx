@@ -237,7 +237,9 @@ export default function GeospatialPanel({
                         shown: sensor.features_count,
                         total: sensor.total_available,
                       })
-                    : tr("Sensor unavailable")}
+                    : sensor.status === "ended"
+                      ? `${tr("Delivery ended")} ${timestamp(sensor.ended_at ?? null)}`
+                      : tr("Sensor unavailable")}
                   {sensor.error && ` · ${tr(sensor.error)}`}
                 </small>
               ))}

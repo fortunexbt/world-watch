@@ -266,6 +266,8 @@ const gdelt = (["english", "translingual"] as const).map(
       max_bytes: 32 * 1024 * 1024,
       operational_role: "news_signal_discovery",
       declared_refresh_seconds: 900,
+      unresolved_permission:
+        "Publisher rights for model use and redistribution of the linked articles and headlines are not established.",
       coverage:
         "GKG 2.1 records whose GDELT themes (protest, strike, armed conflict, attacks and explosions, coup plotters, refugees and displacement, evacuation, curfews and states of emergency, disasters) fall within 150 characters of a GDELT-geocoded city or landmark, counted by place. Country and province mentions are not mapped. Geocoding, theme tagging and translation are GDELT's machine output and are often wrong; a signal says coverage rose, not that anything happened.",
     },
@@ -587,6 +589,8 @@ export const sourceRegistry: SourceRecord[] = [
       format: "adsblol_squawks",
       max_bytes: 512 * 1024,
       operational_role: "self_reported_aviation_signal",
+      unresolved_permission:
+        "ADSB.lol asks production users to contact it first and may require a feeder key; a public deployment waits for that.",
       coverage:
         "Aircraft that volunteer receivers hear squawking 7500, 7600 or 7700, one record per aircraft and code while ADSB.lol lists it. Receiver coverage is dense over Europe and North America and thin or absent over oceans, polar routes and much of Africa and Asia. Aircraft without a received position are kept for continuity but not mapped.",
     },
@@ -616,6 +620,8 @@ export const sourceRegistry: SourceRecord[] = [
       countries_per_poll: 3,
       max_bytes: 1024 * 1024,
       operational_role: "structured_measurement",
+      unresolved_permission:
+        "The RIS terms ask for the RIPE NCC logo on reports shown to others, and the RIPE NCC asks to agree before its logo appears on a website; public display waits for that.",
       coverage:
         "Every country on the map, three per five-minute poll, so each is read about every five hours and stays under RIPEstat's 1,000 unregistered requests a day. Each read takes 14 days of hourly IPv4 prefix and origin network counts and reports drops against the median of the preceding seven days. Countries below 50 visible prefixes are not evaluated. The circle is the whole country.",
     },

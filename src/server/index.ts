@@ -635,6 +635,7 @@ export async function ingest(e: Env, items: ObservationInput[]) {
             excerpts: item.excerpts,
             input_coverage: item.input_coverage,
             published_at: item.published_at,
+            source_updated_at: item.source_updated_at,
             original_language: item.original_language,
             content_revision: rev,
             rights: s.rights,

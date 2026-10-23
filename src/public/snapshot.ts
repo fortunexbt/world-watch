@@ -11,12 +11,22 @@ import { getGeospatialCatalog, WORLD } from "../server/geospatial";
 import server, { type Env } from "../server/index";
 import { structuredBrief } from "../server/structured-brief";
 import type { IncidentView, SourceRecord } from "../shared/contracts";
+import {
+  issuerLag,
+  keepLag,
+  layerCoverage,
+  publicationLag,
+  sourceCoverage,
+  sourceLatency,
+  type LagSample,
+} from "../shared/coverage";
 import type { GeospatialCatalog } from "../shared/geospatial";
 import { incidentInWindow } from "../shared/temporal";
 import {
   BRIEF_WINDOWS,
   MANIFEST,
   PUBLIC_FILE_LIMITS,
+  SNAPSHOT_CADENCE_SECONDS,
   type PublicBriefs,
   type PublicFile,
   type PublicIncidents,
@@ -238,14 +248,49 @@ export async function buildPublicSnapshot(
         cadence_seconds: GEOSPATIAL_REFRESH_SECONDS,
       })),
     };
+    // Each run starts from an empty database, so a revision is new when the previous snapshot didn't hold it.
+    const seen = new Set(
+      (previous.incidents?.incidents ?? []).flatMap((i) =>
+        i.reports.map((r) => r.report_id + ":" + r.content_revision),
+      ),
+    );
+    const lag = new Map<string, LagSample[]>();
+    for (const i of snapshot.incidents as IncidentView[])
+      for (const r of i.reports)
+        if (!seen.has(r.report_id + ":" + r.content_revision))
+          lag.set(r.source_id, [
+            ...(lag.get(r.source_id) ?? []),
+            ...issuerLag(
+              [r],
+              previous.manifest?.sources.find((s) => s.id === r.source_id)
+                ?.last_success_at,
+              Date.parse(i.ingested_at),
+            ),
+          ]);
+    const now = Date.parse(generated_at);
     const incidents: PublicIncidents = {
       incidents: views,
       sources: snapshot.sources.map((s: any) => ({
         ...s,
-        health: { ...s.health, last_success_at: lastSuccess(s.id) },
+        health: {
+          ...s.health,
+          last_success_at: lastSuccess(s.id),
+          checkpoint: {
+            ...s.health.checkpoint,
+            issuer_lag: keepLag(
+              [
+                ...(previous.incidents?.sources.find((p) => p.id === s.id)
+                  ?.health?.checkpoint?.issuer_lag ?? []),
+                ...(lag.get(s.id) ?? []),
+              ],
+              now,
+            ),
+          },
+        },
       })),
       limited: snapshot.limited,
     };
+    const published = publicationLag(views, now);
     const files = new Map<string, string>();
     const contents: Record<PublicFile, unknown> = {
       "incidents.json": incidents,
@@ -271,6 +316,7 @@ export async function buildPublicSnapshot(
       files: sizes,
       sources: sources.map((s) => {
         const result = results.find((r) => r.source_id === s.id);
+        const health = incidents.sources.find((x) => x.id === s.id)?.health;
         return {
           id: s.id,
           name: s.name,
@@ -284,9 +330,23 @@ export async function buildPublicSnapshot(
           ).length,
           attribution: s.rights.attribution,
           redistribute: s.rights.redistribute,
+          coverage: sourceCoverage(s, health, now, SNAPSHOT_CADENCE_SECONDS)
+            .status,
+          latency: sourceLatency(health, published.get(s.id), now),
         };
       }),
-      layers: geospatial.sources.map(({ sensors, ...layer }) => layer),
+      layers: geospatial.sources.map(({ sensors, ...layer }) => ({
+        ...layer,
+        coverage: layerCoverage(layer, layer, now),
+        ...(sensors
+          ? {
+              sensors: sensors.map((sensor) => ({
+                id: sensor.id,
+                coverage: layerCoverage(sensor, layer, now),
+              })),
+            }
+          : {}),
+      })),
     };
     files.set(MANIFEST, bounded(MANIFEST, JSON.stringify(manifest)));
     return { manifest, files, results };

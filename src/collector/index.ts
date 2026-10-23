@@ -15,6 +15,7 @@ import {
   parseParisEvents,
 } from "./parsers.js";
 import { configuredRegistry } from "./registry.js";
+import { issuerLag, keepLag } from "../shared/coverage.js";
 import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
 import { parseUsgs } from "./adapters/usgs.js";
 import { emscQueryURL, parseEmsc } from "./adapters/emsc.js";
@@ -210,6 +211,8 @@ export async function collectSources(
     }
     let received = 0,
       newsFiles: string[] | undefined;
+    // A GDELT file's own timestamp is its issuer time.
+    const newsIssued: { published_at: string; source_updated_at: null }[] = [];
     // RIPEstat answers one country per request, so each poll reads the next few in turn.
     const first = before.routing?.next ?? 0;
     const countries =
@@ -396,6 +399,7 @@ export async function collectSources(
             const { batch } = await gkgBatch(source.id, file.file_at, data.bytes!);
             await request("/api/news/ingest", batch);
             newsFiles.push(file.stamp);
+            newsIssued.push({ published_at: file.file_at, source_updated_at: null });
             ingested++;
             received += batch.places.reduce((n, p) => n + p.articles.length, 0);
           }
@@ -647,6 +651,17 @@ export async function collectSources(
         }
         if (more) complete = false;
       }
+      const issuer_lag = keepLag(
+        [
+          ...(before.issuer_lag ?? []),
+          ...issuerLag(
+            [...missing.slice(0, offset).map((x) => x.observation), ...newsIssued],
+            before.last_success_at,
+            now(),
+          ),
+        ],
+        now(),
+      );
       await health(source.id, {
         checked_at: new Date(now()).toISOString(),
         last_success_at: complete
@@ -660,6 +675,7 @@ export async function collectSources(
               ...(routing ? { routing } : {}),
               accepted_items: acceptedItems,
               news_files: newsFiles,
+              issuer_lag,
               admission,
               pending_hash: undefined,
               pending_offset: undefined,
@@ -668,6 +684,7 @@ export async function collectSources(
           : {
               ...before,
               accepted_items: acceptedItems,
+              issuer_lag,
               admission,
               pending_hash: hash,
               pending_offset: Object.keys(acceptedItems).length,

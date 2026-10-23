@@ -24,9 +24,11 @@ const row = (
   confidence = "nominal",
 ) =>
   `${lat},${lon},320.1,0.4,0.4,${date},${time},${satellite},${confidence},2.0NRT,290.2,1.5,N`;
-/** acq_date and acq_time minutesAgo before the real clock, because the catalog filters on Date.now(). */
+/** A catalogue clock while all three sensors still deliver; the catalogue filters on it. */
+const live = Date.parse("2026-10-30T12:00:00Z");
+/** acq_date and acq_time minutesAgo before the catalogue clock. */
 const ago = (minutesAgo: number) => {
-  const iso = new Date(Date.now() - minutesAgo * 60000).toISOString();
+  const iso = new Date(live - minutesAgo * 60000).toISOString();
   return [iso.slice(0, 10), iso.slice(11, 13) + iso.slice(14, 16)] as const;
 };
 const extent = "POLYGON ((0 38,1 38,1 39,0 38))";
@@ -218,7 +220,7 @@ const upstream = (firmsRows: Record<string, string[]>, calls: string[] = []) =>
       );
     }
     assert.equal(headers.get("Accept"), "application/json");
-    const eventTime = new Date(Date.now() - 3600000).toISOString();
+    const eventTime = new Date(live - 3600000).toISOString();
     if (String(url) === CEMS_URL)
       return Response.json({
         count: 300,
@@ -257,8 +259,8 @@ test("catalog acquires every sensor's global file and a bounded CEMS budget, coa
     calls,
   );
   const [a, b] = await Promise.all([
-    getGeospatialCatalog(undefined, fetcher),
-    getGeospatialCatalog(undefined, fetcher),
+    getGeospatialCatalog(undefined, fetcher, live),
+    getGeospatialCatalog(undefined, fetcher, live),
   ]);
   assert.deepEqual(a, b);
   assert.deepEqual(a.bbox, [-180, -90, 180, 90]);
@@ -322,7 +324,7 @@ test("bbox filters before capping, across the antimeridian and in the southern h
     N21: [row(-45, -175, d, t, "N21")],
     N: [row(-60, 175, d, t, "N")],
   });
-  const pacific = await getGeospatialCatalog([170, -50, -170, 0], fetcher);
+  const pacific = await getGeospatialCatalog([170, -50, -170, 0], fetcher, live);
   assert.deepEqual(pacific.bbox, [170, -50, -170, 0]);
   assert.deepEqual(
     pacific.features
@@ -354,7 +356,7 @@ test("bbox filters before capping, across the antimeridian and in the southern h
     firmsSource.sensors!.map((s) => s.total_available),
     [2, 1, 0],
   );
-  const europe = await getGeospatialCatalog([-10, 35, 30, 60], fetcher);
+  const europe = await getGeospatialCatalog([-10, 35, 30, 60], fetcher, live);
   assert.equal(europe.features.filter((f) => f.layer === "thermal").length, 0);
   assert.equal(
     europe.features.filter((f) => f.layer === "emergency_mapping").length,
@@ -377,6 +379,7 @@ test("thermal cap balances regions, keeps each region's newest detections and re
       N21: rows("N21", 1),
       N: rows("N", 2),
     }),
+    live,
   );
   const thermal = catalog.features.filter((f) => f.layer === "thermal");
   assert.equal(thermal.length, 2000);
@@ -409,7 +412,7 @@ test("each sensor fails independently and failures are reported, not silently dr
   ) =>
     String(url) === n21.url
       ? new Response("", { status: 503 })
-      : healthy(url, init)) as typeof fetch);
+      : healthy(url, init)) as typeof fetch, live);
   const source = partial.sources.find((s) => s.id === "firms")!;
   assert.equal(source.status, "ok");
   assert.equal(source.error, "source_http_503");
@@ -428,6 +431,7 @@ test("each sensor fails independently and failures are reported, not silently dr
         status: 302,
         headers: { Location: "https://private.invalid/" },
       })) as any,
+    live,
   );
   assert.equal(failed.features.length, 0);
   assert(
@@ -450,6 +454,7 @@ test("stream byte caps reject oversized sources before parsing: 24 MB per FIRMS 
             : 2 * 1024 * 1024 + 1,
         ),
       )) as any,
+    live,
   );
   assert(
     streamed.sources.every(
@@ -462,6 +467,49 @@ test("stream byte caps reject oversized sources before parsing: 24 MB per FIRMS 
       new Response("latitude", {
         headers: { "content-length": String(24 * 1024 * 1024 + 1) },
       })) as any,
+    live,
   );
   assert(declared.sources.every((s) => s.error === "source_byte_limit"));
+});
+test("Suomi NPP is marked ended from NASA's cessation date and no longer read, while NOAA-20 and NOAA-21 carry the thermal layer", async () => {
+  const ended = Date.parse(snpp.ended!.at);
+  const iso = new Date(ended + 3600000).toISOString();
+  const [d, t] = [iso.slice(0, 10), iso.slice(11, 13) + iso.slice(14, 16)];
+  const calls: string[] = [];
+  const fetcher = upstream(
+    {
+      N20: [row(41, 12, d, t, "N20")],
+      N21: [row(-17.8, 179.5, d, t, "N21")],
+      N: [row(64.1, -21.9, d, t, "N")],
+    },
+    calls,
+  );
+  const catalog = await getGeospatialCatalog(undefined, fetcher, ended + 2 * 3600000);
+  assert(!calls.includes(snpp.url), "an ended sensor's file is not downloaded");
+  const firmsSource = catalog.sources.find((s) => s.id === "firms")!;
+  assert.equal(firmsSource.status, "ok");
+  assert.deepEqual(
+    firmsSource.sensors!.map((s) => [s.id, s.status, s.total_available]),
+    [
+      ["noaa-20-viirs", "ok", 1],
+      ["noaa-21-viirs", "ok", 1],
+      ["snpp-viirs", "ended", 0],
+    ],
+  );
+  const suomi = firmsSource.sensors!.find((s) => s.id === "snpp-viirs")!;
+  assert.equal(suomi.ended_at, "2026-11-02T13:00:00Z");
+  assert.match(suomi.notice_url!, /^https:\/\/www\.earthdata\.nasa\.gov\//);
+  assert.equal(suomi.error, undefined);
+  assert.equal(firmsSource.error, undefined);
+  assert.match(firmsSource.attribution, /NOAA-20 and NOAA-21 VIIRS 375 m/);
+  assert.doesNotMatch(firmsSource.attribution, /Suomi/);
+  assert.deepEqual(
+    catalog.features.map((f) => f.properties.sensor_id).filter(Boolean).sort(),
+    ["noaa-20-viirs", "noaa-21-viirs"],
+  );
+  const before = await getGeospatialCatalog(undefined, upstream({}), ended - 1);
+  assert.equal(
+    before.sources[1].sensors!.find((s) => s.id === "snpp-viirs")!.status,
+    "ok",
+  );
 });

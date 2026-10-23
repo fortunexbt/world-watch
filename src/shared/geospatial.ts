@@ -33,11 +33,15 @@ export type GeoFeature = {
 export type ThermalSensorHealth = {
   id: ThermalSensorId;
   label: string;
-  status: "ok" | "error";
+  /** "ended" once the issuer has stopped delivering the sensor's data; it is no longer read. */
+  status: "ok" | "error" | "ended";
   features_count: number;
   total_available: number;
   source_url: string;
   error?: string;
+  ended_at?: string;
+  /** The issuer's announcement of the end of delivery. */
+  notice_url?: string;
 };
 /**
  * features_count is what this response returns; total_available counts features
