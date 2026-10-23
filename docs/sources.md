@@ -118,6 +118,13 @@ These hazard feeds were checked on 22 October 2026 and left out.
 - USGS volcano alert levels (HANS public API at `volcanoes.usgs.gov/hans-public/api`). The content is U.S. public domain, but the yield was four volcanoes, one at Watch/Orange and three at Advisory/Yellow. The elevated list has no coordinates, so a second catalogue request would be needed, and the CAP list covers only Watch and Warning. Advisory and Watch describe unrest as well as eruption, which the `volcanic_eruption` activity would overstate, and GDACS already maps Orange and Red volcanic events worldwide.
 - Smithsonian Global Volcanism Program. A bounded request for its terms of use returned a bot challenge instead of the terms, so reuse rights couldn't be established.
 
+These aviation feeds were checked on 22 October 2026 and left out.
+
+- airplanes.live. Its [API documentation](https://airplanes.live/api-docs/) lists squawk and military endpoints but states no data licence. Its [terms of use](https://airplanes.live/terms-of-use/) grant content "for your personal, non-commercial use or internal business purpose only", forbid systematically retrieving data "to create or compile, directly or indirectly, a collection, compilation, database, or directory without written permission" and forbid automated access by script. A public application would need written permission.
+- adsb.fi. Its [open data terms](https://github.com/adsbfi/opendata) say the data "is for personal, non-commercial use only", require citing adsb.fi with a link and limit public endpoints to one request a second. A public application isn't personal use.
+- OpenSky Network. Its [terms](https://opensky-network.org/about/terms-of-use) require a written licence for operational use.
+- ADSB.lol military aircraft (`/v2/mil`). The same ODbL covers it, but it is not a signal of anything happening. On 22 October 2026 at 23:37 UTC it listed 286 aircraft, 226 with a position. The military tag is a flag in a community aircraft database whose completeness isn't stated, and a position alone doesn't say what a flight is doing, so routine training and transport flights would read as activity. A moving layer also needs the current-state and track retention the [core plan](plans/GLOBAL_OSINT_CORE_PLAN.md) asks for before more aviation feeds, and its requests would come out of the same 500-a-day allowance as the squawk poll.
+
 ## Admission contract
 
 Before enabling a source, establish its geographic scope, publisher and upstream origin, update semantics, typical latency, reliability, terms, attribution, and separate permissions for access, storage, model use, display and redistribution. Record the specific grant or blocker. Public reachability is not a grant.
