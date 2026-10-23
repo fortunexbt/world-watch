@@ -1672,18 +1672,19 @@ async function events(r: Request, e: Env) {
             controller.close();
             return;
           }
+          // Only the fields an event carries: payloads hold whole incident views, which each
+          // stream would otherwise receive and parse for every event.
           const updates = await memoRead(e, "outbox:" + cursor, 900, () =>
             rows(
               e,
-              "SELECT * FROM outbox WHERE id>? ORDER BY id LIMIT 200",
+              "SELECT id,event_type,entity_id,created_at,json_extract(payload,'$.reason') AS reason,json_extract(payload,'$.incident.version') AS version,json_extract(payload,'$.catchup') AS catchup FROM outbox WHERE id>? ORDER BY id LIMIT 200",
               cursor,
             ),
           );
           for (const v of updates) {
-            const payload = parse(v.payload);
             const safe =
               v.event_type === "resync"
-                ? { reason: payload.reason ?? "authoritative_resync" }
+                ? { reason: v.reason ?? "authoritative_resync" }
                 : {
                     kind: v.event_type,
                     committed_at: v.created_at,
@@ -1692,10 +1693,9 @@ async function events(r: Request, e: Env) {
                       : undefined,
                     report_id:
                       v.event_type === "incoming" ? v.entity_id : undefined,
-                    version: payload.incident?.version ?? null,
+                    version: v.version ?? null,
                     catchup:
-                      payload.catchup === true ||
-                      Date.parse(v.created_at) <= started,
+                      v.catchup === 1 || Date.parse(v.created_at) <= started,
                   };
             send(
               `id: ${v.id}\nevent: ${v.event_type}\ndata: ${JSON.stringify(safe)}\n\n`,
