@@ -521,7 +521,12 @@ export default function App() {
       const announce =
         material && !catchup && !announced.current.has(notificationKey);
       if (announce) announced.current.add(notificationKey);
-      void api("/api/incidents/" + encodeURIComponent(id) + "?compact=1")
+      // Live changes carry their rights-checked view; others are read back.
+      void (
+        d.incident
+          ? Promise.resolve(d.incident)
+          : api("/api/incidents/" + encodeURIComponent(id) + "?compact=1")
+      )
         .then((i: IncidentView) => {
           if (
             !active ||

@@ -1620,6 +1620,15 @@ async function snapshot(e: Env, u: URL) {
     limited: records.length >= 1000,
   };
 }
+/** An event's incident as /api/incidents/:id?compact=1 would return it, in list form; undefined when that read would refuse it. */
+function eventView(item: IncidentView, rights: Map<string, SourceRecord["rights"]>) {
+  if (!defaultSignalEligible(item) || !permittedView(item, rights)) return undefined;
+  return listView({
+    ...refreshRights(item, rights),
+    claims: item.claims.map((c) => ({ ...c, temporal_status: temporalStatus(c) })),
+    history: [],
+  });
+}
 async function events(r: Request, e: Env) {
   const after = Number(
     r.headers.get("last-event-id") ||
@@ -1673,15 +1682,21 @@ async function events(r: Request, e: Env) {
             controller.close();
             return;
           }
-          // Only the fields an event carries: payloads hold whole incident views, which each
-          // stream would otherwise receive and parse for every event.
-          const updates = await memoRead(e, "outbox:" + cursor, 900, () =>
-            rows(
+          // Only the fields an event carries, and for a live incident change the list view a
+          // compact detail read would return, so clients need not read each incident back.
+          // Streams in one isolate share the read, its parsing and the rights check.
+          const updates = await memoRead(e, "outbox:" + cursor, 900, async () => {
+            const list = await rows(
               e,
-              "SELECT id,event_type,entity_id,created_at,json_extract(payload,'$.reason') AS reason,json_extract(payload,'$.incident.version') AS version,json_extract(payload,'$.catchup') AS catchup FROM outbox WHERE id>? ORDER BY id LIMIT 200",
+              "SELECT id,event_type,entity_id,created_at,json_extract(payload,'$.reason') AS reason,json_extract(payload,'$.incident.version') AS version,json_extract(payload,'$.catchup') AS catchup,CASE WHEN event_type IN('incident.created','incident.updated','incident.escalated') THEN json_extract(payload,'$.incident') END AS incident FROM outbox WHERE id>? ORDER BY id LIMIT 200",
               cursor,
-            ),
-          );
+            );
+            const rights = list.some((v) => v.incident) ? await currentRights(e) : null;
+            return list.map((v) => ({
+              ...v,
+              incident: v.incident ? eventView(parse(v.incident), rights!) : undefined,
+            }));
+          });
           for (const v of updates) {
             const safe =
               v.event_type === "resync"
@@ -1697,6 +1712,7 @@ async function events(r: Request, e: Env) {
                     version: v.version ?? null,
                     catchup:
                       v.catchup === 1 || Date.parse(v.created_at) <= started,
+                    incident: v.incident,
                   };
             send(
               `id: ${v.id}\nevent: ${v.event_type}\ndata: ${JSON.stringify(safe)}\n\n`,

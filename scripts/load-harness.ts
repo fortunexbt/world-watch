@@ -309,7 +309,8 @@ try {
     results[`geospatial ${name}, warm`] = summarise(samples);
 
   // SSE: streams in this isolate share one outbox read per cursor; separate isolates do not.
-  // With `follow`, each stream reads every new incident's compact detail, as the client does.
+  // With `follow`, each stream reads the compact detail of every incident event that does not
+  // carry its view, as the client does.
   async function openStreams(count: number, cursor: number, shared: boolean, follow = false) {
     const received: Map<string, number>[] = [];
     const controllers: AbortController[] = [];
@@ -339,10 +340,11 @@ try {
                 const block = buffer.slice(0, cut);
                 buffer = buffer.slice(cut + 2);
                 const data = block.match(/^data: (.*)$/m)?.[1];
-                const id = data && JSON.parse(data).incident_id;
+                const event = data && JSON.parse(data),
+                  id = event?.incident_id;
                 if (!id || seen.has(id)) continue;
                 seen.set(id, performance.now());
-                if (follow) {
+                if (follow && !event.incident) {
                   details++;
                   done.push(
                     server

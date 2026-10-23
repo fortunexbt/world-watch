@@ -33,7 +33,7 @@ const instrument = `
 `;
 
 test(
-  "a pan sends no map data and re-renders no feed row; an SSE arrival renders one row and one map source",
+  "a pan sends no map data and re-renders no feed row; an SSE arrival renders one row and one map source, without a read when it carries its view",
   { timeout: 90000 },
   async () => {
     const server = spawn(
@@ -77,11 +77,13 @@ test(
         cancelled: false,
       });
       const incidents = Array.from({ length: 300 }, (_, n) => incident(n));
+      let details = 0;
       await page.route("**/*", async (route: any) => {
         const u = new URL(route.request().url());
         if (u.origin !== "http://127.0.0.1:5194") return route.abort();
         if (u.pathname === "/api/snapshot")
           return route.fulfill({ json: { incidents, incoming: [], sources: [], status: {}, cursor: "1" } });
+        if (u.pathname.startsWith("/api/incidents/")) details++;
         if (u.pathname === "/api/incidents/fixture-arrival") return route.fulfill({ json: { ...incident(1000), id: "fixture-arrival", headline: "Fixture arrival" } });
         if (u.pathname.startsWith("/api/")) return route.fulfill({ json: { current: null, pending: false } });
         return route.continue();
@@ -118,6 +120,14 @@ test(
       const arrived = await counts();
       assert.equal(arrived.rows - panned.rows, 1, "only the new row renders");
       assert.equal(arrived.loads - panned.loads, 1, "only the incident source is sent");
+      assert.equal(details, 1, "an event without its view is read back");
+
+      // An event that carries its view needs no read.
+      const carried = { ...incident(1001), id: "fixture-carried", headline: "Fixture carried" };
+      await page.evaluate((view: any) => (window as any).__streams.at(-1).emit("incident.created", { incident_id: view.id, version: 1, catchup: false, incident: view }, 3), carried);
+      await page.getByRole("heading", { name: "Fixture carried", exact: true }).waitFor();
+      await page.waitForTimeout(500);
+      assert.equal(details, 1, "the carried view is used as it is");
     } finally {
       if (browser) await browser.close();
       server.kill("SIGTERM");
