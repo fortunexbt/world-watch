@@ -53,7 +53,7 @@ The public build also drops the controls for linking and separating records. Rec
 
 ## Deploy
 
-First merge `r3/public-demo` into `main`. Scheduled workflows only run from the default branch. Then run these two commands. They need `gh` signed in as an account that administers `fortunexbt/world-watch`.
+First merge pull request #3 (`round-3-signals`), which carries the workflow, into `main`. Scheduled workflows only run from the default branch. Then run these two commands. They need `gh` signed in as an account that administers `fortunexbt/world-watch`.
 
 ```sh
 gh api --method POST repos/fortunexbt/world-watch/pages -f build_type=workflow
