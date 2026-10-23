@@ -19,7 +19,7 @@ import {
   type GeoFeature,
   type ThermalSensorId,
 } from "../shared/geospatial";
-import { pmtilesProtocol } from "./thermal-tiles";
+import { thermalProtocol } from "./thermal-tiles";
 import type { IncidentView } from "../shared/contracts";
 import { footprintShape } from "../shared/footprint";
 import type { Situation } from "../shared/fusion";
@@ -41,7 +41,7 @@ import {
   markerScale,
   MMI_COLORS,
 } from "./hazards";
-if (__PUBLIC_DEMO__) maplibregl.addProtocol("pmtiles", pmtilesProtocol);
+maplibregl.addProtocol("thermal", thermalProtocol);
 const THERMAL_LAYERS = ["thermal-cells", "thermal-detections"];
 export const colors: Record<string, string> = {
   informational: "#73B6E6",

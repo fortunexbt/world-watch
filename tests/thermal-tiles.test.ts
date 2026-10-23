@@ -14,7 +14,7 @@ import {
   serializeDirectory,
   tileId,
 } from "../src/shared/pmtiles.js";
-import { pmtilesProtocol } from "../src/client/thermal-tiles.js";
+import { archiveTile } from "../src/client/thermal-tiles.js";
 import {
   THERMAL_MAX_ZOOM,
   THERMAL_POINT_ZOOM,
@@ -152,8 +152,7 @@ function host(files: () => Uint8Array<ArrayBuffer>, ranges: boolean, requests: s
   }) as typeof fetch;
 }
 async function protocolTile(url: string, z: number, x: number, y: number) {
-  const { data } = await pmtilesProtocol({ url: `pmtiles://${url}/${z}/${x}/${y}`, type: "arrayBuffer" } as any, new AbortController());
-  return new Uint8Array(data as ArrayBuffer);
+  return (await archiveTile(url, z, x, y)) ?? new Uint8Array();
 }
 
 test("the browser reads tiles through every leaf directory of an archive, by Range or from a whole-file reply", async () => {

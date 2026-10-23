@@ -1,5 +1,5 @@
-// Where the map reads thermal tiles: the owner API, or in the public demo the
-// static PMTiles archive through MapLibre's "pmtiles" protocol.
+// MapLibre's "thermal" protocol: tiles from the owner API, or in the public demo
+// from the static PMTiles archive read with range requests.
 import type { AddProtocolAction } from "maplibre-gl";
 import {
   deserializeDirectory,
@@ -12,15 +12,8 @@ import {
 } from "../shared/pmtiles";
 import { THERMAL_ARCHIVE } from "../shared/public-snapshot";
 
-export function thermalTileUrl(version: string) {
-  if (!__PUBLIC_DEMO__)
-    return `${location.origin}/api/thermal/${version}/{z}/{x}/{y}`;
-  const archive = new URL(
-    `${import.meta.env.BASE_URL}data/${THERMAL_ARCHIVE}?v=${version}`,
-    location.href,
-  );
-  return `pmtiles://${archive}/{z}/{x}/{y}`;
-}
+export const thermalTileUrl = (version: string) =>
+  `thermal://${version}/{z}/{x}/{y}`;
 
 type Archive = {
   header: Header;
@@ -46,13 +39,11 @@ async function read(
   offset: number,
   length: number,
   archive?: Archive,
-  signal?: AbortSignal,
 ) {
   if (archive?.whole)
     return { bytes: archive.whole.slice(offset, offset + length) };
   const r = await fetch(url, {
     headers: { Range: `bytes=${offset}-${offset + length - 1}` },
-    signal,
   });
   if (r.status !== 200 && r.status !== 206)
     throw Error(`Thermal archive unavailable (${r.status})`);
@@ -63,7 +54,6 @@ async function read(
     ? { bytes: bytes.slice(offset, offset + length), whole: bytes, etag }
     : { bytes, etag };
 }
-// The header and directories serve every tile, so no single tile's abort cancels their reads.
 function open(url: string) {
   let archive = archives.get(url);
   if (!archive) {
@@ -92,13 +82,7 @@ function open(url: string) {
   }
   return archive;
 }
-async function tile(
-  url: string,
-  z: number,
-  x: number,
-  y: number,
-  signal: AbortSignal,
-) {
+async function tile(url: string, z: number, x: number, y: number) {
   const archive = await open(url),
     id = tileId(z, x, y);
   let entries = archive.root;
@@ -108,7 +92,7 @@ async function tile(
     if (entry.runLength) {
       const offset = archive.header.dataOffset + entry.offset;
       return gunzip(
-        (await read(url, offset, entry.length, archive, signal)).bytes,
+        (await read(url, offset, entry.length, archive)).bytes,
       );
     }
     let leaf = archive.leaves.get(entry.offset);
@@ -125,20 +109,50 @@ async function tile(
   throw Error("Thermal archive directory too deep");
 }
 
-/** Answers pmtiles://<archive URL>/{z}/{x}/{y}; a tile with no detections is empty. */
-export const pmtilesProtocol: AddProtocolAction = async (params, abort) => {
-  const [, url, z, x, y] = params.url.match(
-    /^pmtiles:\/\/(.+)\/(\d+)\/(\d+)\/(\d+)$/,
-  )!;
-  const load = () => tile(url, +z, +x, +y, abort.signal);
-  let data: Uint8Array<ArrayBuffer> | null;
+/** One tile of the archive at url; null when it holds no detection. */
+export async function archiveTile(url: string, z: number, x: number, y: number) {
   try {
-    data = await load();
+    return await tile(url, z, x, y);
   } catch (error) {
     if (!(error instanceof Replaced)) throw error;
     // A deployment replaced the file mid-session: start again from its new directory.
     archives.delete(url);
-    data = await load();
+    return tile(url, z, x, y);
   }
-  return { data: data ? data.buffer : new ArrayBuffer(0) };
+}
+async function load(version: string, z: number, x: number, y: number) {
+  if (__PUBLIC_DEMO__)
+    return archiveTile(
+      new URL(
+        `${import.meta.env.BASE_URL}data/${THERMAL_ARCHIVE}?v=${version}`,
+        location.href,
+      ).href,
+      z,
+      x,
+      y,
+    );
+  const r = await fetch(`/api/thermal/${version}/${z}/${x}/${y}`, {
+    credentials: "same-origin",
+  });
+  if (!r.ok) throw Error(`Thermal tiles unavailable (${r.status})`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+const reading = new Map<string, Promise<ArrayBuffer>>();
+/**
+ * Answers thermal://<version>/{z}/{x}/{y}; a tile with no detections is empty. Reads are not
+ * aborted, because each world copy on screen asks for the same tile at once and they share one.
+ */
+export const thermalProtocol: AddProtocolAction = async ({ url }) => {
+  const [, version, z, x, y] = url.match(
+    /^thermal:\/\/(\w+)\/(\d+)\/(\d+)\/(\d+)$/,
+  )!;
+  let read = reading.get(url);
+  if (!read) {
+    read = load(version, +z, +x, +y)
+      .then((data) => data?.buffer ?? new ArrayBuffer(0))
+      .finally(() => reading.delete(url));
+    reading.set(url, read);
+  }
+  // Each request gets its own copy, since MapLibre may transfer it to a worker.
+  return { data: (await read).slice(0) };
 };

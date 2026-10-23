@@ -93,7 +93,10 @@ test(
       await page.getByLabel("Satellite thermal detections").check();
       await page.waitForFunction(() => document.querySelector(".map canvas"));
       for (let n = 0; n < 100 && !tiles.length; n++) await page.waitForTimeout(100);
+      await page.waitForTimeout(1000);
       assert(tiles.length > 0 && tiles.every((t) => +t.split("/")[0] <= 2), tiles.join());
+      // The world copies on screen share one request per tile.
+      assert.equal(new Set(tiles).size, tiles.length, tiles.join());
       await page.keyboard.press("Escape");
       // Bounds are exact once less than a whole world is in view.
       await page.mouse.move(990, 470);
