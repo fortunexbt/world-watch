@@ -1,0 +1,53 @@
+{
+ "type": "Feature",
+ "id": "us6000u43g",
+ "properties": {
+  "mag": 7,
+  "place": "191 km ENE of Nagqu, China",
+  "time": 1792679620353,
+  "updated": 1792716711955,
+  "alert": "orange",
+  "status": "reviewed",
+  "types": ",dyfi,finite-fault,general-text,ground-failure,losspager,moment-tensor,origin,phase-data,shakemap,",
+  "title": "M 7.0 - 191 km ENE of Nagqu, China",
+  "products": {
+   "shakemap": [
+    {
+     "indexid": 2342357,
+     "indexTime": 1792695245065,
+     "id": "urn:usgs-product:us:shakemap:us6000u43g:1792695237867",
+     "type": "shakemap",
+     "code": "us6000u43g",
+     "source": "us",
+     "updateTime": 1792695237867,
+     "status": "UPDATE",
+     "preferredWeight": 232,
+     "properties": {
+      "eventsource": "us",
+      "eventsourcecode": "6000u43g",
+      "version": "3",
+      "maxmmi": "8.202",
+      "map-status": "automatic"
+     },
+     "contents": {
+      "download/cont_mmi.json": {
+       "contentType": "application/json",
+       "lastModified": 1792695232000,
+       "length": 44596,
+       "url": "https://earthquake.usgs.gov/pdl/products/urn:usgs-product:us:shakemap:us6000u43g:1792695237867/contents/download/cont_mmi.json",
+       "sha256": "N2ciQ/hkv7x9VBjbbh5OSYEjKMjUhkFXAUD7EWC9+Ks="
+      }
+     }
+    }
+   ]
+  }
+ },
+ "geometry": {
+  "type": "Point",
+  "coordinates": [
+   93.7797,
+   32.3805,
+   18
+  ]
+ }
+}

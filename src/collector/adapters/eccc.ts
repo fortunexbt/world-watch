@@ -1,5 +1,6 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 import { polygonArea } from "./area.js";
+import { buildFootprint } from "../../shared/footprint.js";
 
 /** Warnings only. Advisories (fog, frost) and special weather statements outnumbered warnings by four to one on 22 October 2026. */
 export const ECCC_ALERTS_URL =
@@ -46,13 +47,17 @@ export function parseEccc(
       : null;
     const region = text(p.feature_name_en) || text(p.feature_id);
     const label = name[0].toUpperCase() + name.slice(1);
+    const url =
+      "https://api.weather.gc.ca/collections/weather-alerts/items/" + id;
+    const footprint = buildFootprint("advisory_area", url, [
+      { geometry: feature.geometry },
+    ]);
     return [
       {
         source_id: source.id,
         native_id: id,
         source_event_id: id,
-        canonical_url:
-          "https://api.weather.gc.ca/collections/weather-alerts/items/" + id,
+        canonical_url: url,
         title: `${label}, ${region}`,
         original_language: "en",
         published_at: published,
@@ -88,6 +93,7 @@ export function parseEccc(
           accuracy: "area" as const,
           country: "CA",
         },
+        ...(footprint ? { footprint } : {}),
         official: {
           issuer: "Environment and Climate Change Canada",
           effective_at: stamp(p.validity_datetime) ?? published,

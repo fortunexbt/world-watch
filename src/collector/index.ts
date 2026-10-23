@@ -17,9 +17,19 @@ import {
 import { configuredRegistry } from "./registry.js";
 import { issuerLag, keepLag } from "../shared/coverage.js";
 import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
-import { parseUsgs } from "./adapters/usgs.js";
+import {
+  parseShakeMapContours,
+  parseUsgs,
+  shakeMapContoursURL,
+  shakeMapDetailURL,
+} from "./adapters/usgs.js";
 import { emscQueryURL, parseEmsc } from "./adapters/emsc.js";
-import { GDACS_PAGE_SIZE, parseGdacs } from "./adapters/gdacs.js";
+import {
+  GDACS_PAGE_SIZE,
+  gdacsGeometryURL,
+  parseGdacs,
+  parseGdacsGeometry,
+} from "./adapters/gdacs.js";
 import { parseNws } from "./adapters/nws.js";
 import { parseEccc } from "./adapters/eccc.js";
 import { parseAdsbLol } from "./adapters/adsblol.js";
@@ -60,6 +70,8 @@ export type CollectorOptions = FetchOptions & {
   ingest?: (observations: ObservationInput[]) => Promise<unknown>;
   register?: (sources: SourceRecord[]) => Promise<unknown>;
 };
+/** Issuer geometry reads per source per poll; a ShakeMap read is two requests. */
+const FOOTPRINT_READS = 4;
 export type CollectorResult = {
   source_id: string;
   status: "ok" | "not_modified" | "skipped" | "error";
@@ -588,6 +600,7 @@ export async function collectSources(
                     title: o.title,
                     excerpts: o.excerpts,
                     geo: o.source_geo,
+                    footprint: o.footprint,
                     official: o.official,
                     published: o.published_at,
                   }),
@@ -615,12 +628,56 @@ export async function collectSources(
           (x) =>
             acceptedItems[x.observation.native_id] !== fingerprints[x.index],
         );
+      // Geometry that needs its own request is read only for changed records, a few per poll. A
+      // record whose geometry was not read publishes without it and stays unaccepted, so the next
+      // poll reads it again.
+      const footprintURL =
+        source.config.format === "usgs_geojson"
+          ? shakeMapDetailURL
+          : source.config.format === "gdacs_geojson"
+            ? gdacsGeometryURL
+            : null;
+      const footprints = { read: 0, pending: new Set<string>(), error: null as string | null };
+      if (footprintURL)
+        for (const { observation } of missing) {
+          const url = footprintURL(observation);
+          if (!url) continue;
+          if (footprints.read >= FOOTPRINT_READS || requests >= maxRequests - 8) {
+            footprints.pending.add(observation.native_id);
+            continue;
+          }
+          footprints.read++;
+          const read = async (u: string) =>
+            JSON.parse(
+              (
+                await fetchSource(u, {}, {
+                  ...options,
+                  fetch: fetcher,
+                  maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                  timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
+                })
+              ).text,
+            );
+          try {
+            let contours: string | null = null;
+            const footprint =
+              source.config.format === "usgs_geojson"
+                ? (contours = shakeMapContoursURL(await read(url))) &&
+                  parseShakeMapContours(await read(contours), contours)
+                : parseGdacsGeometry(await read(url), url);
+            if (footprint) observation.footprint = footprint;
+          } catch (error) {
+            footprints.error = (error as Error).message;
+            footprints.pending.add(observation.native_id);
+          }
+        }
       let offset = 0;
       while (offset < missing.length && requests < maxRequests - 5) {
         const batch = missing.slice(offset, offset + 3);
         await ingest(batch.map((x) => x.observation));
         for (const x of batch)
-          acceptedItems[x.observation.native_id] = fingerprints[x.index];
+          if (!footprints.pending.has(x.observation.native_id))
+            acceptedItems[x.observation.native_id] = fingerprints[x.index];
         received += batch.length;
         offset += batch.length;
       }
@@ -655,7 +712,14 @@ export async function collectSources(
         [
           ...(before.issuer_lag ?? []),
           ...issuerLag(
-            [...missing.slice(0, offset).map((x) => x.observation), ...newsIssued],
+            [
+              // A record sent again only to read its geometry was already sampled.
+              ...missing
+                .slice(0, offset)
+                .map((x) => x.observation)
+                .filter((o) => !before.footprints?.pending.includes(o.native_id)),
+              ...newsIssued,
+            ],
             before.last_success_at,
             now(),
           ),
@@ -677,6 +741,15 @@ export async function collectSources(
               news_files: newsFiles,
               issuer_lag,
               admission,
+              ...(footprintURL
+                ? {
+                    footprints: {
+                      read: footprints.read,
+                      pending: [...footprints.pending],
+                      error: footprints.error,
+                    },
+                  }
+                : {}),
               pending_hash: undefined,
               pending_offset: undefined,
               next_attempt_at: undefined,

@@ -447,7 +447,7 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "structured_natural_hazard",
       declared_refresh_seconds: 60,
       coverage:
-        "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points only; no shaking footprint. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. Preferred event IDs can change when the authoritative network changes.",
+        "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points; for a quake with a PAGER alert or at M6+, the preferred ShakeMap's estimated MMI contour lines from the event's detail product, up to four events per poll and only when the event changed. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. Preferred event IDs can change when the authoritative network changes.",
     },
   },
   {
@@ -512,7 +512,7 @@ export const sourceRegistry: SourceRecord[] = [
       timeout_ms: 90000,
       operational_role: "structured_natural_hazard",
       coverage:
-        "Current Orange and Red events for EQ, TC, FL, VO, DR and WF, read in pages of 100 and live while GDACS lists them as current. Green events are excluded: on 22 October 2026 they added over 300 current events, mostly small wildfires, at impact minor. Points are GDACS centroids, not impact footprints; country only when GDACS lists exactly one affected country.",
+        "Current Orange and Red events for EQ, TC, FL, VO, DR and WF, read in pages of 100 and live while GDACS lists them as current. Green events are excluded: on 22 October 2026 they added over 300 current events, mostly small wildfires, at impact minor. Points are GDACS centroids, not impact footprints. A cyclone episode also gets GDACS's modelled 60, 90 and 120 km/h wind buffers from its getgeometry endpoint, read only when the episode changed; other hazards keep the centroid. Country only when GDACS lists exactly one affected country.",
     },
   },
   {
@@ -538,7 +538,7 @@ export const sourceRegistry: SourceRecord[] = [
       max_bytes: 4 * 1024 * 1024,
       operational_role: "structured_natural_hazard",
       coverage:
-        "Active tornado, severe thunderstorm, flash flood, flood, extreme wind, snow squall and dust storm warnings that carry an NWS polygon. Watches, advisories, statements and zone-only warnings (winter, heat, tropical, marine) are not collected. Points are polygon bounding-box centres with a radius to the farthest vertex.",
+        "Active tornado, severe thunderstorm, flash flood, flood, extreme wind, snow squall and dust storm warnings that carry an NWS polygon. Watches, advisories, statements and zone-only warnings (winter, heat, tropical, marine) are not collected. Points are polygon bounding-box centres with a radius to the farthest vertex; the polygon itself is kept as the warning's advisory area, simplified to the tolerance stored with it.",
     },
   },
   {
@@ -564,7 +564,7 @@ export const sourceRegistry: SourceRecord[] = [
       max_bytes: 2 * 1024 * 1024,
       operational_role: "structured_natural_hazard",
       coverage:
-        "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex.",
+        "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex; the region polygon is kept as the warning's advisory area, simplified to the tolerance stored with it.",
     },
   },
   ...gdelt,

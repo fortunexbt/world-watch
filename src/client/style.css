@@ -462,6 +462,22 @@ small {
   background: radial-gradient(#9ba9b366, #9ba9b31a 70%);
   box-shadow: inset 0 0 0 1px #9ba9b380;
 }
+.legend .footprint-swatch {
+  width: 13px;
+  height: 9px;
+  border-radius: 2px;
+  background: #9ba9b31f;
+  box-shadow: inset 0 0 0 1px #9ba9b3b3;
+}
+.legend .footprint-swatch.modelled {
+  background: #9ba9b30f;
+  box-shadow: none;
+  border: 1px dashed #9ba9b3b3;
+}
+.legend .footprint-swatch.contours {
+  height: 3px;
+  box-shadow: none;
+}
 .legend-toggle {
   display: none;
 }

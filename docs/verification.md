@@ -180,12 +180,38 @@ Created, updated and escalated SSE events now carry the incident's list view, ch
 
 A stream that never reads details costs more per event, for parsing and sending the view, and each isolate reads the 103 source records once per tick that has incident events.
 
+### Issuer footprints
+
+Measured on 23 October 2026 from one live read of each source, saved and replayed offline through the adapters and the in-process API: 35 NWS warnings, 295 ECCC warnings, CHAMPI-26's GDACS geometry and the ShakeMap for us6000u43g (M7.0 Nagqu). Positions are coordinate pairs; tolerances are as stated on each copy.
+
+| Geometry                       | Issuer                         | Detail copy                                 | Display copy                               |
+| ------------------------------ | ------------------------------ | ------------------------------------------- | ------------------------------------------ |
+| 295 ECCC warning regions       | 52,760 positions, at most 1,298 | 131,383 bytes, at most 173 positions, 0.33 km | 60,296 bytes, at most 28 positions, 2.79 km |
+| 35 NWS warning polygons        | 381 positions, at most 21       | 8,624 bytes, 0.33 km                        | 7,690 bytes, 2.79 km                       |
+| CHAMPI-26 wind buffers         | 483,875-byte response, 1,480 positions in the three buffers | 9,095 bytes, 532 positions, 0.58 km | 3,729 bytes, 235 positions, 4.79 km |
+| us6000u43g MMI contours        | 44,596 bytes, 1,797 positions in 75 lines | 8,496 bytes, 489 positions, 4.08 km | 4,025 bytes, 235 positions, 16.79 km |
+
+The same 355 incidents (332 with a footprint) through the in-process API:
+
+| Measure                          | Without footprints | With footprints     |
+| -------------------------------- | ------------------ | ------------------- |
+| Full snapshot views              | 2,442,248 bytes (115,739 gzip) | 2,733,082 (169,090 gzip) |
+| `view=list` snapshot             | 504,227 (71,743 gzip) | 595,916 (86,785 gzip) |
+| Public demo views (display copies only) | 2,442,248   | 2,572,164           |
+| Search index text                | 2,427,671          | 2,427,671           |
+| Largest three-record ingest body | 14,336             | 17,904              |
+
+Coordinates compress poorly, so gzip grows more than raw bytes. On the synthetic 1,000-incident world store (430 NWS and ECCC records carrying the trimmed fixture polygons), list views grew from 1,617,678 to 1,716,755 bytes (6.1%, 230 bytes per footprint) and from 222,398 to 242,639 gzip; `tests/footprints.test.ts` fails if a list footprint carries a detail copy, exceeds 240 positions, or the 400-incident list grows by 10% or more.
+
+`npm run perf:client -- --markers=1000 --runs=1 --browser=chromium`, three runs each, alternating the base commit and this branch at a load average of 26 to 44: pan p95 and p99 frames stayed at 16.7 to 16.8 ms with no map source loads; load-to-ready medians were 2,684 ms before and 2,729 ms after; the 100-arrival SSE burst's main-thread script medians were 1,050 and 1,058 ms. The burst sent 161, 141 and 122 GeoJSON loads to the map worker after, against 98, 96 and 69 before, because each arrival with a footprint re-sends the footprint source as well as the incident source. `tests/footprint-map.test.ts` asserts that a pan sends neither source and that selecting an incident re-sends the footprint source once, with its detail copy.
+
 ### Remaining costs, largest first
 
 - Snapshot handler CPU. A list-view world snapshot still parses 1,000 full views from D1 (26 to 30 ms of handler CPU), above Workers Free's 10 ms. Trimming in SQL, or storing a list projection beside each view, would cut the parse.
 - Search reads every match before ranking (14,876 rows for "earthquake"), and all-time area views read every row in their cells (10,337 for Fiji).
 - Each three-record ingest still reads about 500 rows, mostly the alert delivery ledger, and the store grows to 4.7 GB at 100,000 incidents, 1.24 million rows of it alert deliveries from 20 rules, which needs checking against D1's per-database size limit.
 - The first geospatial request in an isolate parses about 30 MB of FIRMS text.
+- An SSE arrival with a footprint re-sends every footprint to the map worker. MapLibre's `updateData` with per-part feature ids would send only the change.
 - No phone was measured. iPhone claims need Safari Web Inspector timelines on a physical device with the same scene.
 
 ## Unproven

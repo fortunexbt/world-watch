@@ -15,6 +15,15 @@ export const HAZARDS = [
 export type Hazard = (typeof HAZARDS)[number];
 export const isHazard = (activity: string): activity is Hazard =>
   (HAZARDS as readonly string[]).includes(activity);
+/** Estimated shaking colours by MMI, so ShakeMap contour lines never borrow an impact colour. */
+export const MMI_COLORS: [number, string][] = [
+  [3, "#7FB8D8"],
+  [5, "#9FD08A"],
+  [6, "#E4D06C"],
+  [7, "#EDAB61"],
+  [8, "#ED7575"],
+  [9, "#C55064"],
+];
 /** Activities drawn with a glyph, in legend order: the hazards, then measured connectivity drops. */
 export const GLYPH_ACTIVITIES = [
   ...HAZARDS,

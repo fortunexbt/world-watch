@@ -53,6 +53,9 @@ const feeds: Record<string, unknown> = {
   [ECCC_ALERTS_URL]: JSON.parse(
     readFileSync("tests/fixtures/eccc-alerts.json", "utf8"),
   ),
+  // CHAMPI-26's wind buffers from a later episode, served for the fixture's episode.
+  "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001338&episodeid=29":
+    JSON.parse(readFileSync("tests/fixtures/gdacs-geometry-tc.json", "utf8")),
 };
 const emsc = JSON.parse(
   readFileSync("tests/fixtures/emsc-events.json", "utf8"),
@@ -109,6 +112,9 @@ function upstream(requests: { url: string; method: string }[] = []) {
           },
         ],
       });
+    // Geometry of the fixture's other cyclone is unavailable; it publishes as a centroid.
+    if (url.startsWith("https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?"))
+      return new Response("not found", { status: 404 });
     throw Error("unexpected upstream request " + url);
   }) as typeof fetch;
 }
@@ -174,6 +180,11 @@ test("the snapshot publishes the API's projection, briefs for every window and a
       assert.equal(report.rights.display, true);
     }
   assert(incidents.every((i) => i.analyzed_at === null));
+  // Issuer geometry travels with the views the demo publishes, as display copies.
+  const roles = (role: string) => incidents.filter((i) => i.footprint?.role === role);
+  assert.equal(roles("advisory_area").length, incidents.filter((i) => ["us-nws-warnings", "ca-eccc-warnings"].includes(i.reports[0].source_id)).length);
+  assert.equal(roles("inferred_affected_area").length, 1);
+  assert(incidents.every((i) => !i.footprint || (!i.footprint.detail && i.footprint.display.parts.length > 0)));
   // Linked records fuse: USGS, GDACS and EMSC for Vanuatu, USGS and EMSC for three more quakes,
   // and GDACS and EMSC for Hokkaido.
   assert.equal(situations(incidents).length, incidents.length - 6);
@@ -247,6 +258,12 @@ test("every area, hazard and impact feed is valid, bounded, attributed and limit
         assert(shareable(incidents.find((i) => i.id === id)!), id);
       assert(f.properties.attribution.every((a: any) => !/GDACS|RIPE|ADSB|GDELT/.test(a.attribution)));
       assert.equal(f.geometry.type, "Point");
+      // Warning polygons ride beside the point as their display copies; GDACS buffers never do.
+      for (const fp of f.properties.footprints ?? []) {
+        assert(f.properties.incident_ids.includes(fp.incident_id));
+        assert.deepEqual(fp.parts, incidents.find((i) => i.id === fp.incident_id)!.footprint!.display.parts);
+        assert.notEqual(fp.role, "inferred_affected_area");
+      }
     }
   }
   // One entry per fused situation. A situation with a GDACS record still appears, through its
@@ -258,6 +275,10 @@ test("every area, hazard and impact feed is valid, bounded, attributed and limit
   assert.deepEqual(
     world.features.map((f: any) => [...f.properties.incident_ids].sort()).sort(),
     expected.sort(),
+  );
+  assert.equal(
+    world.features.filter((f: any) => f.properties.footprints).length,
+    incidents.filter((i) => i.footprint?.role === "advisory_area").length,
   );
   const usgsEmsc = world.features.filter(
     (f: any) => f.properties.incident_ids.length === 2,

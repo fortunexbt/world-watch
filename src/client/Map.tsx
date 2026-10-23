@@ -11,6 +11,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { PublicCamera } from "../shared/media";
 import type { GeoFeature } from "../shared/geospatial";
 import type { IncidentView } from "../shared/contracts";
+import { footprintShape } from "../shared/footprint";
+import type { Situation } from "../shared/fusion";
 import type { NewsSignal } from "../shared/news";
 import { NEWS_COLOR, NEWS_GLYPH } from "./NewsSignals";
 import { viewportBounds } from "./bounds";
@@ -20,6 +22,7 @@ import {
   magnitude,
   markerIcon,
   markerScale,
+  MMI_COLORS,
 } from "./hazards";
 export const colors: Record<string, string> = {
   informational: "#73B6E6",
@@ -29,6 +32,7 @@ export const colors: Record<string, string> = {
   critical: "#C55064",
   unknown: "#9BA9B3",
 };
+const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 /** Ascending severity; a cluster takes the colour of its most severe member. */
 const severity = [
   "unknown",
@@ -197,7 +201,8 @@ export default function WorldMap({
             icon: markerIcon(i),
             scale: markerScale(magnitude(i)),
             selected: i.id === selectedId.current ? 1 : 0,
-            approx: i.location!.accuracy !== "point",
+            // A drawn issuer footprint replaces the ring that stands in for an unknown one.
+            approx: i.location!.accuracy !== "point" && !i.footprint,
           },
         })),
     };
@@ -213,6 +218,53 @@ export default function WorldMap({
         "visibility",
         densityEnabled.current ? "visible" : "none",
       );
+  };
+  // Footprints change far less often than incidents, so their source is re-sent only when a
+  // drawn footprint or its detail changes, and selection only restyles it.
+  const footprintKey = useRef("");
+  const updateFootprints = () => {
+    const m = map.current,
+      source = m?.getSource("footprints") as GeoJSONSource | undefined;
+    if (!m || !source) return;
+    const drawn = data.current.flatMap((s) =>
+      ((s as Situation).members ?? [s]).flatMap((member) =>
+        member.footprint ? [{ lead: s.id, member }] : [],
+      ),
+    );
+    const key = drawn
+      .map(({ lead, member }) => `${lead}:${member.id}:${member.version}:${member.footprint!.detail ? 1 : 0}`)
+      .join(",");
+    if (key !== footprintKey.current) {
+      footprintKey.current = key;
+      source.setData({
+        type: "FeatureCollection",
+        features: drawn.flatMap(({ lead, member }) =>
+          footprintShape(member.footprint!).parts.map((part) => ({
+            type: "Feature" as const,
+            geometry: part.geometry,
+            properties: {
+              id: lead,
+              member: member.id,
+              role: member.footprint!.role,
+              color: colors[member.impact],
+              level: part.level ?? 0,
+              // Whole MMI values carry a label; half steps are drawn thinner and unlabelled.
+              label:
+                member.footprint!.role === "shaking_intensity" &&
+                Number.isInteger(part.level)
+                  ? "MMI " + ROMAN[part.level!]
+                  : "",
+            },
+          })),
+        ),
+      });
+    }
+    const chosen = selectedId.current ?? "";
+    m.setFilter("footprint-selected", [
+      "any",
+      ["==", ["get", "id"], chosen],
+      ["==", ["get", "member"], chosen],
+    ]);
   };
   const updateCameras = () => {
     (
@@ -358,7 +410,123 @@ export default function WorldMap({
         },
         paint: { "text-color": "#E7EDF1" },
       });
-      // GDACS and other area records are centroids, so a soft ring stands in for an unknown footprint.
+      // Issuer geometry sits under every marker and context layer. Fills stay faint so a warning
+      // area reads as context, never as surveyed damage; contour lines are lines, not areas.
+      m.addSource("footprints", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      footprintKey.current = "";
+      m.addLayer(
+        {
+          id: "footprint-fill",
+          type: "fill",
+          source: "footprints",
+          filter: ["!=", ["get", "role"], "shaking_intensity"],
+          paint: {
+            "fill-color": ["get", "color"],
+            // Nested GDACS wind buffers add up towards the strongest winds.
+            "fill-opacity": [
+              "match",
+              ["get", "role"],
+              "advisory_area",
+              0.1,
+              0.05,
+            ],
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-outline",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "role"], "advisory_area"],
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1,
+            "line-opacity": 0.6,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-modelled",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "role"], "inferred_affected_area"],
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1,
+            "line-opacity": 0.6,
+            "line-dasharray": [4, 3],
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-contours",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "role"], "shaking_intensity"],
+          layout: { "line-join": "round" },
+          paint: {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["get", "level"],
+              ...MMI_COLORS.flat(),
+            ],
+            "line-width": [
+              "case",
+              ["==", ["%", ["get", "level"], 1], 0],
+              1.4,
+              0.7,
+            ],
+            "line-opacity": 0.75,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-labels",
+          type: "symbol",
+          source: "footprints",
+          filter: ["!=", ["get", "label"], ""],
+          minzoom: 5,
+          layout: {
+            "symbol-placement": "line",
+            "text-field": ["get", "label"],
+            "text-size": 10,
+            "text-font": ["Noto Sans Regular"],
+          },
+          paint: {
+            "text-color": "#D6E1E7",
+            "text-halo-color": "#0D151C",
+            "text-halo-width": 1.5,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-selected",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "id"], ""],
+          paint: {
+            "line-color": "#E7EDF1",
+            "line-width": 1.5,
+            "line-opacity": 0.8,
+          },
+        },
+        "clusters",
+      );
+      // Area records without issuer geometry are centroids, so a soft ring stands in for their unknown footprint.
       m.addLayer({
         id: "area-cue",
         type: "circle",
@@ -680,6 +848,7 @@ export default function WorldMap({
         },
       });
       updateIncidents();
+      updateFootprints();
       updateCameras();
       updateNews();
       updateContext();
@@ -866,23 +1035,27 @@ export default function WorldMap({
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
+    const interactive = [
+      "points",
+      "clusters",
+      "camera-points",
+      "camera-clusters",
+      "news-hit",
+      "thermal-hit",
+      "thermal-detections",
+      "mapping-areas",
+      "mapping-outlines",
+    ];
+    // An issuer area selects its incident only where nothing more specific was hit.
+    m.on("click", "footprint-fill", (e) => {
+      if (m.queryRenderedFeatures(e.point).some((f) => interactive.includes(f.layer.id)))
+        return;
+      const id = e.features?.[0]?.properties?.id;
+      if (id) select.current(id);
+    });
     m.on("click", (e) => {
       const fs = m.queryRenderedFeatures(e.point);
-      if (
-        fs.some((f) =>
-          [
-            "points",
-            "clusters",
-            "camera-points",
-            "camera-clusters",
-            "news-hit",
-            "thermal-hit",
-            "thermal-detections",
-            "mapping-areas",
-            "mapping-outlines",
-          ].includes(f.layer.id),
-        )
-      )
+      if (fs.some((f) => [...interactive, "footprint-fill"].includes(f.layer.id)))
         return;
       const f = fs.find(
         (f) => f.properties?.ADMIN || f.properties?.["name:en"],
@@ -902,6 +1075,7 @@ export default function WorldMap({
     };
   }, []);
   useEffect(updateIncidents, [incidents, selected, density]);
+  useEffect(updateFootprints, [incidents, selected]);
   useEffect(updateCameras, [cameras, selectedCamera]);
   useEffect(updateNews, [newsSignals, selectedSignal]);
   useEffect(updateContext, [geoFeatures]);

@@ -51,6 +51,7 @@ import {
   GLYPH_ACTIVITIES,
   hasGlyph,
   isHazard,
+  MMI_COLORS,
   type GlyphActivity,
 } from "./hazards";
 import countryRegistry from "../shared/countries.json";
@@ -708,6 +709,16 @@ export default function App() {
               : ["severe", "critical"].includes(i.impact),
       ),
     [fused, filter],
+  );
+  // The legend names only the footprint kinds the map is drawing.
+  const footprintRoles = useMemo(
+    () =>
+      new Set(
+        incidents.flatMap((i) =>
+          (i.members ?? [i]).flatMap((m) => (m.footprint ? [m.footprint.role] : [])),
+        ),
+      ),
+    [incidents],
   );
   const geoFeatures = useMemo(
     () => (geoCatalog?.features ?? []).filter((f) => geoLayers.includes(f.layer)),
@@ -2035,6 +2046,29 @@ export default function App() {
             <i className="area-swatch" />
             {tr("approximate area")}
           </span>
+          {footprintRoles.has("advisory_area") && (
+            <span title={tr("The area an NWS or ECCC warning applies to, as the issuer drew it, simplified for the map")}>
+              <i className="footprint-swatch" />
+              {tr("issuer warning area")}
+            </span>
+          )}
+          {footprintRoles.has("inferred_affected_area") && (
+            <span title={tr("GDACS models where a cyclone's winds reach 60, 90 and 120 km/h along its past and forecast track")}>
+              <i className="footprint-swatch modelled" />
+              {tr("modelled wind area")}
+            </span>
+          )}
+          {footprintRoles.has("shaking_intensity") && (
+            <span title={tr("USGS ShakeMap estimated shaking intensity (MMI) contours, not observed damage")}>
+              <i
+                className="footprint-swatch contours"
+                style={{
+                  background: `linear-gradient(90deg, ${MMI_COLORS.map(([, c]) => c).join(", ")})`,
+                }}
+              />
+              {tr("estimated shaking (MMI)")}
+            </span>
+          )}
           {newsActive && (
             <span>
               <span style={{ color: NEWS_COLOR, display: "inline-flex" }}>

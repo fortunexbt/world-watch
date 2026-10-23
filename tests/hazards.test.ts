@@ -441,9 +441,12 @@ test("worldwide sources survive country filtering and collect through dedicated 
     },
   );
   // GDACS states which events are current, so a complete read reconciles that set; USGS is a rolling window.
+  // Each changed cyclone episode also reads its geometry; no fixture quake qualifies for a ShakeMap read.
   assert.deepEqual(requested, [
     USGS_FEED_URL,
     GDACS_EVENTS_URL,
+    "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001341&episodeid=1",
+    "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001338&episodeid=29",
     "https://isolated.invalid/api/sources/global-gdacs-alerts/reconcile",
   ]);
   assert.deepEqual(

@@ -150,8 +150,26 @@ export function atomFeed(meta: FeedMeta, entries: FeedEntry[]) {
   ].join("\n");
 }
 
+/** Issuer footprints of a record's redistributable members, as their display copies. */
+const footprints = (i: Situation) =>
+  (i.members ?? [i]).flatMap((m) =>
+    m.footprint && redistributable(m)
+      ? [
+          {
+            incident_id: m.id,
+            role: m.footprint.role,
+            tolerance_km: m.footprint.display.tolerance_km,
+            parts: m.footprint.display.parts,
+          },
+        ]
+      : [],
+  );
+/** Footprint bytes one GeoJSON feed carries, newest entries first; 100 entries of other fields fit the rest of 512 KiB. */
+export const FEED_FOOTPRINT_BYTES = 192 * 1024;
+
 export const geojsonFeature = (e: FeedEntry) => {
   const i = e.incident;
+  const drawn = footprints(i);
   return {
     type: "Feature" as const,
     id: e.id,
@@ -179,12 +197,28 @@ export const geojsonFeature = (e: FeedEntry) => {
         attribution: r.rights?.attribution,
         license: r.rights?.basis,
       })),
+      // The geometry stays the record's point; issuer areas and contour lines ride beside it.
+      footprints: drawn.length ? drawn : undefined,
     },
   };
 };
 
 export function geojsonFeed(meta: FeedMeta, entries: FeedEntry[]) {
   const sorted = newest(entries);
+  let budget = FEED_FOOTPRINT_BYTES,
+    omitted = 0;
+  const features = sorted.map((e) => {
+    const feature = geojsonFeature(e);
+    const { footprints } = feature.properties;
+    if (!footprints) return feature;
+    const size = JSON.stringify(footprints).length;
+    if (size <= budget) budget -= size;
+    else {
+      omitted++;
+      feature.properties.footprints = undefined;
+    }
+    return feature;
+  });
   return {
     type: "FeatureCollection" as const,
     id: meta.id,
@@ -192,6 +226,8 @@ export function geojsonFeed(meta: FeedMeta, entries: FeedEntry[]) {
     description: meta.subtitle,
     updated: sorted[0]?.updated ?? meta.updated,
     attribution: meta.attribution,
-    features: sorted.map(geojsonFeature),
+    // Entries past the footprint budget keep their point and say so here.
+    ...(omitted ? { footprints_omitted: omitted } : {}),
+    features,
   };
 }

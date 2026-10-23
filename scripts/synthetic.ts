@@ -13,6 +13,7 @@ import { parseNws } from "../src/collector/adapters/nws.js";
 import { parseEccc } from "../src/collector/adapters/eccc.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import type { ObservationInput } from "../src/shared/contracts.js";
+import { FOOTPRINT_LIMITS, type Footprint, type FootprintShape } from "../src/shared/footprint.js";
 import type { Env } from "../src/server/index.js";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -75,6 +76,22 @@ function place(r: () => number) {
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
+/** A template's footprint moved with its point, each copy rounded as the adapters round it. */
+function moved(f: Footprint, dx: number, dy: number): Footprint {
+  const shift = (s: FootprintShape, decimals: number): FootprintShape => {
+    const k = 10 ** decimals;
+    return JSON.parse(JSON.stringify(s), (_, v) =>
+      Array.isArray(v) && typeof v[0] === "number"
+        ? [Math.round((v[0] + dx) * k) / k, Math.max(-90, Math.min(90, Math.round((v[1] + dy) * k) / k))]
+        : v,
+    );
+  };
+  return {
+    ...f,
+    detail: shift(f.detail!, FOOTPRINT_LIMITS.detail.decimals),
+    display: shift(f.display, FOOTPRINT_LIMITS.display.decimals),
+  };
+}
 /** One issuer record for synthetic incident `n`, revision `v`, issued at `t`. */
 function observation(
   kind: Kind,
@@ -120,6 +137,15 @@ function observation(
     source_updated_at: iso(t),
     excerpts: [{ ...base.excerpts[0], text: JSON.stringify(record) }],
     source_geo: { ...base.source_geo!, lon: round(lon), lat: round(lat) },
+    ...(base.footprint
+      ? {
+          footprint: moved(
+            base.footprint,
+            round(lon) - base.source_geo!.lon,
+            round(lat) - base.source_geo!.lat,
+          ),
+        }
+      : {}),
     official: {
       ...base.official!,
       effective_at: iso(start),
@@ -301,7 +327,7 @@ export async function seedStore(db: DatabaseSync, options: SeedOptions) {
     },
   );
   db.exec("DELETE FROM incidents_fts");
-  db.exec("INSERT INTO incidents_fts(incident_id,search_text) SELECT id,view FROM incidents WHERE deleted_at IS NULL");
+  db.exec("INSERT INTO incidents_fts(incident_id,search_text) SELECT id,json_remove(view,'$.footprint') FROM incidents WHERE deleted_at IS NULL");
   for (const t of triggers) db.exec(t.sql);
   // The scheduled handler keeps seven days of outbox.
   db.prepare("DELETE FROM outbox WHERE id<=?").run(stale ?? outboxHead());

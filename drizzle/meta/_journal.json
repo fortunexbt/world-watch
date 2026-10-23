@@ -64,6 +64,13 @@
       "when": 1792752009240,
       "tag": "0008_out_of_app_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792752069240,
+      "tag": "0009_search_without_footprints",
+      "breakpoints": true
     }
   ]
 }

@@ -60,13 +60,19 @@ export function viewFilter(params: URLSearchParams, bbox?: number[]) {
 /** The USGS and EMSC excerpts the map reads a quake's magnitude from (client/hazards.ts). */
 export const MAGNITUDE_EXCERPTS = ["usgs-event", "emsc-event"];
 /**
- * The fields the feed, map, filters and situation grouping read. Summaries, other evidence text
- * and rights wording stay with the detail endpoint, which a selected incident is read from.
+ * The fields the feed, map, filters and situation grouping read. Summaries, other evidence text,
+ * rights wording and detailed footprints stay with the detail endpoint, which a selected incident
+ * is read from; the map draws every other footprint from its coarser display copy.
  */
 export function listView(i: IncidentView) {
-  const { summary_en, summary_it, ...rest } = i;
+  const { summary_en, summary_it, footprint, ...rest } = i;
   return {
     ...rest,
+    ...(footprint
+      ? {
+          footprint: { role: footprint.role, display: footprint.display },
+        }
+      : {}),
     reports: i.reports.map(({ excerpts, rights, ...report }: any) => ({
       ...report,
       excerpts: (excerpts ?? []).filter((e: { id?: string }) => MAGNITUDE_EXCERPTS.includes(e.id ?? "")),

@@ -1,5 +1,12 @@
 import type { EventClaim, IncidentView } from "../shared/contracts";
 import { lonOverlaps } from "../shared/view";
+import {
+  areaRing,
+  footprintMeetsArea,
+  footprintShape,
+  type FootprintPart,
+  type FootprintRole,
+} from "../shared/footprint";
 
 export type AlertRule = {
   name?: string;
@@ -40,6 +47,8 @@ export type AlertMaterialityProjection = {
     accuracy: string;
     radius_km: number;
   };
+  /** Present only when the incident carries issuer geometry, so older projections are unchanged. */
+  footprint?: { role: FootprintRole; parts: FootprintPart[] };
   timing: {
     event_start: string | null;
     event_end: string | null;
@@ -181,6 +190,14 @@ export function alertMaterialityProjection(
           radius_km: location.radius_km,
         }
       : null,
+    ...(incident.footprint
+      ? {
+          footprint: {
+            role: incident.footprint.role,
+            parts: footprintShape(incident.footprint).parts,
+          },
+        }
+      : {}),
     timing: {
       event_start: canonicalTime(incident.event_start),
       event_end: canonicalTime(incident.event_end),
@@ -244,6 +261,18 @@ export function intersects(location: IncidentView["location"], geometry: any) {
 /** Reason prefix of a notice that corrects an earlier one; the cause follows in parentheses. */
 export const CORRECTION = "correction_or_retraction";
 
+/**
+ * Whether the issuer's area meets the watch area, when the incident carries one. Null for contour
+ * lines and incidents without a footprint, which keep the point and radius.
+ */
+function footprintMatch(i: IncidentView, geometry: unknown) {
+  const ring = i.footprint ? areaRing(geometry) : null;
+  return ring && footprintMeetsArea(footprintShape(i.footprint!), ring);
+}
+export function reaches(i: IncidentView, geometry: unknown) {
+  return footprintMatch(i, geometry) ?? intersects(i.location, geometry);
+}
+
 const impactRank: Record<string, number> = {
   informational: 0,
   minor: 1,
@@ -296,7 +325,7 @@ export function alertDecision(
     hasPriorEligibleDelivery &&
     changedSinceDelivery &&
     rule.watch_area_id &&
-    (!i.location || !intersects(i.location, geometry))
+    (!i.location || !reaches(i, geometry))
   )
     return correction("location no longer intersects watch area");
 
@@ -306,7 +335,7 @@ export function alertDecision(
       : suppress(reason);
 
   if (rule.enabled === false) return suppress("rule_disabled");
-  if (rule.watch_area_id && !intersects(i.location, geometry))
+  if (rule.watch_area_id && !reaches(i, geometry))
     return suppressOrCorrect("outside_watch_area_or_unresolved");
   if (i.event_start && /^\d{4}-\d{2}-\d{2}$/.test(i.event_start))
     return suppressOrCorrect("actionability_time_unknown");
@@ -371,9 +400,11 @@ export function alertDecision(
     state: "eligible_ui",
     reason: escalation
       ? "severity_escalation; currently_actionable_supported_claim"
-      : i.location.accuracy === "point"
-        ? "currently_actionable_supported_claim"
-        : "broad_area_notice; location uncertainty overlaps watch area",
+      : rule.watch_area_id && footprintMatch(i, geometry)
+        ? `issuer_area_notice; ${i.footprint!.role} overlaps watch area`
+        : i.location.accuracy === "point"
+          ? "currently_actionable_supported_claim"
+          : "broad_area_notice; location uncertainty overlaps watch area",
     material_version: materialVersion,
   };
 }

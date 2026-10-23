@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { validateSeverity } from "./severity.js";
+import type { Footprint } from "./footprint.js";
 export const CONTRACT_VERSION = "ew-1";
 export const Impact = z.enum([
   "informational",
@@ -134,6 +135,8 @@ export type ObservationInput = {
     /** ISO 3166-1 alpha-2 code stated by the source or derived offline from its exact point; null when neither settles one country. */
     country?: string | null;
   };
+  /** Issuer geometry, separate from source_geo, which stays the display point. */
+  footprint?: Footprint;
   official?: {
     issuer: string;
     effective_at: string | null;
@@ -205,6 +208,8 @@ export type IncidentView = {
     accuracy: string;
     radius_km: number;
   } | null;
+  /** The issuer's own geometry; location stays the marker and the spatial index key. */
+  footprint?: Footprint;
   event_start: string | null;
   event_end: string | null;
   published_at: string | null;

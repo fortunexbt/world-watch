@@ -350,7 +350,21 @@ export async function buildPublicSnapshot(
         i.reports.every((r) => carried(r.source_id)) &&
         !snapshot.incidents.some((x: IncidentView) => x.id === i.id),
     );
-    const views: IncidentView[] = [...snapshot.incidents, ...kept];
+    // The demo runs no alerts, so a footprint ships as its display copy. Detail copies of the
+    // 23 October 2026 warnings would have added 0.16 MB more to a file with a 4 MB ceiling.
+    const views: IncidentView[] = [...snapshot.incidents, ...kept].map(
+      ({ footprint, ...i }) =>
+        footprint
+          ? {
+              ...i,
+              footprint: {
+                role: footprint.role,
+                source_url: footprint.source_url,
+                display: footprint.display,
+              },
+            }
+          : i,
+    );
     const briefs = Object.fromEntries(
       BRIEF_WINDOWS.map((hours) => [
         hours,

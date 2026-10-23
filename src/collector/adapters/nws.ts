@@ -1,5 +1,6 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 import { polygonArea } from "./area.js";
+import { buildFootprint } from "../../shared/footprint.js";
 
 /**
  * Active storm-based warnings. NWS draws each of these as its own polygon, so no zone boundary has
@@ -106,11 +107,15 @@ export function parseNws(
       ),
     );
     const event = text(p.event);
+    const url = "https://api.weather.gov/alerts/" + identifier;
+    const footprint = buildFootprint("advisory_area", url, [
+      { geometry: feature.geometry },
+    ]);
     latest.set(id, {
       source_id: source.id,
       native_id: id,
       source_event_id: id,
-      canonical_url: "https://api.weather.gov/alerts/" + identifier,
+      canonical_url: url,
       title: text(p.headline) || event,
       original_language: "en",
       published_at: sent,
@@ -148,6 +153,7 @@ export function parseNws(
         accuracy: "area" as const,
         country: countries.size === 1 ? [...countries][0] : null,
       },
+      ...(footprint ? { footprint } : {}),
       official: {
         issuer: text(p.senderName) || "NOAA National Weather Service",
         effective_at: first,

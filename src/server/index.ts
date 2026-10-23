@@ -27,6 +27,7 @@ import {
   windowKey,
 } from "./geo";
 import { listView, textMatch, viewFilter } from "../shared/view";
+import { validFootprint } from "../shared/footprint";
 import {
   alertDecision,
   alertMaterialityProjection,
@@ -618,6 +619,10 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           !/^[A-Z]{2}$/.test(item.source_geo.country)))
     )
       throw Error("invalid_geography");
+    if (item.footprint !== undefined) {
+      if (!validFootprint(item.footprint)) throw Error("invalid_footprint");
+      canonical(item.footprint.source_url);
+    }
     if (
       (item.official?.activity !== undefined &&
         !Activity.safeParse(item.official.activity).success) ||
@@ -631,6 +636,7 @@ export async function ingest(e: Env, items: ObservationInput[]) {
         title: item.title,
         excerpts: item.excerpts,
         geo: item.source_geo,
+        footprint: item.footprint,
         official: item.official,
         published: item.published_at,
       }),
@@ -655,13 +661,14 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           const retained = reports.filter(v => !v.published_at || Date.parse(v.published_at) >= Date.now()-30*86400000).sort((a,b) => (a.published_at ?? "").localeCompare(b.published_at ?? "") || a.native_id.localeCompare(b.native_id)).slice(-32);
           const excerpts = [...new Map([...old.excerpts, ...item.excerpts].map((v: any) => [v.id, v])).values()] as ObservationInput["excerpts"];
           item = { ...item, source_reports: retained, excerpts: excerpts.filter(v => retained.some(r => v.id.startsWith(r.native_id + ":"))).sort((a,b) => retained.findIndex(r => a.id.startsWith(r.native_id + ":")) - retained.findIndex(r => b.id.startsWith(r.native_id + ":")) || a.id.localeCompare(b.id)), published_at: old.published_at ?? item.published_at, source_updated_at: [old.source_updated_at, item.source_updated_at].filter(Boolean).sort().at(-1) ?? null, title: old.title };
-          rev = await hash(JSON.stringify({title:item.title,excerpts:item.excerpts,geo:item.source_geo,official:item.official,published:item.published_at}));
+          rev = await hash(JSON.stringify({title:item.title,excerpts:item.excerpts,geo:item.source_geo,footprint:item.footprint,official:item.official,published:item.published_at}));
         }
         const normalized = (o: ObservationInput) =>
           JSON.stringify({
             title: o.title,
             excerpts: o.excerpts,
             geo: o.source_geo,
+            footprint: o.footprint,
             official: o.official,
             published: o.published_at,
           });
@@ -772,7 +779,12 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           iid,
         ).first<any>(),
         version = (previous?.version ?? 0) + 1,
-        g = item.source_geo;
+        g = item.source_geo,
+        // A cancellation without geometry keeps the geometry of the warning it ends.
+        ended =
+          !g && item.official.cancelled && previous?.view
+            ? (parse(previous.view) as IncidentView)
+            : null;
       let view: IncidentView = {
         id: iid,
         version,
@@ -794,9 +806,12 @@ export async function ingest(e: Env, items: ObservationInput[]) {
                   : null),
               radius_km: g.radius_km ?? (g.accuracy === "area" ? 20 : 8),
             }
-          : item.official.cancelled && previous?.view
-            ? parse(previous.view).location
-            : null,
+          : (ended?.location ?? null),
+        ...(item.footprint
+          ? { footprint: item.footprint }
+          : ended?.footprint
+            ? { footprint: ended.footprint }
+            : {}),
         event_start: item.official.effective_at,
         event_end: null,
         published_at: item.published_at,

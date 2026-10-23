@@ -80,6 +80,8 @@ export type FetchState = {
   news_files?: string[];
   /** Recent issuer-time-to-ingest samples for new and changed records. */
   issuer_lag?: LagSample[];
+  /** Issuer geometry reads in the last complete poll; pending records published without geometry and are read again next poll. */
+  footprints?: { read: number; pending: string[]; error: string | null };
 };
 export type FetchOptions = {
   fetch?: typeof fetch;
