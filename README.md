@@ -19,6 +19,8 @@ npm run demo
 
 The demo starts a throwaway local server and database, pulls the live USGS, GDACS, NWS, ECCC and ADSB.lol feeds and the newest GDELT files, starts reading RIPEstat routing counts three countries at a time and opens a signed-in view at `http://127.0.0.1:4319/?hours=168`. It refreshes every five minutes. It makes its own random tokens and config in a temporary directory. It doesn't read your private files or call a model. Ctrl-C stops the demo's processes and deletes its data.
 
+A public, read-only version of the same view can be published to GitHub Pages from a scheduled workflow, at no cost. It isn't switched on yet. [Public demo deployment](docs/DEPLOY-DEMO.md) has the commands, limits and terms.
+
 On the evening of 22 October 2026 a run published 56 incidents. They included 21 earthquakes, among them an M7.0 quake 191 km east-northeast of Nagqu in China. GDACS issued a Red earthquake alert for China and a Red alert for Typhoon CHAMPI-26 affecting the Philippines, Guam, Japan and Taiwan. The other 34 were NWS and Environment Canada flood and storm warnings, including a blizzard warning for Resolute. The structured brief summed it up from issuer fields alone, and turning on the thermal layer loaded 196,952 detections from the last 24 hours across NOAA-20, NOAA-21 and Suomi NPP.
 
 ![Thermal detections from three satellites across every continent, with Copernicus mapping areas listed](docs/media/thermal.jpg)
@@ -63,7 +65,7 @@ The parts worth a closer look:
 - Snapshot queries filter by area in SQL before their 1,000-row limit, so a quiet region still shows up beside a busy one. The project exhausted the free D1 read allowance once, and the read path is built around that lesson.
 - The pipeline treats source text as evidence and ignores instructions inside it. The extraction worker runs without tools or file access, and a malicious-input evaluation recorded zero tool attempts.
 
-The test suite has 315 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
+The test suite has 362 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
 
 ## Honest status
 

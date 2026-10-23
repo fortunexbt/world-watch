@@ -1,0 +1,49 @@
+# Rebuilds and publishes the public demo to GitHub Pages every ten minutes.
+# Inert until the owner sets the repository variable WW_PUBLIC_DEMO to "on";
+# until then every run skips its job. See docs/DEPLOY-DEMO.md.
+name: Public demo
+on:
+  schedule:
+    # Off the top of the hour, when GitHub delays scheduled runs most.
+    - cron: "7,17,27,37,47,57 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: public-demo
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: vars.WW_PUBLIC_DEMO == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - id: pages
+        uses: actions/configure-pages@v6
+      - run: npm run build:public
+      - run: npm run snapshot:public -- --out dist-public/data --previous "$PAGES_URL/"
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.base_url }}
+      # Batch triage of narrative sources would run inside the snapshot step
+      # above, at the hook marked in src/public/snapshot.ts, with provider keys
+      # passed from repository secrets as environment variables.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist-public
+      - id: deploy
+        uses: actions/deploy-pages@v5
