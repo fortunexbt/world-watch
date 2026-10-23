@@ -21,7 +21,10 @@ import {
 import {
   resolveClaimLocation,
   bboxCandidates,
+  eventTime,
+  locationCell,
   locationRadius,
+  windowKey,
 } from "./geo";
 import { textMatch, viewFilter } from "../shared/view";
 import {
@@ -1447,15 +1450,12 @@ function defaultSignalEligible(incident: IncidentView) {
     return report.source_id !== "fr-sncf-siri" && ["severe", "critical"].includes(incident.impact) && incident.claims.some(c => temporalStatus(c) === "current");
   });
 }
-const eventTime =
-    "coalesce(json_extract(view,'$.event_start'),json_extract(view,'$.published_at'))",
-  // Latest of start and expiry; '9' sorts timeless and issuer-current incidents after every ISO time, as incidentInWindow keeps them once started.
-  windowKey = `CASE WHEN json_extract(view,'$.current_listing') THEN '9' ELSE coalesce(max(${eventTime},coalesce(json_extract(view,'$.expires_at'),${eventTime})),'9') END`;
 /**
  * Index-backed supersets of incidentInWindow and inBbox, applied before LIMIT so a busy region or
- * stale backlog cannot hide matching incidents. A bbox reads its padded latitude band, a window its
- * recent, unexpired and timeless incidents; only a pole-to-pole bbox without a window falls back to
- * the recency scan. The exact checks in snapshot still decide membership.
+ * stale backlog cannot hide matching incidents. A bbox seeks its grid cells in incidents_cell and,
+ * with a window, only the window's keys within each cell, so it reads its own area's live rows
+ * rather than a whole latitude band. Without a bbox, or when the cells cover the whole grid, the
+ * recency index stops after LIMIT matches. The exact checks in snapshot still decide membership.
  */
 async function liveScope(e: Env, hours: number, bbox?: number[]) {
   const where: string[] = [],
@@ -1484,15 +1484,20 @@ async function liveScope(e: Env, hours: number, bbox?: number[]) {
       ).first<{ km: number | null }>(),
     );
     const candidates = bboxCandidates(bbox, reach?.km ?? 0);
+    if (candidates.cells) {
+      // Integers computed here, inlined because a whole hemisphere exceeds D1's 100 bound parameters.
+      where.push(`${locationCell} IN(${candidates.cells.join(",")})`);
+      index = " INDEXED BY incidents_cell";
+    }
     where.push(candidates.sql);
     params.push(...candidates.params);
-    if (candidates.banded) index = " INDEXED BY incidents_latitude";
   }
+  const clause = where.map((w) => ` AND ${w}`).join("");
   return {
-    where: where.map((w) => ` AND ${w}`).join(""),
+    where: clause,
     params,
     index,
-    key: JSON.stringify(params),
+    key: JSON.stringify([clause, params]),
   };
 }
 /** The live incident head shared by the snapshot and the structured brief, so one read serves both. */

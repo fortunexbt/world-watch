@@ -417,7 +417,7 @@ for (const order of ["USGS first", "GDACS first"])
     }
   });
 
-test("candidate reads use the latitude index and return only rows inside the space and time window", async () => {
+test("candidate reads seek the cell and window index and return only rows inside the space and time window", async () => {
   const s = fixtureServer();
   try {
     assert.equal((await s.api("/api/sources", { sources: [usgsSource, gdacsSource] }, "fixture-collector")).status, 200);
@@ -441,15 +441,15 @@ test("candidate reads use the latitude index and return only rows inside the spa
       .get() as { n: number };
     s.reads.length = 0;
     await s.ingest([china()]);
-    const candidates = s.reads.filter((r) => /INDEXED BY incidents_latitude/.test(r.sql));
+    const candidates = s.reads.filter((r) => /INDEXED BY incidents_cell/.test(r.sql));
     assert.equal(candidates.length, 1);
     assert.equal(candidates[0].rows, 1, "only the Nagqu record falls inside the window");
-    assert.ok(band.n < all.n / 2, `the index band holds ${band.n} of ${all.n} incidents`);
+    assert.ok(band.n < all.n / 2, `the latitude band holds ${band.n} of ${all.n} incidents`);
     const query = fusionCandidates(published(china(), "probe"))!;
     const plan = (s.db.prepare("EXPLAIN QUERY PLAN " + query.sql).all(...(query.params as SQLInputValue[])) as { detail: string }[])
       .map((r) => r.detail)
       .join("\n");
-    assert.match(plan, /^SEARCH incidents USING INDEX incidents_latitude/);
+    assert.match(plan, /^SEARCH incidents USING INDEX incidents_cell \(<expr>=\? AND <expr>>\?\)/);
     const storm = fusionCandidates(published(parseGdacs(gdacsSource, gdacsFixture).find((r) => r.native_id === "TC-1001338")!))!;
     const stormPlan = (s.db.prepare("EXPLAIN QUERY PLAN " + storm.sql).all(...(storm.params as SQLInputValue[])) as { detail: string }[])
       .map((r) => r.detail)

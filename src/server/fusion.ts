@@ -1,4 +1,5 @@
 import type { IncidentLink, IncidentView } from "../shared/contracts";
+import { bboxCandidates, locationCell, windowKey } from "./geo";
 
 /**
  * Deterministic same-event linking of structured issuer records. Identity comes from issuer
@@ -201,8 +202,9 @@ export function sameEvent(
 
 const latitude = "json_extract(view,'$.location.lat')";
 /**
- * Index-bounded candidates for a record: earthquakes by latitude band (incidents_latitude) and
- * origin-time window, cyclones by their exact storm name through the search index.
+ * Index-bounded candidates for a record: earthquakes through incidents_cell, seeking the grid cells
+ * within reach and, in each, window keys from the origin-time window on (a quake's key is at least
+ * its origin time); cyclones by their exact storm name through the search index.
  */
 export function fusionCandidates(view: IncidentView) {
   const s = signature(view);
@@ -213,10 +215,13 @@ export function fusionCandidates(view: IncidentView) {
       params: ['"' + s.name!.replaceAll("-", " ") + '"', view.id],
     };
   const band = QUAKE_REACH_KM / 111,
-    window = QUAKE_POSSIBLE_SECONDS * 1000;
+    window = QUAKE_POSSIBLE_SECONDS * 1000,
+    // A reach of a few degrees never covers the whole grid, so there are always cells.
+    cells = bboxCandidates([s.lon, s.lat, s.lon, s.lat], QUAKE_REACH_KM).cells!;
   return {
-    sql: `SELECT view FROM incidents INDEXED BY incidents_latitude WHERE deleted_at IS NULL AND ${latitude} BETWEEN ? AND ? AND json_extract(view,'$.activity')='earthquake' AND json_extract(view,'$.event_start') BETWEEN ? AND ? AND id<>? LIMIT 20`,
+    sql: `SELECT view FROM incidents INDEXED BY incidents_cell WHERE deleted_at IS NULL AND ${locationCell} IN(${cells.join(",")}) AND ${windowKey}>=? AND ${latitude} BETWEEN ? AND ? AND json_extract(view,'$.activity')='earthquake' AND json_extract(view,'$.event_start') BETWEEN ? AND ? AND id<>? LIMIT 20`,
     params: [
+      new Date(s.time - window).toISOString(),
       s.lat - band,
       s.lat + band,
       new Date(s.time - window).toISOString(),

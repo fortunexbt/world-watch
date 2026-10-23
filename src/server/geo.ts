@@ -173,24 +173,48 @@ export const locationRadius = "json_extract(view,'$.location.radius_km')";
 const latitude = "json_extract(view,'$.location.lat')",
   longitude = "json_extract(view,'$.location.lon')",
   reach = `${locationRadius}/111.0`;
+export const eventTime =
+    "coalesce(json_extract(view,'$.event_start'),json_extract(view,'$.published_at'))",
+  // Latest of start and expiry; '9' sorts timeless and issuer-current incidents after every ISO time, as incidentInWindow keeps them once started.
+  windowKey = `CASE WHEN json_extract(view,'$.current_listing') THEN '9' ELSE coalesce(max(${eventTime},coalesce(json_extract(view,'$.expires_at'),${eventTime})),'9') END`;
+/** Cells of CELL degrees, numbered row-major from 90° S and 180° W; a last column holds 180° E itself. */
+const CELL = 10,
+  COLUMNS = 360 / CELL + 1;
+/** incidents_cell keys on (locationCell, windowKey); both texts must match its migration exactly. */
+export const locationCell = `CAST((${latitude}+90)/${CELL} AS INTEGER)*${COLUMNS}+CAST((${longitude}+180)/${CELL} AS INTEGER)`;
 /**
- * SQL superset of inBbox over incidents.view, without trigonometry in SQL. When `banded`, the
- * latitude band padded by the largest stored radius can drive the incidents_latitude index.
+ * SQL superset of inBbox over incidents.view, without trigonometry in SQL, and the grid cells
+ * holding every location that can reach the bbox. `cells` is null when they cover the whole grid.
  */
 export function bboxCandidates(bbox: number[], maxRadiusKm: number) {
   const [west, south, east, north] = bbox,
     pad = maxRadiusKm / 111,
-    banded = south - pad > -90 || north + pad < 90,
     edge = Math.min(90, Math.max(Math.abs(south - pad), Math.abs(north + pad))),
     // No row inside the band reaches farther in longitude than its radius times this factor.
     stretch = 1 / Math.max(0.05, Math.cos((edge * Math.PI) / 180)),
     width = Math.min(360, east >= west ? east - west : east - west + 360),
     start = ((((west + 180) % 360) + 360) % 360) - 180;
+  const columns = new Set<number>(),
+    from = start + 180 - pad * stretch,
+    to = start + 180 + width + pad * stretch;
+  if (to - from >= 360) for (let c = 0; c < COLUMNS; c++) columns.add(c);
+  else
+    for (let x = from; ; x += CELL) {
+      const at = Math.min(x, to);
+      columns.add(Math.floor((((at % 360) + 360) % 360) / CELL));
+      if (at === to) break;
+    }
+  // 180° W and 180° E are one meridian in two columns.
+  if (columns.has(0)) columns.add(COLUMNS - 1);
+  const first = Math.floor((Math.max(-90, south - pad) + 90) / CELL),
+    last = Math.floor((Math.min(90, north + pad) + 90) / CELL),
+    cells: number[] = [];
+  for (let row = first; row <= last; row++)
+    for (const column of columns) cells.push(row * COLUMNS + column);
   return {
-    banded,
-    sql: `${banded ? `${latitude} BETWEEN ? AND ? AND ` : ""}${latitude}+${reach}>=? AND ${latitude}-${reach}<=? AND ((${longitude}+${reach}*?>=? AND ${longitude}-${reach}*?<=?) OR ${longitude}+${reach}*?>=? OR ${longitude}-${reach}*?<=?)`,
+    cells: cells.length < (180 / CELL + 1) * COLUMNS ? cells : null,
+    sql: `${latitude}+${reach}>=? AND ${latitude}-${reach}<=? AND ((${longitude}+${reach}*?>=? AND ${longitude}-${reach}*?<=?) OR ${longitude}+${reach}*?>=? OR ${longitude}-${reach}*?<=?)`,
     params: [
-      ...(banded ? [south - pad, north + pad] : []),
       south,
       north,
       stretch,
