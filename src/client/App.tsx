@@ -9,7 +9,7 @@ import { NEWS_COLOR, NewsCoverageNote, NewsGlyph, NewsSignalPanel, NewsSignalRow
 import type {PublicCameraCatalog} from "../shared/media";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
 import { independence, memberLinks, situations, type Situation } from "../shared/fusion";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   VolumeX,
@@ -715,7 +715,8 @@ export default function App() {
         (i) => Date.parse(i.updated_at) > Date.parse(lastSeen),
       )
     : [];
-  const select = (id: string) => {
+  // Stable, so memoised feed rows skip renders that leave their incident unchanged.
+  const select = useCallback((id: string) => {
     returnFocus.current = id;
     setFollow(false);
     setSelected(id);
@@ -726,7 +727,7 @@ export default function App() {
     requestAnimationFrame(() =>
       document.querySelector<HTMLElement>(".detail h1")?.focus(),
     );
-  };
+  }, []);
   const selectSignal = (id: string) => {
     setFilter("news");
     setSelected(null);
@@ -1921,64 +1922,13 @@ export default function App() {
                         </li>
                       ))
                   : incidents.map((i) => (
-                      <li key={i.id}>
-                        <button
-                          className="feed-item"
-                          data-incident-id={i.id}
-                          onClick={() => select(i.id)}
-                          aria-label={`${i.headline}, ${hasGlyph(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}${i.members ? ", " + sourceCount(i, tr) : ""}`}
-                        >
-                          <div
-                            className="incident-symbol"
-                            style={{ color: colors[i.impact] }}
-                          >
-                            {hasGlyph(i.activity) ? (
-                              <ActivityGlyph activity={i.activity} size={16} />
-                            ) : (
-                              symbols[i.impact]
-                            )}
-                          </div>
-                          <div className="feed-item-body">
-                            <span className="report-meta">
-                              {i.location?.name || tr("Location unresolved")}
-                              <time>{age(i.updated_at)}</time>
-                            </span>
-                            <h2>{i.reports.length===1&&i.reports[0].source_id==="de-demos-assemblies" ? i.reports[0].title : i.headline}</h2>
-                            <p>
-                              {when(i.event_start || i.published_at)}
-                              {!i.event_start ? " · " + tr("publication") : ""}
-                            </p>
-                            <span className="item-label">
-                              <span
-                                className="impact-label"
-                                style={{ color: colors[i.impact] }}
-                              >
-                                {tr(
-                                  i.impact === "unknown"
-                                    ? "Impact unknown"
-                                    : i.impact,
-                                )}
-                              </span>
-                              <span className="evidence-state">
-                                {tr(i.evidence_status)}
-                                {i.analyzed_at === null
-                                  ? " · " +
-                                    tr(
-                                      structuredOnly(i)
-                                        ? "structured source"
-                                        : "AI pending",
-                                    )
-                                  : ""}
-                              </span>
-                              {i.members && (
-                                <span className="evidence-state">
-                                  {sourceCount(i, tr)}
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        </button>
-                      </li>
+                      <FeedItem
+                        key={i.id}
+                        incident={i}
+                        language={language}
+                        clock={clock}
+                        onSelect={select}
+                      />
                     ))}
               </ol>
               {ready && newsActive && !incoming && news?.signals.length === 0 && (
@@ -2695,6 +2645,67 @@ function ActivityGlyph({
     </svg>
   );
 }
+/**
+ * One feed row. Memoised on its incident object, so an SSE patch or an unrelated render re-renders
+ * only the rows whose incident changed instead of every row in the list. `clock` refreshes the age.
+ */
+const FeedItem = memo(function FeedItem({
+  incident: i,
+  language,
+  clock,
+  onSelect,
+}: {
+  incident: Situation;
+  language: Language;
+  clock: number;
+  onSelect: (id: string) => void;
+}) {
+  const tr = (value: string) => translate(language, value);
+  return (
+    <li>
+      <button
+        className="feed-item"
+        data-incident-id={i.id}
+        onClick={() => onSelect(i.id)}
+        aria-label={`${i.headline}, ${hasGlyph(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}${i.members ? ", " + sourceCount(i, tr) : ""}`}
+      >
+        <div className="incident-symbol" style={{ color: colors[i.impact] }}>
+          {hasGlyph(i.activity) ? (
+            <ActivityGlyph activity={i.activity} size={16} />
+          ) : (
+            symbols[i.impact]
+          )}
+        </div>
+        <div className="feed-item-body">
+          <span className="report-meta">
+            {i.location?.name || tr("Location unresolved")}
+            <time>{formatAge(i.updated_at, language, clock)}</time>
+          </span>
+          <h2>{i.reports.length===1&&i.reports[0].source_id==="de-demos-assemblies" ? i.reports[0].title : i.headline}</h2>
+          <p>
+            {formatWhen(i.event_start || i.published_at, language)}
+            {!i.event_start ? " · " + tr("publication") : ""}
+          </p>
+          <span className="item-label">
+            <span className="impact-label" style={{ color: colors[i.impact] }}>
+              {tr(i.impact === "unknown" ? "Impact unknown" : i.impact)}
+            </span>
+            <span className="evidence-state">
+              {tr(i.evidence_status)}
+              {i.analyzed_at === null
+                ? " · " +
+                  tr(structuredOnly(i) ? "structured source" : "AI pending")
+                : ""}
+            </span>
+            {i.members && (
+              <span className="evidence-state">{sourceCount(i, tr)}</span>
+            )}
+          </span>
+        </div>
+      </button>
+    </li>
+  );
+});
 /** Structured adapters store their record as JSON; show its fields instead of raw text. */
 function EvidenceText({
   text,
