@@ -7,7 +7,11 @@ import path from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { collectSources, type CollectorResult } from "../collector/index";
 import { configuredRegistry } from "../collector/registry";
-import { getGeospatialCatalog, WORLD } from "../server/geospatial";
+import {
+  getGeospatialCatalog,
+  getThermalIndex,
+  WORLD,
+} from "../server/geospatial";
 import server, { type Env } from "../server/index";
 import { structuredBrief } from "../server/structured-brief";
 import { alertMaterialityVersion } from "../server/alerts";
@@ -39,12 +43,14 @@ import {
 import { fusedSituation, situations } from "../shared/fusion";
 import type { GeospatialCatalog } from "../shared/geospatial";
 import { incidentInWindow } from "../shared/temporal";
+import { thermalArchive } from "./thermal-archive";
 import {
   BRIEF_WINDOWS,
   FEED_FILE_LIMIT,
   MANIFEST,
   PUBLIC_FILE_LIMITS,
   SNAPSHOT_CADENCE_SECONDS,
+  THERMAL_ARCHIVE,
   type PublicBriefs,
   type PublicFile,
   type PublicIncidents,
@@ -118,13 +124,24 @@ function memoryD1() {
   };
 }
 
-/** A previous catalogue is reused while every layer read succeeded within the refresh interval. */
+const sha256 = (data: string | Uint8Array) =>
+  createHash("sha256").update(data).digest("hex");
+/** Names an archive by its content, so a client never mixes two generations' tiles. */
+const archiveVersion = (archive: Uint8Array) => sha256(archive).slice(0, 16);
+
+/**
+ * A previous catalogue is reused while every layer read succeeded within the
+ * refresh interval and the published archive is the one it names.
+ */
 export function reusableGeospatial(
   previous: GeospatialCatalog | undefined,
+  thermal: Uint8Array | undefined,
   now = Date.now(),
 ) {
   return (
     !!previous?.sources?.length &&
+    !!thermal &&
+    previous.thermal_version === archiveVersion(thermal) &&
     previous.sources.every(
       (s) =>
         s.status === "ok" &&
@@ -139,12 +156,13 @@ export type PreviousSnapshot = {
   manifest?: PublicManifest;
   incidents?: PublicIncidents;
   geospatial?: GeospatialCatalog;
+  thermal?: Uint8Array;
 };
 
 export type PublicSnapshot = {
   manifest: PublicManifest;
   /** Serialised files by name, the manifest included; write the manifest last. */
-  files: Map<string, string>;
+  files: Map<string, string | Uint8Array>;
   /** Atom and GeoJSON feeds and their index, by path under the data directory. */
   feeds: Map<string, string>;
   results: CollectorResult[];
@@ -374,16 +392,20 @@ export async function buildPublicSnapshot(
         ),
       ]),
     ) as PublicBriefs;
-    const catalog =
-      previous.geospatial && reusableGeospatial(previous.geospatial)
-        ? previous.geospatial
-        : await getGeospatialCatalog(WORLD, upstream);
+    const reuse = reusableGeospatial(previous.geospatial, previous.thermal);
+    const catalog = reuse
+      ? previous.geospatial!
+      : await getGeospatialCatalog(WORLD, upstream);
+    const thermal = reuse
+      ? previous.thermal!
+      : thermalArchive(await getThermalIndex(upstream));
     const geospatial: GeospatialCatalog = {
       ...catalog,
       sources: catalog.sources.map((s) => ({
         ...s,
         cadence_seconds: GEOSPATIAL_REFRESH_SECONDS,
       })),
+      thermal_version: catalog.thermal_version && archiveVersion(thermal),
     };
     // Each run starts from an empty database, so a revision is new when the previous snapshot didn't hold it.
     const seen = new Set(
@@ -436,23 +458,20 @@ export async function buildPublicSnapshot(
       limited: snapshot.limited,
     };
     const published = publicationLag(views, now);
-    const files = new Map<string, string>();
-    const contents: Record<PublicFile, unknown> = {
-      "incidents.json": incidents,
-      "brief.json": briefs,
-      "geospatial.json": geospatial,
+    const files = new Map<string, string | Uint8Array>();
+    const contents: Record<PublicFile, string | Uint8Array> = {
+      "incidents.json": JSON.stringify(incidents),
+      "brief.json": JSON.stringify(briefs),
+      "geospatial.json": JSON.stringify(geospatial),
+      [THERMAL_ARCHIVE]: thermal,
     };
     const sizes = {} as PublicManifest["files"];
     for (const [name, value] of Object.entries(contents) as [
       PublicFile,
-      unknown,
+      string | Uint8Array,
     ][]) {
-      const text = bounded(name, JSON.stringify(value), PUBLIC_FILE_LIMITS[name]);
-      files.set(name, text);
-      sizes[name] = {
-        bytes: Buffer.byteLength(text),
-        sha256: createHash("sha256").update(text).digest("hex"),
-      };
+      files.set(name, bounded(name, value, PUBLIC_FILE_LIMITS[name]));
+      sizes[name] = { bytes: Buffer.byteLength(value), sha256: sha256(value) };
     }
     const manifest: PublicManifest = {
       version: 1,
@@ -505,7 +524,11 @@ export async function buildPublicSnapshot(
   }
 }
 
-function bounded(name: string, text: string, limit: number) {
+function bounded<T extends string | Uint8Array>(
+  name: string,
+  text: T,
+  limit: number,
+) {
   const bytes = Buffer.byteLength(text);
   if (bytes > limit)
     throw Error(`public_snapshot_size: ${name} ${bytes} > ${limit}`);

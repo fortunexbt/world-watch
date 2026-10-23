@@ -7,7 +7,8 @@ import { CountryCoverage, CoverageChip, CoverageView, freshness, sourceStatus } 
 import PublicFeeds from "./PublicFeeds";
 import Notifications from "./Notifications";
 import { publicRequest } from "./public-data";
-import type {GeospatialCatalog} from "../shared/geospatial";
+import type {GeoFeature,GeospatialCatalog} from "../shared/geospatial";
+import { thermalTileUrl } from "./thermal-tiles";
 import type {NewsSignalCatalog} from "../shared/news";
 import { NEWS_COLOR, NewsCoverageNote, NewsGlyph, NewsSignalPanel, NewsSignalRow } from "./NewsSignals";
 import type {PublicCameraCatalog} from "../shared/media";
@@ -148,7 +149,7 @@ export default function App() {
   const [showCameras,setShowCameras]=useState(!__PUBLIC_DEMO__ && (new URLSearchParams(location.search).get("layer")==="cameras" || new URLSearchParams(location.search).has("camera"))),[density,setDensity]=useState(false),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(new URLSearchParams(location.search).get("camera")),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
   const [news,setNews]=useState<NewsSignalCatalog|null>(null),[newsError,setNewsError]=useState(""),[selectedSignal,setSelectedSignal]=useState<string|null>(null);
   const [imagery,setImagery]=useState<ImageryView|null>(null);
-  const [geoLayers,setGeoLayers]=useState<string[]>([]),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
+  const [geoLayers,setGeoLayers]=useState<string[]>([]),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[pickedGeo,setPickedGeo]=useState<GeoFeature|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
   const [clock, setClock] = useState(Date.now);
   const [legendOpen, setLegendOpen] = useState(false);
   const [language, setLanguage] = useState<Language>(() =>
@@ -726,6 +727,10 @@ export default function App() {
     () => (geoCatalog?.features ?? []).filter((f) => geoLayers.includes(f.layer)),
     [geoCatalog, geoLayers],
   );
+  const thermalTiles =
+    geoLayers.includes("thermal") && geoCatalog?.thermal_version
+      ? thermalTileUrl(geoCatalog.thermal_version)
+      : null;
   const cameras = useMemo(
     () => (showCameras ? (cameraCatalog?.cameras ?? []) : []),
     [showCameras, cameraCatalog],
@@ -884,7 +889,8 @@ export default function App() {
         follow={follow}
         pulse={pulse}
         geoFeatures={geoFeatures}
-        onGeo={id=>{setSelected(null);setSelectedCamera(null);setSelectedGeo(id);setSurface("geospatial");}}
+        thermalTiles={thermalTiles}
+        onGeo={(id,feature)=>{setSelected(null);setSelectedCamera(null);setSelectedGeo(id);setPickedGeo(feature??null);setSurface("geospatial");}}
         cameras={cameras}
         density={density}
         selectedCamera={selectedCamera}
@@ -1366,7 +1372,7 @@ export default function App() {
             </>}
           </section>
         ) : surface === "geospatial" ? (
-          <GeospatialPanel language={language} catalog={geoCatalog} selected={selectedGeo} onSelect={setSelectedGeo} error={geoError} loading={geoLoading}/>
+          <GeospatialPanel language={language} catalog={geoCatalog} selected={selectedGeo} picked={pickedGeo} onSelect={setSelectedGeo} error={geoError} loading={geoLoading}/>
         ) : !__PUBLIC_DEMO__ && surface === "news" ? (
           <NewsSignalPanel catalog={news} selected={selectedSignal} language={language}/>
         ) : !__PUBLIC_DEMO__ && surface === "media" ? (

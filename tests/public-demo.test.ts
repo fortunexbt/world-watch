@@ -31,11 +31,17 @@ import {
   FEED_FILE_LIMIT,
   MANIFEST,
   PUBLIC_FILE_LIMITS,
+  THERMAL_ARCHIVE,
 } from "../src/shared/public-snapshot.js";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { DEFAULT_FEED, feedFilters, feedPath } from "../src/shared/feeds.js";
+import { readHeader } from "../src/shared/pmtiles.js";
 import type { IncidentView } from "../src/shared/contracts.js";
 import { situations } from "../src/shared/fusion.js";
+
+/** A published JSON file. */
+const read = (files: Map<string, string | Uint8Array>, name: string) =>
+  JSON.parse(files.get(name) as string);
 
 // Real responses trimmed for the hazard tests; FIRMS and CEMS bodies are synthetic and dated
 // relative to the clock, because both catalogues keep only recent records. EMSC is asked for the
@@ -170,7 +176,7 @@ test("the snapshot publishes the API's projection, briefs for every window and a
     );
   for (const [name, { bytes }] of Object.entries(manifest.files))
     assert.equal(bytes, Buffer.byteLength(files.get(name)!));
-  const { incidents } = JSON.parse(files.get("incidents.json")!) as {
+  const { incidents } = read(files, "incidents.json") as {
     incidents: IncidentView[];
   };
   assert(incidents.length > 0);
@@ -188,18 +194,24 @@ test("the snapshot publishes the API's projection, briefs for every window and a
   // Linked records fuse: USGS, GDACS and EMSC for Vanuatu, USGS and EMSC for three more quakes,
   // and GDACS and EMSC for Hokkaido.
   assert.equal(situations(incidents).length, incidents.length - 6);
-  const briefs = JSON.parse(files.get("brief.json")!);
+  const briefs = read(files, "brief.json");
   assert.deepEqual(Object.keys(briefs).sort(), [...BRIEF_WINDOWS].sort());
   assert.equal(briefs["0"].kind, "structured");
-  const geo = JSON.parse(files.get("geospatial.json")!);
+  const geo = read(files, "geospatial.json");
+  // Every detection is in the archive the catalogue names by content; none rides in the JSON.
   // Three detections per sensor still delivering; an ended sensor is not read.
+  assert(geo.features.every((f: any) => f.layer !== "thermal"));
+  const firms = geo.sources.find((s: any) => s.id === "firms");
   assert.equal(
-    geo.features.filter((f: any) => f.layer === "thermal").length,
+    firms.features_count,
     3 *
       FIRMS_SENSORS.filter(
         (s) => !s.ended || Date.parse(s.ended.at) > Date.now(),
       ).length,
   );
+  assert.equal(firms.truncated, false);
+  assert.equal(geo.thermal_version, manifest.files[THERMAL_ARCHIVE].sha256.slice(0, 16));
+  assert.equal(readHeader(files.get(THERMAL_ARCHIVE) as Uint8Array).tiles > 0, true);
   assert.equal(
     geo.features.filter((f: any) => f.layer === "emergency_mapping").length,
     1,
@@ -232,7 +244,7 @@ test("every area, hazard and impact feed is valid, bounded, attributed and limit
     [...feeds.values()].reduce((n, t) => n + Buffer.byteLength(t), 0),
   );
   assert(redistributed.some((s) => s.id === "global-emsc-earthquakes"));
-  const incidents: IncidentView[] = JSON.parse(files.get("incidents.json")!).incidents;
+  const incidents: IncidentView[] = read(files, "incidents.json").incidents;
   const allowed = new Set(redistributed.map((s) => s.id));
   const shareable = (i: IncidentView) => i.reports.every((r) => allowed.has(r.source_id));
   for (const filter of feedFilters()) {
@@ -302,7 +314,7 @@ test("every area, hazard and impact feed is valid, bounded, attributed and limit
 
 test("a feed entry keeps its ID and update time across runs and fusion changes, and moves only on a material change", async () => {
   const first = await buildPublicSnapshot({ fetch: upstream() });
-  const previous = { incidents: JSON.parse(first.files.get("incidents.json")!) };
+  const previous = { incidents: read(first.files, "incidents.json") };
   const world = feedPath({ ...DEFAULT_FEED, impact: "any" }, "atom");
   const again = await buildPublicSnapshot({ fetch: upstream(), previous });
   // An unchanged source gives a byte-identical feed, so readers see nothing new.
@@ -347,12 +359,12 @@ test("a feed entry keeps its ID and update time across runs and fusion changes, 
   const alone = await buildPublicSnapshot({ fetch: emscDown });
   const fused = await buildPublicSnapshot({
     fetch: upstream(),
-    previous: { incidents: JSON.parse(alone.files.get("incidents.json")!) },
+    previous: { incidents: read(alone.files, "incidents.json") },
   });
   const geo = (run: { feeds: Map<string, string> }) =>
     JSON.parse(run.feeds.get(feedPath({ ...DEFAULT_FEED, impact: "any" }, "geojson"))!).features;
   const usgsIds = new Set(
-    JSON.parse(alone.files.get("incidents.json")!)
+    read(alone.files, "incidents.json")
       .incidents.filter((i: IncidentView) => i.reports[0].source_id === "global-usgs-earthquakes")
       .map((i: IncidentView) => i.id),
   );
@@ -379,7 +391,7 @@ test("a source whose rights forbid display is never collected or published", asy
     manifest.sources.map((s) => s.id),
     ["global-gdacs-alerts"],
   );
-  const { incidents, sources } = JSON.parse(files.get("incidents.json")!);
+  const { incidents, sources } = read(files, "incidents.json");
   assert(incidents.length > 0);
   assert(
     incidents.every((i: IncidentView) =>
@@ -413,15 +425,15 @@ test("a run that reaches no source fails, so the last published snapshot stays l
 test("a failed read keeps the source's last published records for an hour, then drops them", async () => {
   const first = await buildPublicSnapshot({ fetch: upstream() });
   const previous = {
-    manifest: JSON.parse(first.files.get(MANIFEST)!),
-    incidents: JSON.parse(first.files.get("incidents.json")!),
+    manifest: read(first.files, MANIFEST),
+    incidents: read(first.files, "incidents.json"),
   };
   const gdacsDown = (async (input: any, init: any) =>
     String(input).startsWith(GDACS_EVENTS_URL)
       ? new Response("unavailable", { status: 503 })
       : upstream()(input, init)) as typeof fetch;
-  const gdacsIds = (files: Map<string, string>) =>
-    JSON.parse(files.get("incidents.json")!)
+  const gdacsIds = (files: Map<string, string | Uint8Array>) =>
+    read(files, "incidents.json")
       .incidents.filter(
         (i: IncidentView) => i.reports[0].source_id === "global-gdacs-alerts",
       )
@@ -436,7 +448,7 @@ test("a failed read keeps the source's last published records for an hour, then 
   assert.equal(gdacs.last_success_at, first.manifest.generated_at);
   assert.deepEqual(gdacsIds(kept.files), gdacsIds(first.files));
   assert(
-    JSON.parse(kept.files.get("brief.json")!)["0"].references.some((r: any) =>
+    read(kept.files, "brief.json")["0"].references.some((r: any) =>
       gdacsIds(first.files).includes(r.incident_id),
     ),
   );
@@ -479,8 +491,8 @@ test("the manifest states each source's and sensor's coverage, and lag counts on
     FIRMS_SENSORS.map((s) => s.id),
   );
   const previous = () => ({
-    manifest: JSON.parse(first.files.get(MANIFEST)!),
-    incidents: JSON.parse(first.files.get("incidents.json")!),
+    manifest: read(first.files, MANIFEST),
+    incidents: read(first.files, "incidents.json"),
   });
   const updated = structuredClone(feeds[USGS_FEED_URL]) as any;
   updated.features[0].properties.updated = Date.now() - 60000;
@@ -503,8 +515,8 @@ test("the manifest states each source's and sensor's coverage, and lag counts on
   const third = await buildPublicSnapshot({
     fetch: revised,
     previous: {
-      manifest: JSON.parse(second.files.get(MANIFEST)!),
-      incidents: JSON.parse(second.files.get("incidents.json")!),
+      manifest: read(second.files, MANIFEST),
+      incidents: read(second.files, "incidents.json"),
     },
   });
   assert.equal(
@@ -513,8 +525,11 @@ test("the manifest states each source's and sensor's coverage, and lag counts on
   );
 });
 
-test("a recent healthy catalogue is reused instead of downloading the satellite files again", async () => {
+test("a recent healthy catalogue and the archive it names are reused instead of downloading the satellite files again", async () => {
   const now = Date.now();
+  const first = await buildPublicSnapshot({ fetch: upstream() });
+  const archive = first.files.get(THERMAL_ARCHIVE) as Uint8Array,
+    version = read(first.files, "geospatial.json").thermal_version;
   const layer = (status: "ok" | "error", minutes: number) => ({
     id: "firms" as const,
     status,
@@ -531,15 +546,22 @@ test("a recent healthy catalogue is reused instead of downloading the satellite 
     bbox: [-180, -90, 180, 90] as [number, number, number, number],
     features: [],
     sources: [layer(status, minutes)],
+    thermal_version: version,
   });
-  assert.equal(reusableGeospatial(catalog("ok", 20), now), true);
-  assert.equal(reusableGeospatial(catalog("ok", 56), now), false);
-  assert.equal(reusableGeospatial(catalog("error", 5), now), false);
-  assert.equal(reusableGeospatial(undefined, now), false);
+  assert.equal(reusableGeospatial(catalog("ok", 20), archive, now), true);
+  assert.equal(reusableGeospatial(catalog("ok", 56), archive, now), false);
+  assert.equal(reusableGeospatial(catalog("error", 5), archive, now), false);
+  assert.equal(reusableGeospatial(undefined, archive, now), false);
+  assert.equal(reusableGeospatial(catalog("ok", 20), undefined, now), false);
+  assert.equal(
+    reusableGeospatial(catalog("ok", 20), archive.slice(1), now),
+    false,
+    "an archive that is not the one the catalogue names is rebuilt",
+  );
   const requests: { url: string; method: string }[] = [];
   const { files } = await buildPublicSnapshot({
     fetch: upstream(requests),
-    previous: { geospatial: catalog("ok", 20) },
+    previous: { geospatial: catalog("ok", 20), thermal: archive },
   });
   assert(
     !requests.some(
@@ -547,9 +569,11 @@ test("a recent healthy catalogue is reused instead of downloading the satellite 
     ),
   );
   assert.equal(
-    JSON.parse(files.get("geospatial.json")!).sources[0].checked_at,
+    read(files, "geospatial.json").sources[0].checked_at,
     layer("ok", 20).checked_at,
   );
+  assert.deepEqual(files.get(THERMAL_ARCHIVE), archive);
+  assert.equal(read(files, "geospatial.json").thermal_version, version);
 });
 
 test(
@@ -588,6 +612,7 @@ test(
         "/api/events",
         "/api/cameras",
         "/api/news-signals",
+        "/api/thermal",
         "/api/incidents/link",
         "EventSource",
         "/api/push",
@@ -655,7 +680,7 @@ test(
       await page.waitForSelector(".feed-item");
       assert.equal(
         await page.locator(".feed-item").count(),
-        situations(JSON.parse(files.get("incidents.json")!).incidents).length,
+        situations(read(files, "incidents.json").incidents).length,
       );
       assert.match(
         await page.locator(".public-banner").innerText(),
@@ -700,11 +725,20 @@ test(
           /^(Observed|Quiet)$/,
           s.id,
         );
+      // This server ignores Range, so the archive arrives whole, once.
+      const archive = page.waitForRequest((r: any) =>
+        r.url().includes(`/data/${THERMAL_ARCHIVE}?v=`),
+      );
       await page.getByLabel("Satellite thermal detections").check();
+      await archive;
       await page
         .getByRole("button", { name: "Explore geospatial context" })
         .click();
-      await page.getByText("detections worldwide").first().waitFor();
+      await page
+        .getByText(
+          `All ${3 * FIRMS_SENSORS.filter((s) => !s.ended || Date.parse(s.ended.at) > Date.now()).length} detections worldwide are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.`,
+        )
+        .waitFor();
       await page.locator(".public-banner button").click();
       const sources = await page.locator(".panel-content").innerText();
       for (const s of PUBLIC_SOURCES)
@@ -716,6 +750,10 @@ test(
       );
       const local = requests.filter((r) => r.url.startsWith(origin));
       assert(local.some((r) => r.url.includes("/data/geospatial.json")));
+      assert.equal(
+        local.filter((r) => r.url.includes(`/data/${THERMAL_ARCHIVE}`)).length,
+        1,
+      );
       assert(requests.every((r) => r.method === "GET" && !r.auth));
       assert(!local.some((r) => new URL(r.url).pathname.includes("/api/")));
     } finally {

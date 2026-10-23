@@ -8,9 +8,12 @@ import {
   parseWktGeometry,
   validGeometry,
   getGeospatialCatalog,
+  getThermalIndex,
+  getThermalTile,
   FIRMS_SENSORS,
   CEMS_URL,
 } from "../src/server/geospatial.js";
+import { decodeTile, tileOf } from "./vector-tiles.js";
 const now = Date.parse("2026-10-21T12:00:00Z");
 const [n20, n21, snpp] = FIRMS_SENSORS;
 const header =
@@ -247,7 +250,7 @@ const upstream = (firmsRows: Record<string, string[]>, calls: string[] = []) =>
       ],
     });
   }) as typeof fetch;
-test("catalog acquires every sensor's global file and a bounded CEMS budget, coalesces cache and keeps sensor provenance", async () => {
+test("catalog acquires every sensor's global file and a bounded CEMS budget, coalesces cache and keeps sensor provenance in the tiles", async () => {
   const calls: string[] = [];
   const [d, t] = ago(60);
   const fetcher = upstream(
@@ -269,25 +272,35 @@ test("catalog acquires every sensor's global file and a bounded CEMS budget, coa
     calls.filter((c) => c.includes("?code=")).map((c) => c.split("=").pop()),
     Array.from({ length: 10 }, (_, n) => "EMSR" + (950 - n)),
   );
-  const thermal = a.features.filter((f) => f.layer === "thermal");
+  // Thermal detections reach the map only as tiles, each carrying sensor, time and confidence.
+  assert(a.features.every((f) => f.layer === "emergency_mapping"));
+  assert.equal(a.features.length, 10);
+  assert.match(a.thermal_version!, /^[0-9a-z]+$/);
+  const { version, tile } = await getThermalTile(9, 0, 0, fetcher, live);
+  assert.equal(version, a.thermal_version);
+  assert.equal(tile, null, "an empty tile has no bytes");
+  const world = await getThermalTile(6, 0, 0, fetcher, live);
+  assert.equal(world.tile, null);
+  const detections: ReturnType<typeof decodeTile>["detections"] = [];
+  for (const [lon, lat] of [
+    [12, 41],
+    [179.5, -17.8],
+    [-21.9, 64.1],
+  ]) {
+    const [x, y] = tileOf(lon, lat, 6),
+      found = decodeTile((await getThermalTile(6, x, y, fetcher, live)).tile!, 6, x, y);
+    assert.equal(found.detections.length, 1);
+    assert(Math.abs(found.detections[0].lon - lon) < 0.01);
+    assert(Math.abs(found.detections[0].lat - lat) < 0.01);
+    detections.push(...found.detections);
+  }
   assert.deepEqual(
-    thermal
-      .map((f) => [f.properties.sensor_id, f.properties.confidence])
-      .sort(),
+    detections.map((d) => [d.sensor, d.confidence, d.at]).sort(),
     [
-      ["noaa-20-viirs", "high"],
-      ["noaa-21-viirs", "low"],
-      ["snpp-viirs", "nominal"],
+      ["noaa-20-viirs", "high", Date.parse(`${d}T${t.slice(0, 2)}:${t.slice(2)}:00Z`) / 1000],
+      ["noaa-21-viirs", "low", Date.parse(`${d}T${t.slice(0, 2)}:${t.slice(2)}:00Z`) / 1000],
+      ["snpp-viirs", "nominal", Date.parse(`${d}T${t.slice(0, 2)}:${t.slice(2)}:00Z`) / 1000],
     ],
-  );
-  const suomi = thermal.find((f) => f.properties.sensor_id === "snpp-viirs")!;
-  assert.equal(suomi.properties.sensor, "Suomi NPP VIIRS 375 m");
-  assert.match(suomi.attribution, /Suomi NPP VIIRS 375 m/);
-  assert.match(suomi.id, /^firms:N:VIIRS:/);
-  assert.match(suomi.properties.uncertainty!, /not a confirmed wildfire/);
-  assert.equal(
-    a.features.filter((f) => f.layer === "emergency_mapping").length,
-    10,
   );
   const [cems, firmsSource] = a.sources;
   assert.equal(cems.id, "copernicus");
@@ -312,7 +325,7 @@ test("catalog acquires every sensor's global file and a bounded CEMS budget, coa
     FIRMS_SENSORS.map((s) => [s.id, "ok", 1, s.url]),
   );
 });
-test("bbox filters before capping, across the antimeridian and in the southern hemisphere", async () => {
+test("bbox counts detections across the antimeridian and in the southern hemisphere", async () => {
   const [d, t] = ago(30);
   const fetcher = upstream({
     N20: [
@@ -328,23 +341,13 @@ test("bbox filters before capping, across the antimeridian and in the southern h
   assert.deepEqual(pacific.bbox, [170, -50, -170, 0]);
   assert.deepEqual(
     pacific.features
-      .filter((f) => f.layer === "thermal")
-      .map((f) => f.geometry.coordinates)
-      .sort(),
-    [
-      [-175, -45],
-      [-179.6, -18.1],
-      [179.5, -17.8],
-    ],
-  );
-  assert.deepEqual(
-    pacific.features
       .filter((f) => f.layer === "emergency_mapping")
       .map((f) => f.properties.activation_code),
     ["EMSR950"],
   );
   const firmsSource = pacific.sources.find((s) => s.id === "firms")!;
   assert.equal(firmsSource.total_available, 3);
+  assert.equal(firmsSource.features_count, 3);
   const pacificCems = pacific.sources.find((s) => s.id === "copernicus")!;
   assert.equal(pacificCems.truncated, true);
   assert.equal(
@@ -357,50 +360,44 @@ test("bbox filters before capping, across the antimeridian and in the southern h
     [2, 1, 0],
   );
   const europe = await getGeospatialCatalog([-10, 35, 30, 60], fetcher, live);
-  assert.equal(europe.features.filter((f) => f.layer === "thermal").length, 0);
+  assert.equal(
+    europe.sources.find((s) => s.id === "firms")!.features_count,
+    0,
+  );
   assert.equal(
     europe.features.filter((f) => f.layer === "emergency_mapping").length,
     9,
   );
 });
-test("thermal cap balances regions, keeps each region's newest detections and reports truncation honestly", async () => {
+test("every detection is counted and tiled, however many share a region", async () => {
   const rows = (code: string, offset: number) =>
     Array.from({ length: 900 }, (_, n) => {
       const [d, t] = ago(10 + offset + 3 * (n % 300));
       return row(-30 + n / 100, 150 + n / 100, d, t, code);
     });
-  // Older than every clustered detection and far from them: a newest-first cap would drop it.
   const [qd, qt] = ago(1200);
-  const quiet = row(-10, -60, qd, qt, "N20");
-  const catalog = await getGeospatialCatalog(
-    undefined,
-    upstream({
-      N20: [...rows("N20", 0), quiet],
-      N21: rows("N21", 1),
-      N: rows("N", 2),
-    }),
-    live,
-  );
-  const thermal = catalog.features.filter((f) => f.layer === "thermal");
-  assert.equal(thermal.length, 2000);
-  const times = thermal.map((f) => f.observed_at!);
-  assert.deepEqual(times, [...times].sort().reverse());
-  assert(
-    thermal.some(
-      (f) => (f.geometry as { coordinates: number[] }).coordinates[0] === -60,
-    ),
-  );
+  const fetcher = upstream({
+    N20: [...rows("N20", 0), row(-10, -60, qd, qt, "N20")],
+    N21: rows("N21", 1),
+    N: rows("N", 2),
+  });
+  const catalog = await getGeospatialCatalog(undefined, fetcher, live);
   const source = catalog.sources.find((s) => s.id === "firms")!;
-  assert.equal(source.features_count, 2000);
+  assert.equal(source.features_count, 2701);
   assert.equal(source.total_available, 2701);
-  assert.equal(source.truncated, true);
-  assert.equal(
-    source.sensors!.reduce((n, s) => n + s.features_count, 0),
-    2000,
-  );
+  assert.equal(source.truncated, false);
   assert.deepEqual(
-    source.sensors!.map((s) => s.total_available),
-    [901, 900, 900],
+    source.sensors!.map((s) => [s.features_count, s.total_available]),
+    [
+      [901, 901],
+      [900, 900],
+      [900, 900],
+    ],
+  );
+  const { tile } = await getThermalTile(0, 0, 0, fetcher, live);
+  assert.equal(
+    decodeTile(tile!, 0, 0, 0).cells.reduce((n, c) => n + c.n, 0),
+    2701,
   );
 });
 test("each sensor fails independently and failures are reported, not silently dropped", async () => {
@@ -434,6 +431,7 @@ test("each sensor fails independently and failures are reported, not silently dr
     live,
   );
   assert.equal(failed.features.length, 0);
+  assert.equal(failed.thermal_version, null);
   assert(
     failed.sources.every(
       (s) => s.status === "error" && s.error === "source_http_302",
@@ -503,10 +501,10 @@ test("Suomi NPP is marked ended from NASA's cessation date and no longer read, w
   assert.equal(firmsSource.error, undefined);
   assert.match(firmsSource.attribution, /NOAA-20 and NOAA-21 VIIRS 375 m/);
   assert.doesNotMatch(firmsSource.attribution, /Suomi/);
-  assert.deepEqual(
-    catalog.features.map((f) => f.properties.sensor_id).filter(Boolean).sort(),
-    ["noaa-20-viirs", "noaa-21-viirs"],
-  );
+  // Tiles hold only the sensors still delivering.
+  const index = await getThermalIndex(fetcher, ended + 2 * 3600000);
+  assert.deepEqual(index.sensors, ["noaa-20-viirs", "noaa-21-viirs"]);
+  assert.equal(index.key.length, 2);
   const before = await getGeospatialCatalog(undefined, upstream({}), ended - 1);
   assert.equal(
     before.sources[1].sensors!.find((s) => s.id === "snpp-viirs")!.status,

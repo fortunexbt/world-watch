@@ -5,11 +5,21 @@ maplibregl.setWorkerUrl(mapWorkerUrl);
 import type {
   Map as GLMap,
   GeoJSONSource,
+  MapGeoJSONFeature,
+  PointLike,
   StyleSpecification,
+  VectorTileSource,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { PublicCamera } from "../shared/media";
-import type { GeoFeature } from "../shared/geospatial";
+import {
+  THERMAL_MAX_ZOOM,
+  THERMAL_POINT_ZOOM,
+  thermalDetection,
+  type GeoFeature,
+  type ThermalSensorId,
+} from "../shared/geospatial";
+import { pmtilesProtocol } from "./thermal-tiles";
 import type { IncidentView } from "../shared/contracts";
 import { footprintShape } from "../shared/footprint";
 import type { Situation } from "../shared/fusion";
@@ -31,6 +41,8 @@ import {
   markerScale,
   MMI_COLORS,
 } from "./hazards";
+if (__PUBLIC_DEMO__) maplibregl.addProtocol("pmtiles", pmtilesProtocol);
+const THERMAL_LAYERS = ["thermal-cells", "thermal-detections"];
 export const colors: Record<string, string> = {
   informational: "#73B6E6",
   minor: "#E4D06C",
@@ -131,6 +143,7 @@ export default function WorldMap({
   density = false,
   selectedCamera = null,
   geoFeatures = [],
+  thermalTiles = null,
   onGeo = () => {},
   newsSignals = [],
   selectedSignal = null,
@@ -149,7 +162,9 @@ export default function WorldMap({
   density?: boolean;
   selectedCamera?: string | null;
   geoFeatures?: GeoFeature[];
-  onGeo?: (id: string) => void;
+  /** Tile URL template of the thermal layer; null hides it. */
+  thermalTiles?: string | null;
+  onGeo?: (id: string, feature?: GeoFeature) => void;
   newsSignals?: NewsSignal[];
   selectedSignal?: string | null;
   onSignal?: (id: string) => void;
@@ -169,6 +184,9 @@ export default function WorldMap({
     geoSelect = useRef(onGeo);
   geoData.current = geoFeatures;
   geoSelect.current = onGeo;
+  const thermalData = useRef(thermalTiles),
+    thermalShown = useRef<string | null>(null);
+  thermalData.current = thermalTiles;
   const newsData = useRef(newsSignals),
     newsSelect = useRef(onSignal);
   newsData.current = newsSignals;
@@ -386,6 +404,68 @@ export default function WorldMap({
           !own.includes((l as { source?: string }).source ?? ""),
       );
     m.addLayer({ id: "imagery", type: "raster", source: "imagery" }, style[lastFill + 1]?.id);
+  };
+  // Tiles load only while a layer of their source is visible, so a hidden layer costs nothing.
+  const updateThermal = () => {
+    const m = map.current,
+      url = thermalData.current;
+    if (!m?.getLayer("clusters")) return;
+    const source = m.getSource("thermal") as VectorTileSource | undefined;
+    if (!source) {
+      if (!url) return;
+      m.addSource("thermal", {
+        type: "vector",
+        tiles: [url],
+        maxzoom: THERMAL_MAX_ZOOM,
+        attribution: "NASA FIRMS / EOSDIS",
+      });
+      m.addLayer(
+        {
+          id: "thermal-cells",
+          type: "circle",
+          source: "thermal",
+          "source-layer": "cells",
+          maxzoom: THERMAL_POINT_ZOOM,
+          paint: {
+            // Area grows with the cell's count: one detection 2 px, 400 or more 8 px.
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["sqrt", ["get", "n"]],
+              1,
+              2,
+              20,
+              8,
+            ],
+            "circle-color": "#D8B28E",
+            "circle-opacity": 0.45,
+            "circle-stroke-color": "#E2C19C",
+            "circle-stroke-width": 0.8,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "thermal-detections",
+          type: "circle",
+          source: "thermal",
+          "source-layer": "detections",
+          minzoom: THERMAL_POINT_ZOOM,
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 6],
+            "circle-color": "#D8B28E",
+            "circle-opacity": 0.32,
+            "circle-stroke-color": "#E2C19C",
+            "circle-stroke-width": 1.2,
+          },
+        },
+        "clusters",
+      );
+    } else if (url && thermalShown.current !== url) source.setTiles([url]);
+    if (url) thermalShown.current = url;
+    for (const id of THERMAL_LAYERS)
+      m.setLayoutProperty(id, "visibility", url ? "visible" : "none");
   };
   useEffect(() => {
     if (!host.current) return;
@@ -717,8 +797,7 @@ export default function WorldMap({
       m.addSource("geospatial-context", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
-        attribution:
-          "NASA FIRMS / EOSDIS; Copernicus Emergency Management Service / European Union",
+        attribution: "Copernicus Emergency Management Service / European Union",
       });
       m.addLayer(
         {
@@ -745,23 +824,6 @@ export default function WorldMap({
         },
         "clusters",
       );
-      m.addLayer(
-        {
-          id: "thermal-detections",
-          type: "circle",
-          source: "geospatial-context",
-          filter: ["==", ["get", "kind"], "thermal_detection"],
-          paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 3, 10, 6],
-            "circle-color": "#D8B28E",
-            "circle-opacity": 0.32,
-            "circle-stroke-color": "#E2C19C",
-            "circle-stroke-width": 1.2,
-          },
-        },
-        "clusters",
-      );
-      m.addLayer({id:"thermal-hit",type:"circle",source:"geospatial-context",filter:["==",["get","kind"],"thermal_detection"],paint:{"circle-radius":22,"circle-opacity":0}},"clusters");
       m.addLayer(
         {
           id: "report-heatmap",
@@ -923,6 +985,7 @@ export default function WorldMap({
       updateNews();
       updateContext();
       updateImagery();
+      updateThermal();
     };
     m.on("style.load", layers);
     m.on("load", () => {
@@ -1081,55 +1144,95 @@ export default function WorldMap({
       "camera-points",
       () => (m.getCanvas().style.cursor = ""),
     );
-    const contextClick = (event: maplibregl.MapMouseEvent) => {
-      const hits = m.queryRenderedFeatures(event.point);
-      if (
-        hits.some((f) =>
-          ["points", "clusters", "camera-points", "camera-clusters", "news-hit"].includes(
-            f.layer.id,
-          ),
-        )
-      )
-        return;
-      const feature = hits.find((f) =>
-        ["thermal-hit", "thermal-detections", "mapping-areas", "mapping-outlines"].includes(
-          f.layer.id,
-        ),
-      );
-      if (feature?.properties?.id) geoSelect.current(feature.properties.id);
-    };
     for (const layer of [
-      "thermal-hit",
-      "thermal-detections",
+      ...THERMAL_LAYERS,
       "mapping-areas",
       "mapping-outlines",
     ]) {
-      m.on("click", layer, contextClick);
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
-    const interactive = [
+    const markers = [
       "points",
       "clusters",
       "camera-points",
       "camera-clusters",
       "news-hit",
-      "thermal-hit",
-      "thermal-detections",
-      "mapping-areas",
-      "mapping-outlines",
     ];
+    // Thermal marks are a few pixels wide, so a click takes the nearest one within 12 px.
+    const nearestThermal = (e: maplibregl.MapMouseEvent) => {
+      if (!m.getLayer("thermal-cells")) return;
+      const box: [PointLike, PointLike] = [
+        [e.point.x - 12, e.point.y - 12],
+        [e.point.x + 12, e.point.y + 12],
+      ];
+      let best:
+        | { distance: number; feature: MapGeoJSONFeature; at: [number, number] }
+        | undefined;
+      for (const feature of m.queryRenderedFeatures(box, {
+        layers: THERMAL_LAYERS,
+      })) {
+        const g = feature.geometry as any;
+        for (const [lon, lat] of g.type === "Point"
+          ? [g.coordinates]
+          : g.coordinates) {
+          // The clicked world copy can be a whole turn from the tile's longitude.
+          const p = m.project([
+              lon + 360 * Math.round((e.lngLat.lng - lon) / 360),
+              lat,
+            ]),
+            distance = Math.hypot(p.x - e.point.x, p.y - e.point.y);
+          if (!best || distance < best.distance)
+            best = { distance, feature, at: [lon, lat] };
+        }
+      }
+      return best;
+    };
     // An issuer area selects its incident only where nothing more specific was hit.
     m.on("click", "footprint-fill", (e) => {
-      if (m.queryRenderedFeatures(e.point).some((f) => interactive.includes(f.layer.id)))
+      if (
+        nearestThermal(e) ||
+        m
+          .queryRenderedFeatures(e.point)
+          .some((f) =>
+            [...markers, "mapping-areas", "mapping-outlines"].includes(f.layer.id),
+          )
+      )
         return;
       const id = e.features?.[0]?.properties?.id;
       if (id) select.current(id);
     });
     m.on("click", (e) => {
       const fs = m.queryRenderedFeatures(e.point);
-      if (fs.some((f) => [...interactive, "footprint-fill"].includes(f.layer.id)))
+      if (fs.some((f) => markers.includes(f.layer.id)))
         return;
+      const thermal = nearestThermal(e);
+      if (thermal) {
+        const { feature, at } = thermal,
+          p = feature.properties;
+        if (feature.layer.id === "thermal-cells")
+          m.easeTo({ center: at, zoom: THERMAL_POINT_ZOOM });
+        else {
+          // Tile coordinates resolve to about 20 m at most, so four decimals claim no more.
+          const detection = thermalDetection(
+            p.sensor as ThermalSensorId,
+            p.at * 1000,
+            Math.round(at[0] * 1e4) / 1e4,
+            Math.round(at[1] * 1e4) / 1e4,
+            p.confidence,
+          );
+          geoSelect.current(detection.id, detection);
+        }
+        return;
+      }
+      const area = fs.find((f) =>
+        ["mapping-areas", "mapping-outlines"].includes(f.layer.id),
+      );
+      if (area?.properties?.id) {
+        geoSelect.current(area.properties.id);
+        return;
+      }
+      if (fs.some((f) => f.layer.id === "footprint-fill")) return;
       const f = fs.find(
         (f) => f.properties?.ADMIN || f.properties?.["name:en"],
       );
@@ -1153,6 +1256,7 @@ export default function WorldMap({
   useEffect(updateNews, [newsSignals, selectedSignal]);
   useEffect(updateContext, [geoFeatures]);
   useEffect(updateImagery, [imagery?.layer, imagery?.day]);
+  useEffect(updateThermal, [thermalTiles]);
   useEffect(() => {
     if (!follow || !pulse.length || document.hidden) return;
     const i = incidents.find((x) => x.id === pulse[0]);

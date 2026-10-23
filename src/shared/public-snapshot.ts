@@ -6,7 +6,8 @@ import type {
   LayerSourceHealth,
   ThermalSensorId,
 } from "./geospatial";
-export const MANIFEST = "manifest.json";
+export const MANIFEST = "manifest.json",
+  THERMAL_ARCHIVE = "thermal.pmtiles";
 /** The scheduled workflow rebuilds the snapshot every ten minutes, so no source is read more often. */
 export const SNAPSHOT_CADENCE_SECONDS = 600;
 /** Byte ceilings. A snapshot over any of them fails and the last published one stays live. */
@@ -15,6 +16,9 @@ export const PUBLIC_FILE_LIMITS = {
   "incidents.json": 4 * 1024 * 1024,
   "brief.json": 256 * 1024,
   "geospatial.json": 3 * 1024 * 1024,
+  // Every thermal detection: 4.6 MB for 218,308 real ones, about 21 bytes each, and the
+  // FIRMS byte caps admit about 860,000.
+  [THERMAL_ARCHIVE]: 24 * 1024 * 1024,
 } as const;
 /** Byte ceiling of each feed file and of the feed index. */
 export const FEED_FILE_LIMIT = 512 * 1024;

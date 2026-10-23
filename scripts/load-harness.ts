@@ -15,7 +15,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { gzipSync } from "node:zlib";
 import { getPlatformProxy } from "wrangler";
-import { CEMS_URL, FIRMS_SENSORS } from "../src/server/geospatial.js";
+import { CEMS_URL, FIRMS_SENSORS, getThermalIndex } from "../src/server/geospatial.js";
+import { occupiedTiles } from "../src/server/thermal-tiles.js";
 import {
   burst,
   COLLECTOR,
@@ -169,7 +170,8 @@ try {
       cpu = process.threadCpuUsage(),
       t = performance.now();
     const response = await server.fetch(request, isolate);
-    const text = await response.text();
+    const body = new Uint8Array(await response.arrayBuffer()),
+      text = new TextDecoder().decode(body);
     const ms = performance.now() - t,
       used = process.threadCpuUsage(cpu);
     if (!response.ok) throw Error(`${pathname}: ${response.status} ${text.slice(0, 200)}`);
@@ -181,7 +183,7 @@ try {
         rows_read: totals.read - before.read,
         rows_written: totals.written - before.written,
         queries: totals.queries - before.queries,
-        bytes: Buffer.byteLength(text),
+        bytes: body.length,
         load: load(),
       },
     };
@@ -307,6 +309,26 @@ try {
     }
   for (const [name, samples] of Object.entries(geoSamples))
     results[`geospatial ${name}, warm`] = summarise(samples);
+
+  // Thermal tiles: the first tile of a refresh also indexes every detection; each later tile is
+  // encoded on its first request and then answered from the isolate's copy.
+  log("thermal tiles");
+  const firstTile: Sample[] = [];
+  let version = "";
+  for (let run = 0; run < Math.min(settings.runs, 5); run++) {
+    globalThis.fetch = ((input: RequestInfo | URL) => upstream(input)) as typeof fetch;
+    version = JSON.parse((await call("/api/geospatial")).text).thermal_version;
+    firstTile.push((await call(`/api/thermal/${version}/0/0/0`)).sample);
+  }
+  results["thermal tile 0/0/0, first of a refresh"] = summarise(firstTile);
+  const tileSamples: Record<string, Sample[]> = {};
+  for (const [z, x, y] of occupiedTiles(await getThermalIndex(globalThis.fetch)))
+    for (const pass of ["encoded", "cached"]) {
+      const { sample } = await call(`/api/thermal/${version}/${z}/${x}/${y}`);
+      (tileSamples[`thermal tiles z${z}, ${pass}`] ??= []).push(sample);
+    }
+  for (const [name, samples] of Object.entries(tileSamples))
+    results[name] = { ...summarise(samples), bytes_total: samples.reduce((n, s) => n + s.bytes, 0) };
 
   // SSE: streams in this isolate share one outbox read per cursor; separate isolates do not.
   // With `follow`, each stream reads the compact detail of every incident event that does not

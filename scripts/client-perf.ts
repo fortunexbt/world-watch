@@ -13,7 +13,7 @@ import { createServer } from "node:http";
 import { loadavg, tmpdir } from "node:os";
 import path from "node:path";
 import { chromium, webkit, type Browser, type Page } from "@playwright/test";
-import { FIRMS_SENSORS, CEMS_URL, getGeospatialCatalog } from "../src/server/geospatial.js";
+import { FIRMS_SENSORS, CEMS_URL, getGeospatialCatalog, getThermalTile } from "../src/server/geospatial.js";
 import { burst, thermalFiles, views } from "./synthetic.js";
 
 const args = Object.fromEntries(
@@ -97,15 +97,14 @@ try {
   log("building synthetic data");
   const all = await views(Math.max(...markers), 7);
   const thermal = thermalFiles(200000, 7);
-  const catalog = JSON.stringify(
-    await getGeospatialCatalog(undefined, (async (input: RequestInfo | URL) => {
-      const url = String(input);
-      const k = FIRMS_SENSORS.findIndex((s) => s.url === url);
-      if (k >= 0) return new Response(thermal[k]);
-      if (url === CEMS_URL) return Response.json({ results: [] });
-      throw Error("blocked " + url);
-    }) as typeof fetch),
-  );
+  const firms = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const k = FIRMS_SENSORS.findIndex((s) => s.url === url);
+    if (k >= 0) return new Response(thermal[k]);
+    if (url === CEMS_URL) return Response.json({ results: [] });
+    throw Error("blocked " + url);
+  }) as typeof fetch;
+  const catalog = JSON.stringify(await getGeospatialCatalog(undefined, firms));
   const fresh = new Map<string, unknown>();
   const results: Record<string, unknown>[] = [];
   let open: Page | undefined;
@@ -122,6 +121,11 @@ try {
       if (u.pathname === "/api/snapshot") return route.fulfill({ contentType: "application/json", body: snapshot });
       if (u.pathname === "/api/brief") return route.fulfill({ json: { current: null, pending: false } });
       if (u.pathname === "/api/geospatial") return route.fulfill({ contentType: "application/json", body: catalog });
+      const tile = u.pathname.match(/^\/api\/thermal\/\w+\/(\d+)\/(\d+)\/(\d+)$/);
+      if (tile) {
+        const { tile: data } = await getThermalTile(+tile[1], +tile[2], +tile[3], firms);
+        return data ? route.fulfill({ contentType: "application/x-protobuf", body: Buffer.from(data) }) : route.fulfill({ status: 204 });
+      }
       if (u.pathname.startsWith("/api/incidents/")) {
         const id = decodeURIComponent(u.pathname.slice(15));
         const view = fresh.get(id) ?? byId.get(id);
@@ -237,7 +241,7 @@ try {
     await page.getByLabel("Satellite thermal detections").check();
     await geospatial;
     await page.waitForTimeout(1500);
-    await gesture("pan with 2000 thermal points", drag);
+    await gesture("pan with every thermal detection", drag);
 
     // An SSE burst of new incidents, each followed by its detail read as the client does, with
     // the feed showing and the pointer over the map, so the feed is live rather than buffered.

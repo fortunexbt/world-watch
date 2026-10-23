@@ -1,11 +1,21 @@
 import { validEventTime } from "../shared/contracts.js";
-import type {
-  Bbox,
-  GeoFeature,
-  GeospatialCatalog,
-  LayerSourceHealth,
-  ThermalSensorId,
+import {
+  firmsCredit,
+  NASA_LICENSE,
+  THERMAL_SENSORS,
+  VIIRS_CONFIDENCE,
+  type Bbox,
+  type GeoFeature,
+  type GeospatialCatalog,
+  type LayerSourceHealth,
+  type ThermalSensorId,
 } from "../shared/geospatial.js";
+import {
+  encodeThermalTile,
+  indexDetections,
+  type Detections,
+  type ThermalIndex,
+} from "./thermal-tiles.js";
 export type {
   Bbox,
   GeoFeature,
@@ -24,20 +34,17 @@ export const FIRMS_SENSORS: readonly {
 }[] = [
   {
     id: "noaa-20-viirs",
-    satellite: "N20",
-    label: "NOAA-20 VIIRS 375 m",
+    ...THERMAL_SENSORS["noaa-20-viirs"],
     url: `${FIRMS_DATA}/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv`,
   },
   {
     id: "noaa-21-viirs",
-    satellite: "N21",
-    label: "NOAA-21 VIIRS 375 m",
+    ...THERMAL_SENSORS["noaa-21-viirs"],
     url: `${FIRMS_DATA}/noaa-21-viirs-c2/csv/J2_VIIRS_C2_Global_24h.csv`,
   },
   {
     id: "snpp-viirs",
-    satellite: "N",
-    label: "Suomi NPP VIIRS 375 m",
+    ...THERMAL_SENSORS["snpp-viirs"],
     url: `${FIRMS_DATA}/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Global_24h.csv`,
     // FIRMS banner, read 23 October 2026: "Delivery of new Suomi NPP data ceases on Nov. 2, 2026." The linked
     // NASA Earthdata notice gives 13:00 UTC and says the date may change.
@@ -58,25 +65,13 @@ export const CEMS_URL = `${CEMS_API}/public-activations-info/?limit=${CEMS_LIST_
 export const WORLD: Bbox = [-180, -90, 180, 90];
 const USER_AGENT =
   "WorldWatch/1.0 (+https://github.com/fortunexbt/world-watch; public contextual data; attribution retained)";
-const NASA_LICENSE =
-  "https://www.earthdata.nasa.gov/engage/open-data-services-software/data-use-policy";
 const CEMS_LICENSE =
   "https://mapping.emergency.copernicus.eu/terms-and-conditions/";
-const firmsCredit = (instrument: string) =>
-  `NASA FIRMS / LANCE / EOSDIS, ${instrument} thermal anomalies; derived display, no NASA endorsement`;
 const CEMS_CREDIT =
   "Copernicus Emergency Management Service, On-Demand Mapping; © European Union; derived display";
-const VIIRS_CONFIDENCE = ["low", "nominal", "high"];
 // Measured 2026-10-21: each global VIIRS 24 h file was 8.3 to 9.8 MB.
 const FIRMS_BYTES = 24 * 1024 * 1024,
-  JSON_BYTES = 2 * 1024 * 1024,
-  THERMAL_LIMIT = 2000;
-type Detections = {
-  lon: Float64Array;
-  lat: Float64Array;
-  at: Float64Array;
-  confidence: Uint8Array;
-};
+  JSON_BYTES = 2 * 1024 * 1024;
 type Loaded = {
   checked_at: string;
   thermal: {
@@ -95,6 +90,15 @@ type Loaded = {
 const cache = new WeakMap<
   typeof fetch,
   { expires: number; value: Promise<Loaded> }
+>();
+/** Each refresh's tile index and the tiles encoded from it so far. */
+const tileSets = new WeakMap<
+  Loaded,
+  {
+    version: string;
+    index: ThermalIndex;
+    tiles: Map<string, Uint8Array<ArrayBuffer>>;
+  }
 >();
 const coordinate = (c: unknown): c is [number, number] =>
   Array.isArray(c) &&
@@ -544,108 +548,16 @@ function intersects(geometry: GeoFeature["geometry"], bbox: Bbox) {
     Math.max(...lats),
   );
 }
-function thermalFeature(
-  sensor: ThermalSensor,
-  data: Detections,
-  i: number,
-): GeoFeature {
-  const at = new Date(data.at[i]).toISOString().slice(0, 19) + "Z",
-    coordinates: [number, number] = [data.lon[i], data.lat[i]];
-  return {
-    id: `firms:${sensor.satellite}:VIIRS:${at}:${coordinates.join(":")}`,
-    layer: "thermal",
-    geometry: { type: "Point", coordinates },
-    name: "VIIRS thermal anomaly",
-    observed_at: at,
-    source_url: "https://firms.modaps.eosdis.nasa.gov/map/",
-    attribution: firmsCredit(sensor.label),
-    license_url: NASA_LICENSE,
-    properties: {
-      kind: "thermal_detection",
-      sensor: sensor.label,
-      sensor_id: sensor.id,
-      confidence: VIIRS_CONFIDENCE[data.confidence[i]],
-      uncertainty:
-        "Satellite thermal detection, not a confirmed wildfire or human incident. Pixel scale 375 m; other heat sources, cloud cover and observation delay apply. No crowd, injury, cause or evacuation inference.",
-    },
-  };
-}
-const GRID_COLUMNS = 48,
-  GRID_ROWS = 24;
-/**
- * Bbox filter first, then a spatially balanced THERMAL_LIMIT: the newest
- * detection in every occupied grid cell, then each cell's next newest, so the
- * latest satellite pass over one region cannot hide every other region.
- */
-function thermalFeatures(thermal: Loaded["thermal"], bbox: Bbox) {
-  const [west, south, east, north] = bbox,
-    width = east > west ? east - west : east - west + 360,
-    height = north - south,
-    cells = new Map<number, [number, number][]>(),
-    totals = thermal.map(() => 0);
-  thermal.forEach(({ data }, k) => {
-    if (!data) return;
-    for (let i = 0; i < data.at.length; i++) {
-      const lon = data.lon[i],
-        lat = data.lat[i];
-      if (!overlaps(bbox, lon, lat, lon, lat)) continue;
-      totals[k]++;
-      const x = Math.min(
-          GRID_COLUMNS - 1,
-          Math.floor(
-            (((((lon - west) % 360) + 360) % 360) / width) * GRID_COLUMNS,
-          ),
-        ),
-        y = Math.min(
-          GRID_ROWS - 1,
-          Math.max(0, Math.floor(((lat - south) / height) * GRID_ROWS)),
-        ),
-        key = y * GRID_COLUMNS + x;
-      const cell = cells.get(key);
-      if (cell) cell.push([k, i]);
-      else cells.set(key, [[k, i]]);
-    }
+/** Detections inside the bbox, per sensor. */
+const thermalCounts = (thermal: Loaded["thermal"], bbox: Bbox) =>
+  thermal.map(({ data }) => {
+    let n = 0;
+    if (data)
+      for (let i = 0; i < data.at.length; i++)
+        if (overlaps(bbox, data.lon[i], data.lat[i], data.lon[i], data.lat[i]))
+          n++;
+    return n;
   });
-  const at = ([k, i]: [number, number]) => thermal[k].data!.at[i];
-  const queues = [...cells.values()].map((cell) =>
-    cell.sort((a, b) => at(b) - at(a)),
-  );
-  const picked: [number, number][] = [];
-  for (let round = 0; picked.length < THERMAL_LIMIT; round++) {
-    let added = false;
-    for (const queue of queues)
-      if (round < queue.length && picked.length < THERMAL_LIMIT) {
-        picked.push(queue[round]);
-        added = true;
-      }
-    if (!added) break;
-  }
-  picked.sort((a, b) => at(b) - at(a));
-  const returned = thermal.map(() => 0);
-  const features = picked.map(([k, i]) => {
-    returned[k]++;
-    return thermalFeature(thermal[k].sensor, thermal[k].data!, i);
-  });
-  return {
-    features,
-    sensors: thermal.map(({ sensor, error, ended }, k) => ({
-      id: sensor.id,
-      label: sensor.label,
-      status: ended
-        ? ("ended" as const)
-        : error
-          ? ("error" as const)
-          : ("ok" as const),
-      features_count: returned[k],
-      total_available: totals[k],
-      source_url: sensor.url,
-      ...(error ? { error } : {}),
-      ...(ended
-        ? { ended_at: sensor.ended!.at, notice_url: sensor.ended!.notice_url }
-        : {}),
-    })),
-  };
-}
 export function parseBbox(value: string): Bbox | null {
   const parts = value.split(",");
   if (
@@ -663,20 +575,75 @@ export function parseBbox(value: string): Bbox | null {
     ? [west, south, east, north]
     : null;
 }
+function loaded(fetcher: typeof fetch, now = Date.now()) {
+  const hit = cache.get(fetcher);
+  if (hit && hit.expires > now) return hit.value;
+  const value = load(fetcher, now);
+  cache.set(fetcher, { expires: now + 600000, value });
+  return value;
+}
+const tileVersion = (checked_at: string) => Date.parse(checked_at).toString(36);
+async function tileSet(fetcher: typeof fetch, now: number) {
+  const current = await loaded(fetcher, now);
+  let set = tileSets.get(current);
+  if (!set) {
+    set = {
+      version: tileVersion(current.checked_at),
+      index: indexDetections(
+        current.thermal.flatMap(({ sensor, data }) =>
+          data ? [{ sensor: sensor.id, data }] : [],
+        ),
+      ),
+      tiles: new Map(),
+    };
+    tileSets.set(current, set);
+  }
+  return set;
+}
+/** Every detection of the current refresh, indexed for tiling. */
+export const getThermalIndex = async (
+  fetcher: typeof fetch = fetch,
+  now = Date.now(),
+) => (await tileSet(fetcher, now)).index;
+/** One tile of the current refresh, encoded once; null when it holds no detection. */
+export async function getThermalTile(
+  z: number,
+  x: number,
+  y: number,
+  fetcher: typeof fetch = fetch,
+  now = Date.now(),
+) {
+  const { version, index, tiles } = await tileSet(fetcher, now),
+    key = `${z}/${x}/${y}`;
+  // Only occupied tiles are kept, so the copy never outgrows the tile set.
+  const tile = tiles.get(key) ?? encodeThermalTile(index, z, x, y);
+  if (tile) tiles.set(key, tile);
+  return { version, tile };
+}
 export async function getGeospatialCatalog(
   bbox: Bbox = WORLD,
   fetcher: typeof fetch = fetch,
   now = Date.now(),
 ): Promise<GeospatialCatalog> {
-  const hit = cache.get(fetcher);
-  let loading = hit && hit.expires > now ? hit.value : undefined;
-  if (!loading) {
-    loading = load(fetcher, now);
-    cache.set(fetcher, { expires: now + 600000, value: loading });
-  }
-  const { checked_at, thermal, cems } = await loading;
+  const { checked_at, thermal, cems } = await loaded(fetcher, now);
   const mapping = cems.features.filter((f) => intersects(f.geometry, bbox)),
-    { features, sensors } = thermalFeatures(thermal, bbox);
+    counts = thermalCounts(thermal, bbox);
+  const sensors = thermal.map(({ sensor, error, ended }, k) => ({
+    id: sensor.id,
+    label: sensor.label,
+    status: ended
+      ? ("ended" as const)
+      : error
+        ? ("error" as const)
+        : ("ok" as const),
+    features_count: counts[k],
+    total_available: counts[k],
+    source_url: sensor.url,
+    ...(error ? { error } : {}),
+    ...(ended
+      ? { ended_at: sensor.ended!.at, notice_url: sensor.ended!.notice_url }
+      : {}),
+  }));
   const failed = sensors.find((s) => s.error),
     read = thermal.filter((t) => !t.ended).map((t) => t.sensor.label);
   const sources: LayerSourceHealth[] = [
@@ -700,9 +667,9 @@ export async function getGeospatialCatalog(
       status: sensors.some((s) => s.status === "ok") ? "ok" : "error",
       checked_at,
       cadence_seconds: 600,
-      features_count: features.length,
+      features_count: sensors.reduce((n, s) => n + s.features_count, 0),
       total_available: sensors.reduce((n, s) => n + s.total_available, 0),
-      truncated: sensors.some((s) => s.features_count < s.total_available),
+      truncated: false,
       source_url: "https://firms.modaps.eosdis.nasa.gov/active_fire/",
       attribution: firmsCredit(
         read.length > 1
@@ -714,5 +681,12 @@ export async function getGeospatialCatalog(
       sensors,
     },
   ];
-  return { bbox, features: [...mapping, ...features], sources };
+  return {
+    bbox,
+    features: mapping,
+    sources,
+    thermal_version: thermal.some((t) => t.data)
+      ? tileVersion(checked_at)
+      : null,
+  };
 }

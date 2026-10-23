@@ -28,6 +28,7 @@ import {
 } from "./geo";
 import { listView, textMatch, viewFilter } from "../shared/view";
 import { validFootprint } from "../shared/footprint";
+import { THERMAL_MAX_ZOOM } from "../shared/geospatial";
 import {
   alertDecision,
   alertMaterialityProjection,
@@ -1947,6 +1948,22 @@ async function routes(r: Request, e: Env) {
     const bbox = u.searchParams.has("bbox") ? geo.parseBbox(u.searchParams.get("bbox")!) : geo.WORLD;
     if (!bbox) return json({error:"invalid_bbox"},400);
     return json(await geo.getGeospatialCatalog(bbox));
+  }
+  const thermalTile = p.match(/^\/api\/thermal\/([0-9a-z]{1,16})\/(\d{1,2})\/(\d{1,6})\/(\d{1,6})$/);
+  if (r.method === "GET" && thermalTile) {
+    if (who !== "owner") return json({error:"forbidden"},who ? 403 : 401);
+    const [z, x, y] = thermalTile.slice(2).map(Number);
+    if (z > THERMAL_MAX_ZOOM || x >= 2 ** z || y >= 2 ** z) return json({error:"invalid_tile"},400);
+    const geo = await import("./geospatial");
+    const { version, tile } = await geo.getThermalTile(z, x, y);
+    // A version names one FIRMS refresh, so its tiles never change; an older version gets the current tiles uncached.
+    return new Response(tile, {
+      status: tile ? 200 : 204,
+      headers: {
+        "content-type": "application/x-protobuf",
+        "cache-control": version === thermalTile[1] ? "private, max-age=86400, immutable" : "no-store",
+      },
+    });
   }
   if (r.method === "GET" && (p === "/api/cameras" || p.startsWith("/api/cameras/"))) {
     if (who !== "owner") return json({error: "forbidden"}, who ? 403 : 401);

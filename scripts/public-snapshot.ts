@@ -8,7 +8,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { buildPublicSnapshot } from "../src/public/snapshot.js";
-import { MANIFEST, PUBLIC_FILE_LIMITS } from "../src/shared/public-snapshot.js";
+import {
+  MANIFEST,
+  PUBLIC_FILE_LIMITS,
+  THERMAL_ARCHIVE,
+} from "../src/shared/public-snapshot.js";
 
 const { values } = parseArgs({
   options: { out: { type: "string" }, previous: { type: "string" } },
@@ -17,18 +21,29 @@ if (!values.out)
   throw Error("usage: public-snapshot --out <dir> [--previous <url>]");
 const out = path.resolve(values.out);
 
-/** One published file, or nothing when it is missing, unreadable or over its ceiling. */
+/** One published file's bytes, or nothing when it is missing, unreadable or over its ceiling. */
 async function published(site: string, name: keyof typeof PUBLIC_FILE_LIMITS) {
   try {
     const r = await fetch(new URL("data/" + name, site), {
       signal: AbortSignal.timeout(15000),
     });
-    const text = r.ok ? await r.text() : "";
-    return text && Buffer.byteLength(text) <= PUBLIC_FILE_LIMITS[name]
-      ? JSON.parse(text)
+    const bytes = r.ok ? new Uint8Array(await r.arrayBuffer()) : undefined;
+    return bytes?.length && bytes.length <= PUBLIC_FILE_LIMITS[name]
+      ? bytes
       : undefined;
   } catch {
     // A first deployment or an unreachable site starts from the sources alone.
+    return undefined;
+  }
+}
+async function publishedJson(
+  site: string,
+  name: keyof typeof PUBLIC_FILE_LIMITS,
+) {
+  const bytes = await published(site, name);
+  try {
+    return bytes && JSON.parse(Buffer.from(bytes).toString("utf8"));
+  } catch {
     return undefined;
   }
 }
@@ -39,9 +54,10 @@ const snapshot = await buildPublicSnapshot({
     (await lookup(host, { all: true })).map((x) => x.address),
   previous: site
     ? {
-        manifest: await published(site, MANIFEST),
-        incidents: await published(site, "incidents.json"),
-        geospatial: await published(site, "geospatial.json"),
+        manifest: await publishedJson(site, MANIFEST),
+        incidents: await publishedJson(site, "incidents.json"),
+        geospatial: await publishedJson(site, "geospatial.json"),
+        thermal: await published(site, THERMAL_ARCHIVE),
       }
     : undefined,
 });

@@ -462,10 +462,8 @@ Object.assign(italian, {
     "Questo elemento è fuori dall’intervallo attuale della fonte o non è disponibile.",
   "thermal detections": "rilevamenti termici",
   "mapping areas": "aree di mappatura",
-  "Find mapping area or sensor": "Trova un’area di mappatura o un sensore",
-  "Place, activation code or sensor":
-    "Località, codice di attivazione o sensore",
-  "Thermal detection": "Rilevamento termico",
+  "Find mapping area": "Trova un’area di mappatura",
+  "Place or activation code": "Località o codice di attivazione",
   "Mapping area": "Area di mappatura",
   "Showing the first 30 results. Select a map marker or narrow the search.":
     "Sono mostrati i primi 30 risultati. Seleziona un punto sulla mappa o affina la ricerca.",
@@ -490,12 +488,11 @@ Object.assign(italian, {
   "Satellite thermal detections": "Rilevamenti termici satellitari",
   "Copernicus mapping areas": "Aree di mappatura Copernicus",
   "Explore geospatial context": "Esplora il contesto geospaziale",
-  "Showing {shown} of {total} in this view. Zoom in for complete coverage.":
-    "Mostrati {shown} su {total} in questa vista. Ingrandisci la mappa per una copertura completa.",
+  "All {total} detections in this view are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.":
+    "Tutti i {total} rilevamenti in questa vista sono sulla mappa. A scala ridotta ogni punto conta i rilevamenti vicini; ingrandisci per aprire i singoli rilevamenti.",
   "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.":
     "Mostrati {shown} su almeno {total} in questa vista. Alcuni dati della fonte non sono stati acquisiti in questo aggiornamento.",
-  "{shown} of {total} detections in this view":
-    "{shown} su {total} rilevamenti in questa vista",
+  "{total} detections in this view": "{total} rilevamenti in questa vista",
   "Sensor unavailable": "Sensore non disponibile",
 });
 Object.assign(italian, {
@@ -596,10 +593,9 @@ Object.assign(italian, {
   "Public snapshot": "Istantanea pubblica",
   Updated: "Aggiornata",
   "Snapshot generated": "Istantanea generata",
-  "Showing {shown} of {total} worldwide, spread across the map. The public demo doesn't add detections when you zoom in.":
-    "Mostrati {shown} su {total} nel mondo, distribuiti sulla mappa. La demo pubblica non aggiunge rilevamenti quando ingrandisci.",
-  "{shown} of {total} detections worldwide":
-    "{shown} su {total} rilevamenti nel mondo",
+  "All {total} detections worldwide are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.":
+    "Tutti i {total} rilevamenti nel mondo sono sulla mappa. A scala ridotta ogni punto conta i rilevamenti vicini; ingrandisci per aprire i singoli rilevamenti.",
+  "{total} detections worldwide": "{total} rilevamenti nel mondo",
   "This public snapshot is rebuilt from the sources below about every ten minutes. No model analysis runs in it.":
     "Questa istantanea pubblica viene ricostruita dalle fonti qui sotto circa ogni dieci minuti. Non contiene analisi di modelli.",
 });
