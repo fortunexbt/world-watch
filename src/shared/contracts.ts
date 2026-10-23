@@ -181,6 +181,12 @@ export type ModelRun = {
   duration_ms: number;
   usage: unknown;
   tool_attempts: number;
+  /** Configured provider id for chat-completions runs; absent for the Codex transport. */
+  provider?: string;
+  /** Base URL that served the run, without credentials. */
+  endpoint?: string;
+  /** Providers tried and left for this invocation, in order, before the one that served it. */
+  switches?: { provider: string; model: string; reason: string }[];
 };
 export type IncidentView = {
   id: string;

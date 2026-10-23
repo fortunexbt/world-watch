@@ -57,7 +57,21 @@ export type Env = {
   EUROPE_WATCH_COLLECTOR_TOKEN: string;
   PUBLIC_ORIGIN?: string;
   ANALYSIS_MODE?: string;
+  /** Comma-separated provider/model pairs whose chat-completions results the owner accepts. */
+  ACCEPTED_ANALYSIS_MODELS?: string;
 };
+/** Luna through Codex, or a chat-completions provider/model the owner listed explicitly. */
+export function acceptedModelRun(
+  run: any,
+  e: Pick<Env, "ACCEPTED_ANALYSIS_MODELS">,
+) {
+  if (!run || (run.tool_attempts ?? 1) !== 0) return false;
+  if (run.provider === undefined) return run.requested_model === "gpt-6-luna";
+  return (e.ACCEPTED_ANALYSIS_MODELS ?? "")
+    .split(",")
+    .map((pair) => pair.trim())
+    .includes(run.provider + "/" + run.requested_model);
+}
 let quotaPausedUntil = 0;
 const readMemo = new WeakMap<
   object,
@@ -1056,8 +1070,7 @@ async function complete(
       403,
     );
   }
-  if (run?.requested_model !== "gpt-6-luna" || (run.tool_attempts ?? 1) !== 0)
-    throw Error("invalid_model_run");
+  if (!acceptedModelRun(run, e)) throw Error("invalid_model_run");
   const time = now(),
     aid = await hash(`analysis:${job.id}`);
   const guard =
