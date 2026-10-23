@@ -167,38 +167,57 @@ export default function WorldMap({
   cameraData.current = cameras;
   cameraSelect.current = onCamera;
   densityEnabled.current = density;
-  const update = () => {
+  const selectedId = useRef(selected),
+    cameraId = useRef(selectedCamera),
+    signalId = useRef(selectedSignal);
+  selectedId.current = selected;
+  cameraId.current = selectedCamera;
+  signalId.current = selectedSignal;
+  // Each source goes to the map worker only when its own inputs change. Sending every source on
+  // any render re-clustered all incidents and re-tiled the thermal points on each pan and SSE event.
+  const updateIncidents = () => {
     const m = map.current;
     if (!m?.getSource("events")) return;
-    const features = data.current
-      .filter((i) => i.location)
-      .map((i) => ({
-        type: "Feature" as const,
-        id: i.id,
-        geometry: {
-          type: "Point" as const,
-          coordinates: [i.location!.lon, i.location!.lat],
-        },
-        properties: {
+    const collection = {
+      type: "FeatureCollection" as const,
+      features: data.current
+        .filter((i) => i.location)
+        .map((i) => ({
+          type: "Feature" as const,
           id: i.id,
-          impact: i.impact,
-          color: colors[i.impact],
-          rank: severity.indexOf(i.impact),
-          icon: markerIcon(i),
-          scale: markerScale(magnitude(i)),
-          selected: i.id === selected ? 1 : 0,
-          approx: i.location!.accuracy !== "point",
-        },
-      }));
-    (m.getSource("events") as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features,
-    });
-    (m.getSource("report-density") as GeoJSONSource | undefined)?.setData({
-      type: "FeatureCollection",
-      features,
-    });
-    (m.getSource("public-cameras") as GeoJSONSource | undefined)?.setData({
+          geometry: {
+            type: "Point" as const,
+            coordinates: [i.location!.lon, i.location!.lat],
+          },
+          properties: {
+            id: i.id,
+            impact: i.impact,
+            color: colors[i.impact],
+            rank: severity.indexOf(i.impact),
+            icon: markerIcon(i),
+            scale: markerScale(magnitude(i)),
+            selected: i.id === selectedId.current ? 1 : 0,
+            approx: i.location!.accuracy !== "point",
+          },
+        })),
+    };
+    (m.getSource("events") as GeoJSONSource).setData(collection);
+    // A hidden heatmap needs no data; turning density on sends the current set.
+    if (densityEnabled.current)
+      (m.getSource("report-density") as GeoJSONSource | undefined)?.setData(
+        collection,
+      );
+    if (m.getLayer("report-heatmap"))
+      m.setLayoutProperty(
+        "report-heatmap",
+        "visibility",
+        densityEnabled.current ? "visible" : "none",
+      );
+  };
+  const updateCameras = () => {
+    (
+      map.current?.getSource("public-cameras") as GeoJSONSource | undefined
+    )?.setData({
       type: "FeatureCollection",
       features: cameraData.current.map((c) => ({
         type: "Feature",
@@ -208,17 +227,15 @@ export default function WorldMap({
           id: c.id,
           name: c.name,
           video: !!c.video_url,
-          selected: c.id === selectedCamera,
+          selected: c.id === cameraId.current,
         },
       })),
     });
-    if (m.getLayer("report-heatmap"))
-      m.setLayoutProperty(
-        "report-heatmap",
-        "visibility",
-        densityEnabled.current ? "visible" : "none",
-      );
-    (m.getSource("news-signals") as GeoJSONSource | undefined)?.setData({
+  };
+  const updateNews = () => {
+    (
+      map.current?.getSource("news-signals") as GeoJSONSource | undefined
+    )?.setData({
       type: "FeatureCollection",
       features: newsData.current.map((s) => ({
         type: "Feature",
@@ -230,11 +247,15 @@ export default function WorldMap({
           // Breadth of coverage, not impact: the mark grows with distinct sources up to 20.
           scale: 0.75 + 0.5 * Math.min(1, s.sources_count / 20),
           rank: s.score,
-          selected: s.id === selectedSignal ? 1 : 0,
+          selected: s.id === signalId.current ? 1 : 0,
         },
       })),
     });
-    (m.getSource("geospatial-context") as GeoJSONSource | undefined)?.setData({
+  };
+  const updateContext = () => {
+    (
+      map.current?.getSource("geospatial-context") as GeoJSONSource | undefined
+    )?.setData({
       type: "FeatureCollection",
       features: geoData.current.map((f) => ({
         type: "Feature",
@@ -658,7 +679,10 @@ export default function WorldMap({
           "text-halo-width": 2,
         },
       });
-      update();
+      updateIncidents();
+      updateCameras();
+      updateNews();
+      updateContext();
     };
     m.on("style.load", layers);
     m.on("load", () => {
@@ -877,16 +901,10 @@ export default function WorldMap({
       m.remove();
     };
   }, []);
-  useEffect(update, [
-    incidents,
-    selected,
-    cameras,
-    density,
-    selectedCamera,
-    geoFeatures,
-    newsSignals,
-    selectedSignal,
-  ]);
+  useEffect(updateIncidents, [incidents, selected, density]);
+  useEffect(updateCameras, [cameras, selectedCamera]);
+  useEffect(updateNews, [newsSignals, selectedSignal]);
+  useEffect(updateContext, [geoFeatures]);
   useEffect(() => {
     if (!follow || !pulse.length || document.hidden) return;
     const i = incidents.find((x) => x.id === pulse[0]);

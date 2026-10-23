@@ -9,7 +9,7 @@ import { NEWS_COLOR, NewsCoverageNote, NewsGlyph, NewsSignalPanel, NewsSignalRow
 import type {PublicCameraCatalog} from "../shared/media";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
 import { independence, memberLinks, situations, type Situation } from "../shared/fusion";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   VolumeX,
@@ -669,19 +669,36 @@ export default function App() {
       active = false;
     };
   }, [selected, at, visible]);
-  const fused = situations(snapshot.incidents);
-  const incidents = fused.filter((i) =>
-    filter === "news" ? false : filter === "all" || filter === "demonstrations"
-      ? filter === "all" ||
-        i.activity.includes("demonstration") ||
-        i.activity === "gathering"
-      : filter === "disruptions"
-        ? ["disruption", "strike", "connectivity_disruption"].includes(
-            i.activity,
-          )
-        : filter === "hazards"
-          ? isHazard(i.activity)
-          : ["severe", "critical"].includes(i.impact),
+  // Stable between unrelated renders, so the map re-sends a source only when its own data changes.
+  const fused = useMemo(() => situations(snapshot.incidents), [snapshot.incidents]);
+  const incidents = useMemo(
+    () =>
+      fused.filter((i) =>
+        filter === "news" ? false : filter === "all" || filter === "demonstrations"
+          ? filter === "all" ||
+            i.activity.includes("demonstration") ||
+            i.activity === "gathering"
+          : filter === "disruptions"
+            ? ["disruption", "strike", "connectivity_disruption"].includes(
+                i.activity,
+              )
+            : filter === "hazards"
+              ? isHazard(i.activity)
+              : ["severe", "critical"].includes(i.impact),
+      ),
+    [fused, filter],
+  );
+  const geoFeatures = useMemo(
+    () => (geoCatalog?.features ?? []).filter((f) => geoLayers.includes(f.layer)),
+    [geoCatalog, geoLayers],
+  );
+  const cameras = useMemo(
+    () => (showCameras ? (cameraCatalog?.cameras ?? []) : []),
+    [showCameras, cameraCatalog],
+  );
+  const newsSignals = useMemo(
+    () => (newsActive ? (news?.signals ?? []) : []),
+    [newsActive, news],
   );
   const incident = fused.find(
     (i) => i.id === selected || i.members?.some((m) => m.id === selected),
@@ -827,13 +844,13 @@ export default function App() {
         }}
         follow={follow}
         pulse={pulse}
-        geoFeatures={(geoCatalog?.features??[]).filter(f=>geoLayers.includes(f.layer))}
+        geoFeatures={geoFeatures}
         onGeo={id=>{setSelected(null);setSelectedCamera(null);setSelectedGeo(id);setSurface("geospatial");}}
-        cameras={showCameras ? cameraCatalog?.cameras ?? [] : []}
+        cameras={cameras}
         density={density}
         selectedCamera={selectedCamera}
         onCamera={id=>{setSelected(null);setSelectedCamera(id);setSurface("media");}}
-        newsSignals={newsActive ? news?.signals ?? [] : []}
+        newsSignals={newsSignals}
         selectedSignal={selectedSignal}
         onSignal={selectSignal}
       />
