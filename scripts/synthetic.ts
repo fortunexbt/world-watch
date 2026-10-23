@@ -274,13 +274,24 @@ export async function seedStore(db: DatabaseSync, options: SeedOptions) {
   const currentGdacs = new Set(
     events.filter((e) => e.v === 1 && kinds[e.n] === "gdacs").slice(-60).map((e) => e.n),
   );
+  // The search index is rebuilt once at the end, as its migration builds it, rather than
+  // maintained per ingest; the triggers are restored exactly as the migrations wrote them.
+  const triggers = db
+    .prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name LIKE 'incidents_search_%'")
+    .all() as { name: string; sql: string }[];
+  for (const t of triggers) db.exec(`DROP TRIGGER ${t.name}`);
   const env_ = env(sqliteD1(db));
-  let clock = start;
+  const week = end - 7 * 86400000;
+  let clock = start,
+    stale = 0;
   await atClock(
     () => clock,
     async () => {
       for (let k = 0; k < events.length; k++) {
         const e = events[k];
+        // The outbox stamps rows with the database clock, so its seven-day cut is found by id.
+        if (e.t >= week && !stale)
+          stale = Number((db.prepare("SELECT coalesce(max(id),0) AS id FROM outbox").get() as any).id);
         clock = e.t;
         await ingest(env_, [
           observation(kinds[e.n], e.n, e.v, e.t, e.lon, e.lat, r, currentGdacs.has(e.n)),
@@ -289,8 +300,11 @@ export async function seedStore(db: DatabaseSync, options: SeedOptions) {
       }
     },
   );
+  db.exec("DELETE FROM incidents_fts");
+  db.exec("INSERT INTO incidents_fts(incident_id,search_text) SELECT id,view FROM incidents WHERE deleted_at IS NULL");
+  for (const t of triggers) db.exec(t.sql);
   // The scheduled handler keeps seven days of outbox.
-  db.prepare("DELETE FROM outbox WHERE created_at<?").run(iso(end - 7 * 86400000));
+  db.prepare("DELETE FROM outbox WHERE id<=?").run(stale);
   const count = (sql: string) => Number((db.prepare(sql).get() as any).n);
   return {
     incidents: count("SELECT count(*) AS n FROM incidents"),

@@ -71,17 +71,22 @@ await writeFile(configPath, JSON.stringify(config));
 let proxy: Awaited<ReturnType<typeof getPlatformProxy>> | undefined;
 try {
   if (args.store) cpSync(args.store, state, { recursive: true });
+  // On a reused store this applies only the migrations it lacks, timed as a deployment would run them.
+  const migrating = performance.now();
   execFileSync(
     path.join(root, "node_modules/.bin/wrangler"),
     ["d1", "migrations", "apply", "europe-watch", "--local", "--persist-to", state, "--config", configPath],
     { cwd: temp, stdio: "ignore", env: { ...process.env, CI: "1" } },
   );
+  const migrateSeconds = Math.round(performance.now() - migrating) / 1000;
   const dir = path.join(state, "v3/d1/miniflare-D1DatabaseObject");
   const file = path.join(dir, readdirSync(dir).find((f) => /^[0-9a-f]{64}\.sqlite$/.test(f))!);
   let seeded: unknown = null;
   if (!args.store) {
     log(`seeding ${settings.incidents} incidents`);
     const db = new DatabaseSync(file);
+    // A throwaway store needs no fsync per ingest batch.
+    db.exec("PRAGMA synchronous=OFF");
     const started = performance.now();
     seeded = {
       ...(await seedStore(db, {
@@ -225,12 +230,19 @@ try {
   log("snapshot viewports");
   await call(snapshotPath("hours=168"));
   const viewportSamples: Record<string, Sample[]> = {};
+  const failures: Record<string, string[]> = {};
   const lastRun = new Map<string, number>();
   for (let run = 0; run < settings.runs; run++)
     for (const [name, q] of Object.entries(viewports)) {
       await sleep(Math.max(0, 1100 - (performance.now() - (lastRun.get(name) ?? 0))));
-      const { text, sample } = await call(snapshotPath(q));
+      // A failed read is a result: count it and keep measuring the other viewports.
+      const outcome = await call(snapshotPath(q)).catch((error) => {
+        (failures[name] ??= []).push(String(error).slice(0, 200));
+        return null;
+      });
       lastRun.set(name, performance.now());
+      if (!outcome) continue;
+      const { text, sample } = outcome;
       const body = JSON.parse(text);
       (viewportSamples[name] ??= []).push({
         ...sample,
@@ -239,8 +251,11 @@ try {
         limited: body.limited ? 1 : 0,
       });
     }
-  for (const [name, samples] of Object.entries(viewportSamples))
-    results[`snapshot ${name}`] = summarise(samples);
+  for (const name of Object.keys(viewports))
+    results[`snapshot ${name}`] = {
+      ...(viewportSamples[name] ? summarise(viewportSamples[name]) : { runs: 0 }),
+      failed: failures[name]?.length ?? 0,
+    };
 
   log("first snapshot in a new isolate");
   const first: Sample[] = [];
@@ -293,13 +308,16 @@ try {
     results[`geospatial ${name}, warm`] = summarise(samples);
 
   // SSE: streams in this isolate share one outbox read per cursor; separate isolates do not.
-  async function openStreams(count: number, cursor: number, shared: boolean) {
+  // With `follow`, each stream reads every new incident's compact detail, as the client does.
+  async function openStreams(count: number, cursor: number, shared: boolean, follow = false) {
     const received: Map<string, number>[] = [];
     const controllers: AbortController[] = [];
-    const done: Promise<void>[] = [];
+    const done: Promise<unknown>[] = [];
+    let details = 0;
     for (let k = 0; k < count; k++) {
       const controller = new AbortController(),
-        seen = new Map<string, number>();
+        seen = new Map<string, number>(),
+        scope = shared ? isolate : envFor(binding());
       controllers.push(controller);
       received.push(seen);
       const response = await server.fetch(
@@ -307,7 +325,7 @@ try {
           headers: { authorization: "Bearer " + OWNER },
           signal: controller.signal,
         }),
-        shared ? isolate : envFor(binding()),
+        scope,
       );
       const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
       done.push(
@@ -321,7 +339,21 @@ try {
                 buffer = buffer.slice(cut + 2);
                 const data = block.match(/^data: (.*)$/m)?.[1];
                 const id = data && JSON.parse(data).incident_id;
-                if (id && !seen.has(id)) seen.set(id, performance.now());
+                if (!id || seen.has(id)) continue;
+                seen.set(id, performance.now());
+                if (follow) {
+                  details++;
+                  done.push(
+                    server
+                      .fetch(
+                        new Request(`http://load.invalid/api/incidents/${encodeURIComponent(id)}?compact=1`, {
+                          headers: { authorization: "Bearer " + OWNER },
+                        }),
+                        scope,
+                      )
+                      .then((r) => r.text()),
+                  );
+                }
               }
             }
           } catch {}
@@ -330,6 +362,7 @@ try {
     }
     return {
       received,
+      details: () => details,
       close: async () => {
         controllers.forEach((c) => c.abort());
         await Promise.all(done);
@@ -339,6 +372,26 @@ try {
   const outboxHead = async () =>
     Number(((await d1.prepare("SELECT coalesce(max(id),0) AS id FROM outbox").first()) as any).id);
 
+  /** Issuer revisions of `count` stored structured records: a new message for the same event. */
+  const revise = async (count: number, run: number) =>
+    (
+      await d1
+        .prepare(
+          "SELECT r.input FROM observations o JOIN observation_revisions r ON r.report_id=o.id AND r.revision=o.latest_revision WHERE o.deleted_at IS NULL ORDER BY o.rowid DESC LIMIT ? OFFSET ?",
+        )
+        .bind(count, 500 + run * count)
+        .all()
+    ).results.map((row: any) => {
+      const { report_id, content_revision, contract_version, first_observed_at, ingested_at, ...input } = JSON.parse(row.input);
+      const record = { ...JSON.parse(input.excerpts[0].text), revised_in_burst: run };
+      return {
+        ...input,
+        native_id: `${input.native_id}.burst${run}`,
+        source_updated_at: new Date().toISOString(),
+        excerpts: [{ ...input.excerpts[0], text: JSON.stringify(record) }],
+      };
+    });
+
   log("ingest burst with live streams");
   const ingestSamples: Sample[] = [],
     projection: number[] = [],
@@ -347,7 +400,10 @@ try {
     fresh();
     const cursor = await outboxHead();
     const streams = await openStreams(settings.streams, cursor, true);
-    const records = burst(settings.burst, settings.seed * 100 + run);
+    // Two thirds new incidents, one third issuer revisions of stored ones, interleaved.
+    const revisions = await revise(Math.floor(settings.burst / 3), run);
+    const arrivals = burst(settings.burst - revisions.length, settings.seed * 100 + run);
+    const records = arrivals.flatMap((o, k) => (k % 2 && revisions.length ? [o, revisions.pop()!] : [o])).concat(revisions);
     const posted: { start: number; ids: string[] }[] = [];
     const before = { ...totals },
       cpu = process.threadCpuUsage(),
@@ -407,7 +463,7 @@ try {
   };
 
   log("SSE fan-out catch-up");
-  for (const shared of [true, false]) {
+  for (const [shared, follow] of [[true, false], [false, false], [false, true]]) {
     for (const count of [1, settings.streams]) {
       const samples: Sample[] = [];
       for (let run = 0; run < Math.min(settings.runs, 5); run++) {
@@ -417,7 +473,7 @@ try {
         const before = { ...totals },
           cpu = process.threadCpuUsage(),
           t = performance.now();
-        const streams = await openStreams(count, cursor, shared);
+        const streams = await openStreams(count, cursor, shared, follow);
         // One tick delivers up to 200 events per stream; wait for it, then for one idle tick.
         while (streams.received.some((s) => s.size === 0) && performance.now() - t < 10000)
           await sleep(5);
@@ -426,19 +482,23 @@ try {
         const used = process.threadCpuUsage(cpu);
         samples.push({
           streams: count,
-          events: 200,
+          outbox_rows: 200,
+          incident_events: streams.received[0].size,
+          detail_reads: streams.details(),
           cpu_ms: (used.user + used.system) / 1000,
-          cpu_us_per_event_per_stream: (used.user + used.system) / (200 * count),
+          cpu_us_per_incident_event_per_stream: (used.user + used.system) / (streams.received[0].size * count),
           rows_read: totals.read - before.read,
           queries: totals.queries - before.queries,
           load: load(),
         });
       }
-      results[`SSE catch-up of 200 events, ${count} stream${count > 1 ? "s" : ""}, ${shared ? "one isolate" : "isolate each"}`] = summarise(samples);
+      results[
+        `SSE catch-up of 200 outbox rows, ${count} stream${count > 1 ? "s" : ""}, ${shared ? "one isolate" : "isolate each"}${follow ? ", with client detail reads" : ""}`
+      ] = summarise(samples);
     }
   }
 
-  const report = { settings, seeded, store, node: process.version, results };
+  const report = { settings, seeded, store, migrate_seconds: migrateSeconds, node: process.version, failures, results };
   if (args.out) writeFileSync(args.out, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
 } finally {

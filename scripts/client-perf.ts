@@ -239,7 +239,11 @@ try {
     await page.waitForTimeout(1500);
     await gesture("pan with 2000 thermal points", drag);
 
-    // An SSE burst of new incidents, each followed by its detail read as the client does.
+    // An SSE burst of new incidents, each followed by its detail read as the client does, with
+    // the feed showing and the pointer over the map, so the feed is live rather than buffered.
+    await page.keyboard.press("Escape");
+    await page.locator(".feed-item").first().waitFor();
+    await page.mouse.move(1000, 420);
     await settle();
     const before = await counters(),
       mBefore = await metrics();
