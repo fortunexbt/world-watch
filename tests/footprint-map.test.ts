@@ -45,7 +45,7 @@ test(
         "--host",
         "127.0.0.1",
         "--port",
-        "5197",
+        "5202",
         "--strictPort",
       ],
       { stdio: "ignore" },
@@ -54,7 +54,7 @@ test(
     try {
       for (let n = 0; n < 100; n++) {
         try {
-          if ((await fetch("http://127.0.0.1:5197")).ok) break;
+          if ((await fetch("http://127.0.0.1:5202")).ok) break;
         } catch {}
         await new Promise((r) => setTimeout(r, 100));
       }
@@ -138,7 +138,7 @@ test(
         await page.addInitScript({ content: instrument });
         await page.route("**/*", async (route: any) => {
           const u = new URL(route.request().url());
-          if (u.origin !== "http://127.0.0.1:5197") return route.abort();
+          if (u.origin !== "http://127.0.0.1:5202") return route.abort();
           if (u.pathname === "/api/snapshot")
             return route.fulfill({
               json: {
@@ -157,7 +157,7 @@ test(
             return route.fulfill({ json: { current: null, pending: false } });
           return route.continue();
         });
-        await page.goto("http://127.0.0.1:5197");
+        await page.goto("http://127.0.0.1:5202");
         await page
           .getByRole("heading", { name: "Fixture warning", exact: true })
           .waitFor();
