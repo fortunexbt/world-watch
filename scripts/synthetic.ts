@@ -282,16 +282,16 @@ export async function seedStore(db: DatabaseSync, options: SeedOptions) {
   for (const t of triggers) db.exec(`DROP TRIGGER ${t.name}`);
   const env_ = env(sqliteD1(db));
   const week = end - 7 * 86400000;
+  const outboxHead = () => Number((db.prepare("SELECT coalesce(max(id),0) AS id FROM outbox").get() as any).id);
   let clock = start,
-    stale = 0;
+    stale: number | undefined;
   await atClock(
     () => clock,
     async () => {
       for (let k = 0; k < events.length; k++) {
         const e = events[k];
         // The outbox stamps rows with the database clock, so its seven-day cut is found by id.
-        if (e.t >= week && !stale)
-          stale = Number((db.prepare("SELECT coalesce(max(id),0) AS id FROM outbox").get() as any).id);
+        if (e.t >= week && stale === undefined) stale = outboxHead();
         clock = e.t;
         await ingest(env_, [
           observation(kinds[e.n], e.n, e.v, e.t, e.lon, e.lat, r, currentGdacs.has(e.n)),
@@ -304,7 +304,7 @@ export async function seedStore(db: DatabaseSync, options: SeedOptions) {
   db.exec("INSERT INTO incidents_fts(incident_id,search_text) SELECT id,view FROM incidents WHERE deleted_at IS NULL");
   for (const t of triggers) db.exec(t.sql);
   // The scheduled handler keeps seven days of outbox.
-  db.prepare("DELETE FROM outbox WHERE id<=?").run(stale);
+  db.prepare("DELETE FROM outbox WHERE id<=?").run(stale ?? outboxHead());
   const count = (sql: string) => Number((db.prepare(sql).get() as any).n);
   return {
     incidents: count("SELECT count(*) AS n FROM incidents"),
