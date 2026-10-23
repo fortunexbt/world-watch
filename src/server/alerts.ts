@@ -374,3 +374,45 @@ export function alertDecision(
     material_version: materialVersion,
   };
 }
+
+/** Reason prefix of a notice withheld because a same-event partner already gave it. */
+export const SAME_SITUATION = "same_situation_notified";
+
+/**
+ * One occurrence notifies a rule once. A record that has never notified this rule itself, whose
+ * same-event partner has, is covered by the partner's notice. It still notifies when it escalates
+ * past the severity the partner notified, or when its own material version has changed since it
+ * was last covered. Corrections are untouched: they follow each record's own prior notices.
+ */
+export function situationDecision<D extends { state: string; reason: string; material_version?: string }>(
+  decision: D,
+  incident: IncidentView,
+  last: AlertDeliverySnapshot | null,
+  partner: (AlertDeliverySnapshot & { incident_id: string }) | null,
+  covered: AlertDeliverySnapshot | null,
+): D | { state: string; reason: string } {
+  if (
+    decision.state !== "eligible_ui" ||
+    !partner ||
+    (last && (last.state === undefined || last.state === "eligible_ui"))
+  )
+    return decision;
+  if (covered?.material_version && covered.material_version !== decision.material_version)
+    return {
+      ...decision,
+      reason: `material change since covered by linked incident ${partner.incident_id}; ${decision.reason}`,
+    };
+  if (
+    !covered &&
+    (impactRank[incident.impact] ?? -1) >
+      (impactRank[partner.material_projection?.severity.impact ?? ""] ?? -1)
+  )
+    return {
+      ...decision,
+      reason: `severity_escalation over linked incident ${partner.incident_id}; ${decision.reason}`,
+    };
+  return {
+    state: "suppressed",
+    reason: `${SAME_SITUATION}: linked incident ${partner.incident_id} already notified this rule`,
+  };
+}

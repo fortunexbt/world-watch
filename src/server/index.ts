@@ -27,6 +27,8 @@ import {
   alertDecision,
   alertMaterialityProjection,
   alertMaterialityVersion,
+  situationDecision,
+  SAME_SITUATION,
   type AlertRule,
   type AlertDeliverySnapshot,
 } from "./alerts";
@@ -206,12 +208,14 @@ function refreshRights(
 }
 // A material comparison must use the last notice eligible for this rule, not
 // an intervening revision whose delivery was suppressed. UI eligibility is not
-// evidence of delivery through an external notification channel.
+// evidence of delivery through an external notification channel. `covered`
+// reads instead the last notice withheld because a same-event partner gave it.
 async function lastAlertDelivery(
   e: Env,
   incidentId: string,
   ruleId: string,
   rule: AlertRule,
+  covered = false,
 ): Promise<AlertDeliverySnapshot | null> {
   const last = await stmt(
     e,
@@ -220,7 +224,7 @@ async function lastAlertDelivery(
      FROM alert_deliveries d
      LEFT JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version
      LEFT JOIN incidents i ON i.id=d.incident_id AND i.version=d.incident_version AND i.deleted_at IS NULL
-     WHERE d.incident_id=? AND d.rule_id=? AND d.state='eligible_ui'
+     WHERE d.incident_id=? AND d.rule_id=? AND ${covered ? `d.state='suppressed' AND d.reason LIKE '${SAME_SITUATION}%'` : "d.state='eligible_ui'"}
      ORDER BY d.incident_version DESC,d.rule_version DESC LIMIT 1`,
     incidentId,
     ruleId,
@@ -256,18 +260,38 @@ async function correctionAlerts(
   acceptance?: { sql: string; values: unknown[] },
 ): Promise<Stmt[]> {
   const result: Stmt[] = [];
+  const partners = (view.links ?? [])
+    .filter((l) => l.type === "same_event")
+    .map((l) => l.incident_id);
   for (const rule of await rows(
     e,
     "SELECT r.*,a.geometry FROM alert_rules r LEFT JOIN watch_areas a ON a.id=json_extract(r.rule,'$.watch_area_id') WHERE r.owner_id='owner'",
   )) {
     const policy = parse(rule.rule) as AlertRule;
     const last = await lastAlertDelivery(e, view.id, rule.id, policy);
-    const decision = alertDecision(
+    let decision = alertDecision(
       view,
       policy,
       rule.geometry ? parse(rule.geometry) : null,
       last,
     );
+    // Only a first notice of a linked record can repeat its situation, so only then read the partners' notices.
+    if (decision.state === "eligible_ui" && !last && partners.length) {
+      let partner: (AlertDeliverySnapshot & { incident_id: string }) | null = null;
+      for (const id of partners) {
+        const notice = await lastAlertDelivery(e, id, rule.id, policy);
+        if (notice && (!partner || notice.created_at! > partner.created_at!))
+          partner = { ...notice, incident_id: id };
+      }
+      if (partner)
+        decision = situationDecision(
+          decision,
+          view,
+          last,
+          partner,
+          await lastAlertDelivery(e, view.id, rule.id, policy, true),
+        );
+    }
     result.push(
       stmt(
         e,
@@ -720,10 +744,8 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           );
         }
       }
-      if (previous?.view)
-        statements.push(
-          ...(await correctionAlerts(e, view)),
-        );
+      // Every published revision meets the watch rules, including the first.
+      statements.push(...(await correctionAlerts(e, view)));
       const origin = await hash(item.canonical_url);
       statements.push(
         stmt(
