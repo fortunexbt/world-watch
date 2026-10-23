@@ -341,3 +341,47 @@ Live headline triage of four synthetic English and Spanish headlines took 161 s 
 No Luna evaluation results are recorded in the repository, so there is no direct comparison; the README records only zero tool attempts on the malicious-input fixture, which this run also met. The evaluation's per-fixture checks previously looked results up by report id in a map keyed by analysis key, so they always reported missing values; they are now keyed correctly.
 
 Verdict: on this tiny set, Qwen3 14B is adequate for relevance and coarse location triage and inadequate for correction relationships, claim separation, grounded impact phrases and ambiguity review. Eight fixtures are not an accuracy measure. Do not add a local model to `ACCEPTED_ANALYSIS_MODELS` for publication until a labelled corpus (TODO L01) shows acceptable per-category error rates; use it for triage and queue ordering in the meantime.
+
+## Headline triage
+
+Lean triage (`src/worker/triage.ts`) and its prefilters (`src/worker/prefilter.ts`) were measured on 2026-10-23 with `src/worker/triage-eval.ts` against `tests/fixtures/triage-headlines.json`: 67 labelled synthetic headlines in 13 languages (44 relevant: protests, strikes, conflict, disasters, displacement, disruption and warnings; 23 not: routine politics and business, opinion, anniversaries, and sport, entertainment and market headlines that use words such as strike, storm, fire or explode), plus 34 syndicated copies of them with outlet suffixes, capitals and small edits, 101 records in all. The headlines were written for this evaluation and are not real reports, so the prefilter rates below describe this sample, not a live GDELT feed.
+
+Command: `EW_ANALYSIS_BACKEND=chat npx tsx src/worker/triage-eval.ts <batch size> work/worker/evaluation-8-local-llama-server-Qwen3-14B-Q4_K_M.json`.
+
+Prefilter, before any model call:
+
+| Step              | Removed   | Notes                                                                             |
+| ----------------- | --------- | --------------------------------------------------------------------------------- |
+| Exact duplicates  | 32 of 101 | All suffix, capitalisation and punctuation copies                                 |
+| Near duplicates   | 2         | Small wording edits; the 5.2 and 6.1 Hokkaido earthquakes stayed separate         |
+| Noise             | 4         | Sport, album, trailer and share-price headlines; no relevant headline was removed |
+| Sent to the model | 63        |                                                                                   |
+
+Language identification named 67 of 101 records (script, distinctive letters, function words) and left 34 as `und`, mostly short English headlines without function words; `und` only means the model gets no language hint.
+
+Model triage with `Qwen3-14B-Q4_K_M` on `llama-server`, final code, load averages 17 to 45 on 10 cores:
+
+| Batch size | Calls | Prompt tokens | Output tokens per headline | Model headlines per minute | All records per minute |
+| ---------- | ----- | ------------- | -------------------------- | -------------------------- | ---------------------- |
+| 10         | 7     | 5,496         | 33.0                       | 13.6                       | 21.9                   |
+| 25         | 3     | 3,298         | 44.0                       | 10.5                       | 16.9                   |
+| 50         | 2     | 2,752         | 32.9                       | 14.6                       | 23.4                   |
+
+Locally, generation dominates, so batch size changes throughput little; larger batches cut prompt tokens per headline from 87 to 44, which matters under hosted TPM limits. The batch of 25 produced longer output for the same items; the cause was not investigated. Earlier runs of the same prompt at load averages of 74 to 193 gave 6.2 to 14.4 model headlines per minute. Full extraction of the eight fixtures cost 277 output tokens per report, so lean triage spends about one eighth of the output tokens per item.
+
+Accuracy, identical at every batch size:
+
+| Measure                                                                   | Result                                                                                                                                 |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Relevance on the 67 unique headlines                                      | precision 1.00, recall 1.00 (44 true positives, 23 true negatives, 0 errors, 0 rejected)                                               |
+| Relevance on all 101 records, duplicates resolved to their representative | precision 1.00, recall 1.00                                                                                                            |
+| Category within the labelled set                                          | 37 to 40 of 44                                                                                                                         |
+| Labelled country among the places                                         | 40 to 44 of 44                                                                                                                         |
+| Places found in the headline text                                         | 39 of 44 at batch 25 and 50; the rest were translations (Kharkiv, Brussels, Germany) kept as ungrounded and flagged for review         |
+| The eight extraction fixtures, read as headlines                          | relevance 8/8 against expectations and 8/8 against the full extraction run; category matched full extraction for 5 of 7 relevant items |
+
+The category errors are systematic: present-tense marches ("Thousands march in Nairobi", "se manifiestan", "protestują") were labelled `planned_demonstration` rather than `ongoing_demonstration`, and the Gujarat chemical plant explosion became `disruption`. The category is a ranking hint, so these do not affect what reaches full extraction. The fixture disagreements were the Seville closure (`disruption` in triage, `displacement` in full extraction, where triage is the better reading) and the Warsaw injuries (`confrontation` against `reported_violence`). This set is small and written by the same author as the prompt, so it shows the pipeline works, not that relevance is perfect on real news; real GDELT samples with independent labels are the next measurement.
+
+An earlier version rejected an irrelevant item that carried places, and dropped places whose names were not in the headline. One irrelevant item and one fixture were rejected, and translated or non-Latin place names vanished. Irrelevant items now simply lose their places, and ungrounded places stay with `grounded: false` and a review flag.
+
+A faster mixture-of-experts model was tried: the official `Qwen/Qwen3-30B-A3B-GGUF` file `Qwen3-30B-A3B-Q4_K_M.gguf` (18.6 GB, SHA-256 `0d003f66…aa8f5` matching the repository's LFS record), downloaded for this measurement because its 3B active parameters should generate several times faster than the 14B dense model. On this 24 GiB machine alongside the other agents' workloads it did not fit: free memory fell to 2 to 7 percent, swap use reached 9.7 GB, generation ran at 0.9 tokens per second, and the first batch of 10 timed out after 15 minutes. The run was stopped. It needs a machine with more memory or one without concurrent work; the weights stay in the Hugging Face cache (`hf cache delete` removes them).
