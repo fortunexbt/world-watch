@@ -1,5 +1,6 @@
 import { IDMC_UKRAINE_URL } from "./adapters/idmc.js";
 import { DEMOS_QUERY_URL, DEMOS_READ_QUERY } from "./adapters/demos.js";
+import { EASA_CZIB_TEXT_URL } from "./adapters/easa.js";
 import type { LagSample } from "../shared/coverage.js";
 /** Only registry-approved HTTPS origins may be contacted. Never accept source URLs from reports. */
 export const APPROVED_HOSTS = new Set([
@@ -26,6 +27,8 @@ export const APPROVED_HOSTS = new Set([
   "api.weather.gov",
   "api.weather.gc.ca",
   "api.adsb.lol",
+  "aviationweather.gov",
+  "www.easa.europa.eu",
   "stat.ripe.net",
   "data.gdeltproject.org",
 ]);
@@ -219,9 +222,12 @@ export async function fetchSource(
             "/dataset/52880c3a-715d-4e01-b75a-1fc3f64babf6/resource/ee65f9fe-f1c7-4466-9f83-620b50eccdc6/download/ukr_idmc_idu_events.csv") ||
           idmcFilestore(target)) &&
         /^text\/csv\b/i.test(mime);
+      const easaCsv =
+        target.href === EASA_CZIB_TEXT_URL && /^text\/csv\b/i.test(mime);
       if (
         !options.binary &&
         !licensedIdmcCsv &&
+        !easaCsv &&
         !(gdelt && /^text\/plain\b/i.test(mime)) &&
         !/(?:xml|json|protobuf)/i.test(mime) &&
         !(options.allowHTML && /^text\/html\b/i.test(mime))

@@ -71,11 +71,17 @@ export const CARRY_FORWARD_SECONDS = 3600;
 /** The rule the API applies to every incident it shows: each report's source permits access, storage and display. */
 export const publicDisplay = (rights: SourceRecord["rights"]) =>
   rights.access && rights.storage && rights.display;
-/** Structured hazard sources publish without a model; narrative sources need analysis the demo doesn't run. */
+/**
+ * Structured hazard and aviation advisory sources publish without a model; narrative sources need
+ * analysis the demo doesn't run. A source with a permission still pending stays out.
+ */
 export const PUBLIC_SOURCES = configuredRegistry().filter(
   (s) =>
     s.status === "enabled" &&
-    s.config.operational_role === "structured_natural_hazard" &&
+    ["structured_natural_hazard", "structured_aviation_advisory"].includes(
+      String(s.config.operational_role),
+    ) &&
+    !s.config.unresolved_permission &&
     publicDisplay(s.rights),
 );
 

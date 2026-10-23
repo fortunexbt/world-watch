@@ -220,6 +220,8 @@ export const italian: Record<string, string> = {
   drought: "siccità",
   severe_weather: "maltempo intenso",
   aviation_emergency: "codice di emergenza aereo",
+  volcanic_ash: "cenere vulcanica",
+  conflict_zone_advisory: "avviso di zona di conflitto",
   connectivity_disruption: "calo della connettività Internet",
   worldwide: "tutto il mondo",
   unverified: "non verificato",

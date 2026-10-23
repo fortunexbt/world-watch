@@ -33,6 +33,17 @@ import {
   SQUAWK,
   ADSBLOL_SQUAWK_URL,
 } from "../src/collector/adapters/adsblol.js";
+import {
+  parseAwcSigmets,
+  AWC_LIMIT,
+  AWC_SIGMET_URL,
+} from "../src/collector/adapters/awc.js";
+import {
+  parseEasaCzibs,
+  EASA_CZIB_URL,
+  EASA_CZIB_TEXT_URL,
+} from "../src/collector/adapters/easa.js";
+import { csv } from "../src/collector/csv.js";
 import { polygonArea } from "../src/collector/adapters/area.js";
 import {
   parseRipestatRouting,
@@ -43,6 +54,8 @@ import {
 } from "../src/collector/adapters/ripestat.js";
 import { checkedURL } from "../src/collector/fetch.js";
 import { countryAt } from "../src/shared/borders.js";
+import { incidentInWindow } from "../src/shared/temporal.js";
+import { PUBLIC_SOURCES } from "../src/public/snapshot.js";
 import { collectSources } from "../src/collector/index.js";
 import {
   configuredRegistry,
@@ -2010,6 +2023,340 @@ test("a routing drop publishes live without analysis, ends at the measured recov
       { reason: "measured drop no longer found open" },
     );
     assert.deepEqual(checkpoint.routing.ongoing, []);
+  } finally {
+    s.db.close();
+  }
+});
+
+// The real AWC answer for ash SIGMETs valid at 2026-09-28T00:00Z, reduced to the three entries
+// issued by the NWS Alaska Aviation Weather Unit (PAWU): KILO 3's observed and forecast clouds and
+// KILO 2's forecast cloud. The other fifteen came from foreign watch offices, whose SIGMETs this
+// public repository does not republish.
+const awc = JSON.parse(readFileSync("tests/fixtures/awc-sigmets.json", "utf8"));
+const awcSource = sourceRegistry.find(
+  (s) => s.id === "global-awc-volcanic-ash-sigmets",
+)!;
+// EASA's JSON and CSV exports of the bulletin list, both fetched on 2026-10-23 and kept whole.
+const czibList = JSON.parse(
+  readFileSync("tests/fixtures/easa-czibs.json", "utf8"),
+);
+const czibText = readFileSync("tests/fixtures/easa-czibs.csv", "utf8");
+const easaSource = sourceRegistry.find(
+  (s) => s.id === "global-easa-conflict-zone-bulletins",
+)!;
+const km = (a: { lon: number; lat: number }, lon: number, lat: number) =>
+  111.32 *
+  Math.hypot(
+    ((((lon - a.lon) % 360) + 540) % 360 - 180) *
+      Math.cos((a.lat * Math.PI) / 180),
+    lat - a.lat,
+  );
+
+test("AWC ash SIGMETs are one record per SIGMET with both clouds, the issuer's validity, levels and text unchanged", () => {
+  const rows = parseAwcSigmets(awcSource, awc);
+  assert.deepEqual(
+    rows.map((r) => r.native_id),
+    ["PAWU-KILO2-20260927T1812", "PAWU-KILO3-20260927T2145"],
+  );
+  const kilo3 = byId(rows, "PAWU-KILO3-20260927T2145");
+  const fields = record(kilo3);
+  assert.equal(kilo3.source_event_id, kilo3.native_id);
+  assert.equal(
+    kilo3.title,
+    "Volcanic ash SIGMET KILO 3 from PAWU: SHEVELUCH, PAZA ANCHORAGE",
+  );
+  // AWC lists the observed and forecast clouds of KILO 3 as two entries with one message.
+  assert.deepEqual(fields.parts, ["FCST", "OBS"]);
+  assert.equal(fields.sigmet, awc[2].rawSigmet);
+  assert.equal(fields.volcano, "SHEVELUCH");
+  assert.equal(fields.public_domain, true);
+  assert.equal(fields.levels, "SFC/FL380");
+  assert.equal(fields.top_feet, 38000);
+  assert.equal(fields.issued, "2026-09-27T21:45:00.000Z");
+  assert.equal(kilo3.published_at, "2026-09-27T21:45:40.126Z");
+  assert.equal(kilo3.official?.effective_at, "2026-09-27T21:45:00.000Z");
+  assert.equal(kilo3.official?.expires_at, "2026-09-28T03:45:00.000Z");
+  assert.equal(kilo3.official?.activity, "volcanic_ash");
+  assert.equal(kilo3.official?.impact, "minor");
+  assert.equal(kilo3.official?.cancelled, undefined);
+  assert.equal(kilo3.official?.self_reported, undefined);
+  // AWC writes the forecast cloud east of 180° as longitudes up to 187°; the area spans both clouds.
+  const g = kilo3.source_geo!;
+  assert.equal(g.accuracy, "area");
+  assert(Math.abs(g.lon) <= 180);
+  for (const part of awc.slice(1))
+    for (const p of part.coords)
+      assert(km(g, p.lon, p.lat) <= g.radius_km! + 0.01);
+  assert.match(fields.notice, /cancelled early stays until its stated end/);
+  // A record ends at its stated time, so it leaves the live window then.
+  const view = {
+    event_start: kilo3.official!.effective_at,
+    published_at: kilo3.published_at,
+    expires_at: kilo3.official!.expires_at,
+  };
+  assert(incidentInWindow(view, 1, Date.parse("2026-09-28T03:44:00Z")));
+  assert(!incidentInWindow(view, 1, Date.parse("2026-09-28T03:46:00Z")));
+});
+
+test("AWC entries that are not ash, lack an area or arrive in a truncated or invalid list never become guessed SIGMETs", () => {
+  const variants = structuredClone(awc);
+  variants[0].hazard = "TS";
+  variants[1].geom = "LINE";
+  delete variants[2].base;
+  delete variants[2].top;
+  const rows = parseAwcSigmets(awcSource, variants);
+  // KILO 2 is a thunderstorm now, and KILO 3 keeps the cloud that still has an area.
+  assert.deepEqual(rows.map((r) => r.native_id), ["PAWU-KILO3-20260927T2145"]);
+  assert.deepEqual(record(rows[0]).parts, ["OBS"]);
+  assert.equal(record(rows[0]).levels, null);
+  // Tokyo names a volcano with its caldera in brackets.
+  const named = structuredClone(awc);
+  for (const part of named)
+    part.rawSigmet = part.rawSigmet.replace("MT SHEVELUCH", "MT SAKURAJIMA (AIRA CALDERA)");
+  assert.equal(
+    record(byId(parseAwcSigmets(awcSource, named), "PAWU-KILO3-20260927T2145")).volcano,
+    "SAKURAJIMA (AIRA CALDERA)",
+  );
+  assert.throws(
+    () => parseAwcSigmets(awcSource, Array(AWC_LIMIT).fill(awc[0])),
+    /awc_sigmet_list_truncated/,
+  );
+  assert.throws(
+    () => parseAwcSigmets(awcSource, { features: [] }),
+    /invalid_awc_response/,
+  );
+});
+
+test("AWC is read through one approved query, an empty list is a clean read and foreign SIGMETs stay out of public output", async () => {
+  assert.equal(checkedURL(AWC_SIGMET_URL).hostname, "aviationweather.gov");
+  assert.equal(awcSource.rights.display, true);
+  assert.equal(awcSource.rights.redistribute, false);
+  assert.equal(awcSource.rights.ai, false);
+  assert.equal(awcSource.config.operational_role, "structured_aviation_advisory");
+  assert.match(String(awcSource.config.unresolved_permission), /third-party information/);
+  assert(!PUBLIC_SOURCES.some((s) => s.id === awcSource.id));
+  for (const [body, received] of [
+    [Response.json(awc), 2],
+    [new Response(null, { status: 204 }), 0],
+  ] as const) {
+    const requested: string[] = [];
+    const accepted: ObservationInput[] = [];
+    const results = await collectSources(
+      {
+        EW_API_URL: "https://isolated.invalid",
+        EW_COLLECTOR_TOKEN: "isolated-fixture",
+      },
+      {
+        sources: [awcSource],
+        register: async () => {},
+        checkpoint: async () => ({}),
+        recordHealth: async () => {},
+        ingest: async (rows) => {
+          accepted.push(...rows);
+        },
+        fetch: async (url) => {
+          requested.push(String(url));
+          return body.clone();
+        },
+        maxRequests: 40,
+        now: () => Date.parse("2026-09-28T00:00:00Z"),
+      },
+    );
+    // Each SIGMET states its own end, so nothing is reconciled.
+    assert.deepEqual(requested, [AWC_SIGMET_URL]);
+    assert.deepEqual(
+      results.map((r) => [r.source_id, r.status, r.received]),
+      [[awcSource.id, "ok", received]],
+    );
+    assert(
+      accepted.every(
+        (x) => x.eligibility?.reason === "structured_aviation_advisory_record",
+      ),
+    );
+  }
+});
+
+test("EASA bulletins join both exports, keep EASA's text unchanged and map affected countries as labelled areas", () => {
+  const rows = parseEasaCzibs(easaSource, czibList, czibText);
+  assert.equal(rows.length, 34);
+  assert.equal(rows.filter((r) => !r.official?.cancelled).length, 16);
+  const saudi = byId(rows, "144230");
+  const fields = record(saudi);
+  const [header, ...csvRows] = csv(czibText);
+  const original = Object.fromEntries(
+    header.map((h, i) => [h, csvRows.find((r) => r[1] === "CZIB-2026-09-R1")![i]]),
+  );
+  assert.equal(saudi.source_event_id, "144230");
+  assert.equal(saudi.canonical_url, "https://www.easa.europa.eu/en/node/144230");
+  assert.equal(
+    saudi.title,
+    "EASA conflict zone bulletin CZIB-2026-09-R1: Airspace of Saudi Arabia",
+  );
+  assert.equal(fields.description, original.Description.trim());
+  assert.equal(fields.recommendations, original["Recommendation(s)"].trim());
+  assert.equal(fields.affected_airspace, original["Affected Airspace"].trim());
+  assert.equal(fields.status, "Active");
+  assert.equal(fields.issued, "2026-09-30");
+  assert.equal(fields.valid_until, "2026-11-16");
+  assert.deepEqual(fields.country_codes, ["SA"]);
+  // EASA's own times: the issue date at its site's offset, the page's last update and the stated validity date.
+  assert.equal(saudi.official?.effective_at, "2026-09-29T21:00:00.000Z");
+  assert.equal(saudi.published_at, "2026-10-09T11:14:44.000Z");
+  assert.equal(saudi.official?.expires_at, "2026-11-16T23:59:59Z");
+  assert.equal(saudi.official?.activity, "conflict_zone_advisory");
+  assert.equal(saudi.official?.impact, "significant");
+  assert.equal(saudi.official?.cancelled, false);
+  assert.equal(saudi.source_geo?.accuracy, "country");
+  assert.equal(saudi.source_geo?.country, "SA");
+  assert.equal(countryAt(saudi.source_geo!.lon, saudi.source_geo!.lat), "SA");
+  assert(rows.every((r) => r.official?.impact === "significant"));
+  // Five Gulf states are one area with no single country; Bahrain is too small for the map's borders.
+  const gulf = byId(rows, "143899");
+  assert.equal(gulf.source_geo?.accuracy, "area");
+  assert.equal(gulf.source_geo?.country, null);
+  assert.deepEqual(record(gulf).country_codes, ["BH", "KW", "QA", "OM", "AE"]);
+  assert(km(gulf.source_geo!, 50.58565, 26.22787) < gulf.source_geo!.radius_km!);
+  // A bulletin naming no affected country is kept without a map point.
+  const venezuela = byId(rows, "142977");
+  assert.equal(venezuela.source_geo, undefined);
+  assert.equal(venezuela.official?.cancelled, true);
+  assert.equal(byId(rows, "65355").official?.expires_at, null);
+});
+
+test("EASA exports that disagree or change shape fail visibly rather than publish a bulletin without its text", () => {
+  const missing = {
+    conflict_zones: czibList.conflict_zones.map((z: any, i: number) =>
+      i ? z : { ...z, name: "Airspace of Atlantis" },
+    ),
+  };
+  assert.throws(
+    () => parseEasaCzibs(easaSource, missing, czibText),
+    /easa_czib_exports_disagree/,
+  );
+  assert.throws(
+    () =>
+      parseEasaCzibs(
+        easaSource,
+        { conflict_zones: czibList.conflict_zones.slice(1) },
+        czibText,
+      ),
+    /easa_czib_exports_disagree/,
+  );
+  assert.throws(
+    () => parseEasaCzibs(easaSource, czibList, czibText.replace("Subject", "Title")),
+    /invalid_easa_czib_export/,
+  );
+  assert.throws(
+    () => parseEasaCzibs(easaSource, [], czibText),
+    /invalid_easa_czib_export/,
+  );
+});
+
+test("EASA collection reads the list and its CSV text from approved addresses and admits bulletins as aviation advisories", async () => {
+  assert.equal(easaSource.rights.redistribute, true);
+  assert.equal(easaSource.rights.ai, false);
+  assert.equal(easaSource.poll_seconds, 3600);
+  assert.match(easaSource.rights.attribution, /^Source: European Union Aviation Safety Agency/);
+  assert(PUBLIC_SOURCES.some((s) => s.id === easaSource.id));
+  const requested: string[] = [];
+  const accepted: ObservationInput[] = [];
+  const results = await collectSources(
+    {
+      EW_API_URL: "https://isolated.invalid",
+      EW_COLLECTOR_TOKEN: "isolated-fixture",
+    },
+    {
+      sources: [easaSource],
+      register: async () => {},
+      checkpoint: async () => ({}),
+      recordHealth: async () => {},
+      ingest: async (rows) => {
+        accepted.push(...rows);
+      },
+      fetch: async (url) => {
+        requested.push(String(url));
+        return String(url) === EASA_CZIB_TEXT_URL
+          ? new Response(czibText, {
+              headers: { "content-type": "text/csv; charset=UTF-8" },
+            })
+          : Response.json(czibList);
+      },
+      maxRequests: 40,
+      now: () => Date.parse("2026-10-23T11:20:00Z"),
+    },
+  );
+  assert.deepEqual(requested, [EASA_CZIB_URL, EASA_CZIB_TEXT_URL]);
+  assert.deepEqual(
+    results.map((r) => [r.source_id, r.status, r.received]),
+    [[easaSource.id, "ok", 34]],
+  );
+  assert(
+    accepted.every(
+      (x) => x.eligibility?.reason === "structured_aviation_advisory_record",
+    ),
+  );
+  // Only EASA's own CSV export is accepted as CSV.
+  await assert.rejects(
+    collectSources(
+      { EW_API_URL: "https://isolated.invalid", EW_COLLECTOR_TOKEN: "isolated-fixture" },
+      {
+        sources: [{ ...easaSource, url: EASA_CZIB_URL.replace("export-json", "other") }],
+        register: async () => {},
+        checkpoint: async () => ({}),
+        recordHealth: async () => {},
+        ingest: async () => {},
+        fetch: async () =>
+          new Response(czibText, { headers: { "content-type": "text/csv" } }),
+        maxRequests: 40,
+      },
+    ).then((r) => {
+      if (r[0].status === "error") throw Error(r[0].error);
+    }),
+    /unsupported_source_mime/,
+  );
+});
+
+test("EASA bulletins publish without analysis, and EASA withdrawing one revises the same incident as cancelled", async () => {
+  const s = fixtureServer();
+  try {
+    assert.equal(
+      (await s.api("/api/sources", { sources: [easaSource] }, "fixture-collector"))
+        .status,
+      200,
+    );
+    const rows = parseEasaCzibs(easaSource, czibList, czibText);
+    const ukraine = byId(rows, "136057");
+    assert.equal(
+      (await s.api("/api/ingest", { observations: [ukraine] }, "fixture-collector"))
+        .status,
+      200,
+    );
+    let [incident]: IncidentView[] = (await s.api("/api/snapshot")).body
+      .incidents;
+    assert.equal(incident.activity, "conflict_zone_advisory");
+    assert.equal(incident.impact, "significant");
+    assert.equal(incident.evidence_status, "official_advisory");
+    assert.equal(incident.location?.country, "UA");
+    assert.equal(incident.location?.accuracy, "country");
+    assert.equal(incident.cancelled, false);
+    assert.equal(incident.reports[0].rights.attribution, easaSource.rights.attribution);
+    const list = structuredClone(czibList);
+    list.conflict_zones.find((z: any) => z.Nid === "136057").updated =
+      '<time datetime="2026-10-30T10:00:00+02:00">2026-10-30T10:00:00+0200</time>\n';
+    const text = czibText.replace(
+      /(CZIB-2022-01R14,[^,]*,[^,]*,"[^"]*",)Active/,
+      "$1Withdrawn",
+    );
+    const withdrawn = byId(parseEasaCzibs(easaSource, list, text), "136057");
+    assert.equal(withdrawn.official?.cancelled, true);
+    assert.equal(
+      (await s.api("/api/ingest", { observations: [withdrawn] }, "fixture-collector"))
+        .status,
+      200,
+    );
+    [incident] = (await s.api("/api/snapshot")).body.incidents;
+    assert.equal(incident.cancelled, true);
+    assert.equal(incident.version, 2);
   } finally {
     s.db.close();
   }

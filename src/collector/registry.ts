@@ -13,6 +13,8 @@ import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "./adapters/nws.js";
 import { ECCC_ALERTS_URL } from "./adapters/eccc.js";
 import { ADSBLOL_SQUAWK_URL } from "./adapters/adsblol.js";
+import { AWC_SIGMET_URL } from "./adapters/awc.js";
+import { EASA_CZIB_URL } from "./adapters/easa.js";
 import { RIPESTAT_ROUTING_URL } from "./adapters/ripestat.js";
 import { GDELT_STREAMS } from "./adapters/gdelt.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
@@ -595,6 +597,63 @@ export const sourceRegistry: SourceRecord[] = [
         "ADSB.lol asks production users to contact it first and may require a feeder key; a public deployment waits for that.",
       coverage:
         "Aircraft that volunteer receivers hear squawking 7500, 7600 or 7700, one record per aircraft and code while ADSB.lol lists it. Receiver coverage is dense over Europe and North America and thin or absent over oceans, polar routes and much of Africa and Asia. Aircraft without a received position are kept for continuity but not mapped.",
+    },
+  },
+  {
+    ...base,
+    id: "global-awc-volcanic-ash-sigmets",
+    name: "AWC: volcanic ash SIGMETs worldwide",
+    owner:
+      "NOAA National Weather Service Aviation Weather Center, relaying the issuing meteorological watch offices",
+    url: AWC_SIGMET_URL,
+    docs: "https://aviationweather.gov/data/api/",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["aviation", "volcanic_ash"],
+    family: "rss",
+    verified_at: "2026-10-23T11:20:00Z",
+    rights: {
+      ...rights(
+        "NWS information is U.S. public domain and may be used for any lawful purpose, provided it is not claimed as one's own, does not imply NOAA/NWS endorsement and is not modified and then presented as official material; third-party information is used under licence by its provider, who must be asked about further use. https://www.weather.gov/disclaimer . SIGMETs from the NWS watch offices KKCI, PAWU and PHFO are NWS products. Most ash SIGMETs are issued by other states' meteorological watch offices and relayed by AWC as ICAO Annex 3 requires; no reuse grant covering them was found from AWC, ICAO or the WMO Unified Data Policy, so they are shown only in the signed-in view and are not redistributed. Data API: at most 100 requests a minute, a custom User-Agent, no CORS. https://aviationweather.gov/data/api/ . SIGMET text reproduced unchanged. Deterministic structured publication; no model analysis.",
+        "SIGMET issued by the meteorological watch office named in the record and relayed by the NOAA National Weather Service Aviation Weather Center. Text unchanged; impact labels and map areas are World Watch derivations, not NWS or issuer products.",
+        false,
+      ),
+      redistribute: false,
+    },
+    config: {
+      format: "awc_sigmet_json",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_aviation_advisory",
+      unresolved_permission:
+        "Ash SIGMETs from meteorological watch offices outside the United States are third-party information under the NWS disclaimer; public display waits for each issuing state's terms.",
+      coverage:
+        "Current volcanic ash SIGMETs from every meteorological watch office whose SIGMETs AWC decodes, one record per SIGMET with its observed and forecast clouds. Thunderstorm, turbulence, icing and tropical cyclone SIGMETs are not collected. Points are the centre of the warned areas with a radius to their farthest vertex. Early cancellations are not in the feed, so a cancelled SIGMET stays until its stated end.",
+    },
+  },
+  {
+    ...base,
+    id: "global-easa-conflict-zone-bulletins",
+    name: "EASA: Conflict Zone Information Bulletins",
+    owner: "European Union Aviation Safety Agency",
+    url: EASA_CZIB_URL,
+    docs: "https://www.easa.europa.eu/en/domains/air-operations/czibs",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["aviation", "conflict_zone_advisory"],
+    family: "rss",
+    poll_seconds: 3600,
+    verified_at: "2026-10-23T11:20:00Z",
+    rights: rights(
+      "Copyright European Union Aviation Safety Agency: reproduction is authorised, provided the source is acknowledged, save where otherwise stated; the CZIB pages state nothing otherwise. https://www.easa.europa.eu/en/copyright-disclaimer . Website material is not necessarily comprehensive, complete, accurate or up to date. Bulletin text reproduced unchanged. Deterministic structured publication; no model analysis.",
+      "Source: European Union Aviation Safety Agency (EASA), Conflict Zone Information Bulletins, https://www.easa.europa.eu/en/domains/air-operations/czibs . Text unchanged; impact labels and map areas are World Watch derivations, not EASA assessments.",
+      false,
+    ),
+    config: {
+      format: "easa_czib_json",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_aviation_advisory",
+      coverage:
+        "Every bulletin EASA lists, active or withdrawn, read hourly from its JSON and CSV exports. Areas are whole affected countries, never EASA's FIR portions or routes, which stay in the text. A bulletin whose affected country is not stated, or not recognised, is kept but not mapped.",
     },
   },
   {

@@ -1,0 +1,147 @@
+[
+  {
+    "icaoId": "PAWU",
+    "firId": "PAZA",
+    "firName": "PAZA PETROPAVLOVSK KAMCHATSKY",
+    "receiptTime": "2026-09-27T18:12:26.565Z",
+    "issueTime": "2026-09-27T18:12:00.000Z",
+    "validTime": 1790532720,
+    "validTimeFrom": 1790532720,
+    "validTimeTo": 1790554320,
+    "sigmetType": "FCST",
+    "seriesId": "KILO 2F",
+    "hazard": "VA",
+    "qualifier": "ERUPTION MT SHEVELUCH",
+    "base": 0,
+    "top": 38000,
+    "geom": "AREA",
+    "coords": [
+      {
+        "lon": 172.833,
+        "lat": 58.3
+      },
+      {
+        "lon": 176.4,
+        "lat": 60.583
+      },
+      {
+        "lon": 183.35,
+        "lat": 56
+      },
+      {
+        "lon": 181.933,
+        "lat": 55.717
+      },
+      {
+        "lon": 172.833,
+        "lat": 58.3
+      }
+    ],
+    "dir": "E",
+    "spd": "50",
+    "chng": "NC",
+    "rawSigmet": "WVAK03 PAWU 271812\nPAZA SIGMET KILO 2 VALID 271812/280012 PAWU-\nPAZA PETROPAVLOVSK KAMCHATSKY FIR \nVA ERUPTION MT SHEVELUCH PSN N5639 E161021\nVA CLD OBS AT 1812Z WI N5941 E16614 - N5841 E17307 - N5810 E17236 - \nN5718 E16431 - N5941 E16614 SFC/FL380 MOV E 50KT NC\nFCST AT 0012Z WI N5818 E17250 - N6035 E17624 - N5600 W17639 - N5543 \nW17804 - N5818 E17250 SFC/FL380=\nTS"
+  },
+  {
+    "icaoId": "PAWU",
+    "firId": "PAZA",
+    "firName": "PAZA ANCHORAGE",
+    "receiptTime": "2026-09-27T21:45:40.135Z",
+    "issueTime": "2026-09-27T21:45:00.000Z",
+    "validTime": 1790545500,
+    "validTimeFrom": 1790545500,
+    "validTimeTo": 1790567100,
+    "sigmetType": "FCST",
+    "seriesId": "KILO 3F",
+    "hazard": "VA",
+    "qualifier": "ERUPTION MT SHEVELUCH",
+    "base": 0,
+    "top": 38000,
+    "geom": "AREA",
+    "coords": [
+      {
+        "lon": 174.2,
+        "lat": 58.55
+      },
+      {
+        "lon": 177.417,
+        "lat": 59.367
+      },
+      {
+        "lon": 184.183,
+        "lat": 56.85
+      },
+      {
+        "lon": 187.05,
+        "lat": 53
+      },
+      {
+        "lon": 185.3,
+        "lat": 52.667
+      },
+      {
+        "lon": 183.05,
+        "lat": 55.883
+      },
+      {
+        "lon": 174.2,
+        "lat": 58.55
+      }
+    ],
+    "dir": "E",
+    "spd": "50",
+    "chng": "NC",
+    "rawSigmet": "WVAK03 PAWU 272145\nPAZA SIGMET KILO 3 VALID 272145/280345 PAWU-\nPAZA ANCHORAGE FIR \nVA ERUPTION MT SHEVELUCH PSN N5639 E161021\nVA CLD OBS AT 2145Z WI N5821 E16652 - N5853 E17458 - N5716 E17920 - \nN5652 E17850 - N5822 E17424 - N5738 E16623 - N5821 E16652 SFC/FL380 \nMOV E 50KT NC\nFCST AT 0345Z WI N5833 E17412 - N5922 E17725 - N5651 W17549 - N5300 \nW17257 - N5240 W17442 - N5553 W17657 - N5833 E17412 SFC/FL380=\nPD"
+  },
+  {
+    "icaoId": "PAWU",
+    "firId": "PAZA",
+    "firName": "PAZA ANCHORAGE",
+    "receiptTime": "2026-09-27T21:45:40.126Z",
+    "issueTime": "2026-09-27T21:45:00.000Z",
+    "validTime": 1790545500,
+    "validTimeFrom": 1790545500,
+    "validTimeTo": 1790554860,
+    "sigmetType": "OBS",
+    "seriesId": "KILO 3",
+    "hazard": "VA",
+    "qualifier": "ERUPTION MT SHEVELUCH",
+    "base": 0,
+    "top": 38000,
+    "geom": "AREA",
+    "coords": [
+      {
+        "lon": 166.867,
+        "lat": 58.35
+      },
+      {
+        "lon": 174.967,
+        "lat": 58.883
+      },
+      {
+        "lon": 179.333,
+        "lat": 57.267
+      },
+      {
+        "lon": 178.833,
+        "lat": 56.867
+      },
+      {
+        "lon": 174.4,
+        "lat": 58.367
+      },
+      {
+        "lon": 166.383,
+        "lat": 57.633
+      },
+      {
+        "lon": 166.867,
+        "lat": 58.35
+      }
+    ],
+    "dir": "E",
+    "spd": "50",
+    "chng": "NC",
+    "rawSigmet": "WVAK03 PAWU 272145\nPAZA SIGMET KILO 3 VALID 272145/280345 PAWU-\nPAZA ANCHORAGE FIR \nVA ERUPTION MT SHEVELUCH PSN N5639 E161021\nVA CLD OBS AT 2145Z WI N5821 E16652 - N5853 E17458 - N5716 E17920 - \nN5652 E17850 - N5822 E17424 - N5738 E16623 - N5821 E16652 SFC/FL380 \nMOV E 50KT NC\nFCST AT 0345Z WI N5833 E17412 - N5922 E17725 - N5651 W17549 - N5300 \nW17257 - N5240 W17442 - N5553 W17657 - N5833 E17412 SFC/FL380=\nPD"
+  }
+]

@@ -168,6 +168,42 @@ export function structuredBrief(
       });
       continue;
     }
+    // Ash SIGMETs are named by volcano, as the issuing offices write them, and conflict zone bulletins by country.
+    if (key === "volcanic_ash") {
+      const names: string[] = [
+          ...new Set(
+            incidents
+              .map((v) => issuer(v).volcano)
+              .filter((name) => typeof name === "string"),
+          ),
+        ].map((name) =>
+          name
+            .toLowerCase()
+            .replace(/(?<=^|[\s/(-])\S/g, (c: string) => c.toUpperCase()),
+        ),
+        near = list(
+          names.length > 3
+            ? [...names.slice(0, 2), `${names.length - 2} other volcanoes`]
+            : names,
+        ),
+        n = incidents.length;
+      statements.push({
+        text: `${n} volcanic ash ${n === 1 ? "SIGMET" : "SIGMETs"} for aircraft${near ? " near " + near : ""}.`,
+        incidents,
+      });
+      continue;
+    }
+    if (key === "conflict_zone_advisory") {
+      const where = countries(
+          incidents.flatMap((v) => issuer(v).country_codes ?? []),
+        ),
+        n = incidents.length;
+      statements.push({
+        text: `${n} EASA conflict zone ${n === 1 ? "bulletin" : "bulletins"} in force${where ? " for " + where : ""}.`,
+        incidents,
+      });
+      continue;
+    }
     // World Watch's own routing drop detections, named by the countries they cover.
     if (key === "connectivity_disruption") {
       const where = countries(incidents.map((v) => v.location?.country));

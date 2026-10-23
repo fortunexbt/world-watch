@@ -9,6 +9,8 @@ import { parseNws } from "../src/collector/adapters/nws.js";
 import { parseEccc } from "../src/collector/adapters/eccc.js";
 import { parseAdsbLol } from "../src/collector/adapters/adsblol.js";
 import { parseRipestatRouting } from "../src/collector/adapters/ripestat.js";
+import { parseAwcSigmets } from "../src/collector/adapters/awc.js";
+import { parseEasaCzibs } from "../src/collector/adapters/easa.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import server, { type Env } from "../src/server/index.js";
 import type { IncidentView } from "../src/shared/contracts.js";
@@ -224,6 +226,50 @@ test("ADSB.lol aircraft are counted per squawk code as unverified reports, the m
   assert.deepEqual(b.pins.map((p) => [p.impact, p.evidence_status]), [["significant", "unverified"]]);
   // An analysed unverified record is model output, never a structured one.
   assert.equal(structuredBrief(aircraft.map((v) => ({ ...v, analyzed_at: "2026-10-22T11:00:00Z" })), 168, clock), null);
+});
+
+test("ash SIGMETs are briefed by volcano and EASA bulletins by the countries they cover, withdrawn ones left out", () => {
+  const source = (id: string) => sourceRegistry.find((s) => s.id === id)!;
+  const published = (row: ReturnType<typeof parseAwcSigmets>[number]) =>
+    view(JSON.parse(row.excerpts[0].text), {
+      activity: row.official!.activity!,
+      impact: row.official!.impact!,
+      cancelled: row.official!.cancelled ?? false,
+      event_start: row.official!.effective_at,
+      expires_at: row.official!.expires_at,
+      location: row.source_geo ? { ...row.source_geo, country: row.source_geo.country ?? null, radius_km: row.source_geo.radius_km ?? 20 } : null,
+    });
+  const awc = JSON.parse(readFileSync("tests/fixtures/awc-sigmets.json", "utf8"));
+  const ash = parseAwcSigmets(source("global-awc-volcanic-ash-sigmets"), awc).map(published);
+  const at = Date.parse("2026-09-28T00:00:00Z");
+  assert.deepEqual(
+    structuredBrief(ash, 24, at)!.statements.map((s) => s.text),
+    ["2 volcanic ash SIGMETs for aircraft near Sheveluch."],
+  );
+  const renamed = structuredClone(awc);
+  renamed[0].rawSigmet = renamed[0].rawSigmet.replace("MT SHEVELUCH", "MT SAKURAJIMA (AIRA CALDERA)");
+  assert.deepEqual(
+    structuredBrief(parseAwcSigmets(source("global-awc-volcanic-ash-sigmets"), renamed).map(published), 24, at)!
+      .statements.map((s) => s.text),
+    // The newer SIGMET leads.
+    ["2 volcanic ash SIGMETs for aircraft near Sheveluch and Sakurajima (Aira Caldera)."],
+  );
+  // KILO 2 ends at 00:12 and KILO 3 at 03:45 on 28 September.
+  assert.deepEqual(
+    structuredBrief(ash, 24, Date.parse("2026-09-28T01:00:00Z"))!.statements.map((s) => s.text),
+    ["1 volcanic ash SIGMET for aircraft near Sheveluch."],
+  );
+  const czibs = parseEasaCzibs(
+    source("global-easa-conflict-zone-bulletins"),
+    JSON.parse(readFileSync("tests/fixtures/easa-czibs.json", "utf8")),
+    readFileSync("tests/fixtures/easa-czibs.csv", "utf8"),
+  ).map(published);
+  const b = structuredBrief(czibs, 168, Date.parse("2026-10-23T12:00:00Z"))!;
+  assert.deepEqual(b.statements.map((s) => s.text), [
+    "16 EASA conflict zone bulletins in force for Saudi Arabia, Jordan, Bahrain and 17 other countries.",
+  ]);
+  assert.equal(b.statements[0].incident_ids.length, 16);
+  assert(czibs.filter((v) => v.cancelled).every((v) => !b.statements[0].incident_ids.includes(v.id)));
 });
 
 test("routing drops are briefed as measured connectivity drops in their countries, and recovered ones drop out", () => {

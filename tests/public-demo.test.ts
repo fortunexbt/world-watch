@@ -25,6 +25,10 @@ import { EMSC_QUERY_URL } from "../src/collector/adapters/emsc.js";
 import { GDACS_EVENTS_URL } from "../src/collector/adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "../src/collector/adapters/nws.js";
 import { ECCC_ALERTS_URL } from "../src/collector/adapters/eccc.js";
+import {
+  EASA_CZIB_TEXT_URL,
+  EASA_CZIB_URL,
+} from "../src/collector/adapters/easa.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import {
   BRIEF_WINDOWS,
@@ -62,7 +66,11 @@ const feeds: Record<string, unknown> = {
   // CHAMPI-26's wind buffers from a later episode, served for the fixture's episode.
   "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001338&episodeid=29":
     JSON.parse(readFileSync("tests/fixtures/gdacs-geometry-tc.json", "utf8")),
+  [EASA_CZIB_URL]: JSON.parse(
+    readFileSync("tests/fixtures/easa-czibs.json", "utf8"),
+  ),
 };
+const czibText = readFileSync("tests/fixtures/easa-czibs.csv", "utf8");
 const emsc = JSON.parse(
   readFileSync("tests/fixtures/emsc-events.json", "utf8"),
 );
@@ -76,6 +84,8 @@ function upstream(requests: { url: string; method: string }[] = []) {
     requests.push({ url, method: init.method ?? "GET" });
     assert.equal(new Headers(init.headers).has("Authorization"), false);
     if (feeds[url]) return Response.json(feeds[url]);
+    if (url === EASA_CZIB_TEXT_URL)
+      return new Response(czibText, { headers: { "content-type": "text/csv" } });
     if (url.startsWith(EMSC_QUERY_URL + "?")) return Response.json(emsc);
     const sensor = FIRMS_SENSORS.find((s) => s.url === url);
     if (sensor) {
@@ -128,10 +138,12 @@ function upstream(requests: { url: string; method: string }[] = []) {
 // An allowlist by role: connectivity measurements (RIPEstat forbids redistribution and its logo
 // permission is pending), aviation signals (ADSB.lol asks production users to contact it first)
 // and GDELT news signals (publisher headlines, and no baseline in a stateless run) stay out of
-// the public demo even though the private app displays them.
-test("public sources are the enabled structured hazard feeds whose rights permit display", () => {
+// the public demo even though the private app displays them. AWC's ash SIGMETs share the aviation
+// advisory role with EASA but stay out while foreign issuers' terms are unresolved.
+test("public sources are the enabled structured hazard and aviation advisory feeds whose rights permit display", () => {
   assert.deepEqual(PUBLIC_SOURCES.map((s) => s.id).sort(), [
     "ca-eccc-warnings",
+    "global-easa-conflict-zone-bulletins",
     "global-emsc-earthquakes",
     "global-gdacs-alerts",
     "global-usgs-earthquakes",

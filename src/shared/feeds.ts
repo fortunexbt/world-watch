@@ -16,7 +16,7 @@ export const FEED_AREAS = [
   { name: "Southeast Asia", bbox: [92, -11, 141, 24] },
   { name: "Oceania and the Pacific", bbox: [110, -50, -130, 5] },
 ] as const;
-/** "all", or one of the hazard activities the public structured sources publish. */
+/** "all", or one of the hazard and aviation advisory activities the public structured sources publish. */
 export const FEED_ACTIVITIES = [
   "all",
   "earthquake",
@@ -26,6 +26,7 @@ export const FEED_ACTIVITIES = [
   "volcanic_eruption",
   "drought",
   "severe_weather",
+  "conflict_zone_advisory",
 ] as const;
 /** The lowest issuer impact a feed carries. "any" includes impact unknown, which most earthquakes are. */
 export const FEED_IMPACTS = {

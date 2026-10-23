@@ -1,7 +1,7 @@
 import type { IncidentView } from "../shared/contracts";
 import { MAGNITUDE_EXCERPTS } from "../shared/view";
 
-/** Activities under the Hazards filter, in legend order: natural hazards and aviation emergencies. */
+/** Activities under the Hazards filter, in legend order: natural hazards, then aviation emergencies and advisories. */
 export const HAZARDS = [
   "earthquake",
   "tropical_cyclone",
@@ -11,6 +11,8 @@ export const HAZARDS = [
   "drought",
   "severe_weather",
   "aviation_emergency",
+  "volcanic_ash",
+  "conflict_zone_advisory",
 ] as const;
 export type Hazard = (typeof HAZARDS)[number];
 export const isHazard = (activity: string): activity is Hazard =>
@@ -51,6 +53,12 @@ export const glyphs: Record<GlyphActivity, string> = {
   // Lucide "plane" (ISC), the icon set the interface already ships.
   aviation_emergency:
     "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z",
+  // An ash cloud with fallout, apart from the eruption cone and the storm cloud.
+  volcanic_ash:
+    "M7 14a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 5a4.5 4.5 0 0 1 .5 9zM8 18h.01M12 18h.01M16 18h.01M10 21.5h.01M14 21.5h.01",
+  // Lucide "shield-alert" (ISC).
+  conflict_zone_advisory:
+    "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1zM12 8v4M12 16h.01",
   connectivity_disruption:
     "M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0M12 20h.01M3 3l18 18",
 };

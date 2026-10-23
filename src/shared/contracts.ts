@@ -29,6 +29,8 @@ export const Activity = z.enum([
   "drought",
   "severe_weather",
   "aviation_emergency",
+  "volcanic_ash",
+  "conflict_zone_advisory",
   "connectivity_disruption",
   "other_unknown",
 ]);

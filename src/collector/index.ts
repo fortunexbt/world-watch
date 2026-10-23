@@ -32,6 +32,8 @@ import {
 } from "./adapters/gdacs.js";
 import { parseNws } from "./adapters/nws.js";
 import { parseEccc } from "./adapters/eccc.js";
+import { parseAwcSigmets } from "./adapters/awc.js";
+import { EASA_CZIB_TEXT_URL, parseEasaCzibs } from "./adapters/easa.js";
 import { parseAdsbLol } from "./adapters/adsblol.js";
 import {
   parseRipestatRouting,
@@ -248,8 +250,10 @@ export async function collectSources(
         ...options,
         fetch: fetcher,
         demosQuery: source.config.format === "demos_json",
-        // EMSC answers an empty query with 204 No Content.
-        allowNoContent: source.config.format === "emsc_json",
+        // EMSC and AWC answer an empty query with 204 No Content.
+        allowNoContent: ["emsc_json", "awc_sigmet_json"].includes(
+          String(source.config.format),
+        ),
         accept:
           typeof source.config.accept === "string"
             ? source.config.accept
@@ -333,6 +337,29 @@ export async function collectSources(
         case "eccc_geojson":
           observations = parseEccc(source, JSON.parse(response.text));
           break;
+        case "awc_sigmet_json":
+          observations = response.text
+            ? parseAwcSigmets(source, JSON.parse(response.text))
+            : [];
+          break;
+        case "easa_czib_json": {
+          // The list carries EASA's node IDs and times, the CSV export of the same list the bulletins' text.
+          const bulletins = await fetchSource(
+            EASA_CZIB_TEXT_URL,
+            {},
+            {
+              ...options,
+              fetch: fetcher,
+              maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+            },
+          );
+          observations = parseEasaCzibs(
+            source,
+            JSON.parse(response.text),
+            bulletins.text,
+          );
+          break;
+        }
         case "adsblol_squawks":
           observations = parseAdsbLol(
             source,
@@ -845,6 +872,10 @@ export function sourceEligibility(
     return observation.source_event_id
       ? keep("structured_natural_hazard_record")
       : exclude("missing_hazard_native_identity");
+  if (source.config.operational_role === "structured_aviation_advisory")
+    return observation.source_event_id
+      ? keep("structured_aviation_advisory_record")
+      : exclude("missing_advisory_native_identity");
   if (source.config.operational_role === "self_reported_aviation_signal")
     return observation.source_event_id
       ? keep("self_reported_transponder_emergency_code")
