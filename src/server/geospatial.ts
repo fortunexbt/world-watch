@@ -72,6 +72,8 @@ const CEMS_CREDIT =
 // Measured 2026-10-21: each global VIIRS 24 h file was 8.3 to 9.8 MB.
 const FIRMS_BYTES = 24 * 1024 * 1024,
   JSON_BYTES = 2 * 1024 * 1024;
+/** Names a refresh's tile set, so clients can cache its tiles for good. */
+const tileVersion = (checked_at: string) => Date.parse(checked_at).toString(36);
 type Loaded = {
   checked_at: string;
   thermal: {
@@ -86,19 +88,16 @@ type Loaded = {
     skipped_aois: number;
     error?: string;
   };
+  /** Every detection of this refresh, indexed for tiling, and the tiles encoded from it so far. */
+  tiles: {
+    version: string;
+    index: ThermalIndex;
+    encoded: Map<string, Uint8Array<ArrayBuffer>>;
+  };
 };
 const cache = new WeakMap<
   typeof fetch,
   { expires: number; value: Promise<Loaded> }
->();
-/** Each refresh's tile index and the tiles encoded from it so far. */
-const tileSets = new WeakMap<
-  Loaded,
-  {
-    version: string;
-    index: ThermalIndex;
-    tiles: Map<string, Uint8Array<ArrayBuffer>>;
-  }
 >();
 const coordinate = (c: unknown): c is [number, number] =>
   Array.isArray(c) &&
@@ -513,7 +512,19 @@ async function load(fetcher: typeof fetch, now: number): Promise<Loaded> {
     ),
     loadCems(fetcher, now),
   ]);
-  return { checked_at: new Date(now).toISOString(), thermal, cems };
+  const checked_at = new Date(now).toISOString();
+  // Indexed here, once per refresh, so no tile request pays for it.
+  const index = indexDetections(
+    thermal.flatMap(({ sensor, data }) =>
+      data ? [{ sensor: sensor.id, data }] : [],
+    ),
+  );
+  return {
+    checked_at,
+    thermal,
+    cems,
+    tiles: { version: tileVersion(checked_at), index, encoded: new Map() },
+  };
 }
 /** Extent overlap; a point is a zero-size extent. */
 function overlaps(
@@ -582,29 +593,11 @@ function loaded(fetcher: typeof fetch, now = Date.now()) {
   cache.set(fetcher, { expires: now + 600000, value });
   return value;
 }
-const tileVersion = (checked_at: string) => Date.parse(checked_at).toString(36);
-async function tileSet(fetcher: typeof fetch, now: number) {
-  const current = await loaded(fetcher, now);
-  let set = tileSets.get(current);
-  if (!set) {
-    set = {
-      version: tileVersion(current.checked_at),
-      index: indexDetections(
-        current.thermal.flatMap(({ sensor, data }) =>
-          data ? [{ sensor: sensor.id, data }] : [],
-        ),
-      ),
-      tiles: new Map(),
-    };
-    tileSets.set(current, set);
-  }
-  return set;
-}
 /** Every detection of the current refresh, indexed for tiling. */
 export const getThermalIndex = async (
   fetcher: typeof fetch = fetch,
   now = Date.now(),
-) => (await tileSet(fetcher, now)).index;
+) => (await loaded(fetcher, now)).tiles.index;
 /** One tile of the current refresh, encoded once; null when it holds no detection. */
 export async function getThermalTile(
   z: number,
@@ -613,11 +606,11 @@ export async function getThermalTile(
   fetcher: typeof fetch = fetch,
   now = Date.now(),
 ) {
-  const { version, index, tiles } = await tileSet(fetcher, now),
+  const { version, index, encoded } = (await loaded(fetcher, now)).tiles,
     key = `${z}/${x}/${y}`;
   // Only occupied tiles are kept, so the copy never outgrows the tile set.
-  const tile = tiles.get(key) ?? encodeThermalTile(index, z, x, y);
-  if (tile) tiles.set(key, tile);
+  const tile = encoded.get(key) ?? encodeThermalTile(index, z, x, y);
+  if (tile) encoded.set(key, tile);
   return { version, tile };
 }
 export async function getGeospatialCatalog(
@@ -625,7 +618,7 @@ export async function getGeospatialCatalog(
   fetcher: typeof fetch = fetch,
   now = Date.now(),
 ): Promise<GeospatialCatalog> {
-  const { checked_at, thermal, cems } = await loaded(fetcher, now);
+  const { checked_at, thermal, cems, tiles } = await loaded(fetcher, now);
   const mapping = cems.features.filter((f) => intersects(f.geometry, bbox)),
     counts = thermalCounts(thermal, bbox);
   const sensors = thermal.map(({ sensor, error, ended }, k) => ({
@@ -685,8 +678,6 @@ export async function getGeospatialCatalog(
     bbox,
     features: mapping,
     sources,
-    thermal_version: thermal.some((t) => t.data)
-      ? tileVersion(checked_at)
-      : null,
+    thermal_version: thermal.some((t) => t.data) ? tiles.version : null,
   };
 }

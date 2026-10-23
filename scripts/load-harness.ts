@@ -310,8 +310,8 @@ try {
   for (const [name, samples] of Object.entries(geoSamples))
     results[`geospatial ${name}, warm`] = summarise(samples);
 
-  // Thermal tiles: the first tile of a refresh also indexes every detection; each later tile is
-  // encoded on its first request and then answered from the isolate's copy.
+  // Thermal tiles: the catalogue load indexes every detection, and each tile is encoded on its
+  // first request and then answered from the isolate's copy.
   log("thermal tiles");
   const firstTile: Sample[] = [];
   let version = "";
