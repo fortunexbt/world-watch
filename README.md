@@ -65,7 +65,7 @@ The parts worth a closer look:
 - Snapshot queries filter by area in SQL before their 1,000-row limit, so a quiet region still shows up beside a busy one. The project exhausted the free D1 read allowance once, and the read path is built around that lesson.
 - The pipeline treats source text as evidence and ignores instructions inside it. The extraction worker runs without tools or file access, and a malicious-input evaluation recorded zero tool attempts.
 
-The test suite has 384 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
+The test suite has 386 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
 
 ## Honest status
 
@@ -96,7 +96,7 @@ npm run build
 npm run audit:public
 ```
 
-Tests use disposable stores and fixtures, with temporary browser servers. They leave collection and inference stopped.
+Tests use disposable stores and fixtures, with temporary browser servers. They leave collection and inference stopped. `npm run perf:load` and `npm run perf:client` measure the server against a seeded synthetic 100,000-incident store and the client in Chromium and WebKit; [the verification notes](docs/verification.md) record the reference workload, budgets and results.
 
 ## Run an empty local app
 

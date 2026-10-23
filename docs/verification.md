@@ -75,13 +75,100 @@ The gazetteer index is now built on the first place lookup instead of in global 
 
 The lookup was timed on `src/server/geo.ts` bundled with the same options, in a fresh process per run, with the load average between 51 and 59. Building the index in a warm script under a load average of about 14 took 230 to 310 ms of CPU, and alternative structures (no per-row `Set`, single cities stored without an array) were within that noise, so the cost is the 290,000 normalised keys rather than the container. The first lookup in each isolate therefore needs a few hundred milliseconds of request CPU. That fits Cloudflare's Paid default of 30 seconds but not Free's 10 ms, and the Sites per-request budget is unknown. Fitting 10 ms would need an index generated at build time, such as a sorted key table searched in place; it would add several megabytes to the bundle and has to reproduce `toLocaleLowerCase` exactly.
 
+## Worldwide-scale performance (2026-10-23)
+
+Local measurements only. Nothing ran on Cloudflare or Sites, no hosted D1 was queried and no real event data was used. Other agents shared the 10-core machine, so every sample records the load average; it ranged from about 4 to 240 over the day. Row counts, map source updates and React render counts do not depend on load and are the primary evidence. Wall-clock and CPU figures are comparable only between runs at similar load, which the tables say. The machine restarted mid-session and lost the first set of runs; everything below was re-measured afterwards. These figures were measured on a6f2e17, before the branch was rebased onto the fusion, news and public-demo work; the rebase moved fusion's earthquake candidate read from the dropped latitude index to `incidents_cell`.
+
+### Harnesses
+
+`npm run perf:load` (`scripts/load-harness.ts`) builds a throwaway local D1 store, the Miniflare engine `wrangler dev` uses, applies the committed migrations and seeds it through the real `ingest` path with `scripts/synthetic.ts`. The trimmed USGS, GDACS, NWS and ECCC fixtures are moved, re-timed and renumbered, so stored views have production shapes. It then calls the Worker's `fetch` handler in-process against that store. Rows read and written come from D1's own query metadata, handler CPU is the Node thread's CPU time, and FIRMS and Copernicus are answered from synthetic files. It never opens a port or reaches the network, and it deletes the store on exit.
+
+```sh
+npm run perf:load -- --incidents=100000 --save-store=/path/to/store --out=load.json
+npm run perf:load -- --store=/path/to/store --runs=5 --out=load.json   # reuse a seeded store
+```
+
+Options: `--incidents`, `--revised` (share revised one to four times, 0.25), `--rules` (20), `--days` (30), `--thermal` (200,000 detections), `--runs`, `--streams` (10), `--burst` (60 records) and `--seed`. A reused store gets only the migrations it lacks, timed, so one store seeded on an older commit measures both sides of a schema change.
+
+`npm run perf:client` (`scripts/client-perf.ts`) builds the client into a temporary directory, serves it on an ephemeral port and answers every API call in Playwright with synthetic data. It records frame intervals, long tasks, long animation frames, CDP task, script, layout and style time, React commits and component renders (through the DevTools hook) and GeoJSON loads sent to MapLibre's workers.
+
+```sh
+npm run perf:client -- --markers=1000,5000 --browser=chromium,webkit --runs=3 --out=client.json
+```
+
+### Reference workload and scene
+
+The reference store holds 100,000 incidents over 30 days with 162,218 revisions and observations, 75,640 outbox rows (seven days), 1,244,360 alert deliveries from 20 rules, 103 sources and 200,000 FIRMS-shaped thermal detections. Weights: contiguous US (NWS) 31%, Canada (ECCC) 13%, Japan 10%, Indonesia 9%, Europe 8%, South Asia 6%, Fiji and Tonga across the antimeridian 5%, Chile 5%, the Aleutians across the antimeridian 4% and a sparse worldwide background 10%. Views average 4,496 bytes. The store is 4.7 GB on disk. It contains structured incidents only, no model-analysed ones.
+
+The reference client scene is a 1440 by 900 viewport in headless Chromium 156 on the real GPU (ANGLE Metal, Apple M4) and in Playwright WebKit 27.2, with the 1,000 incidents the snapshot API caps at, 2,000 thermal points once the layer is on and the bundled Natural Earth boundaries (external tiles and glyphs are blocked). It measures load, three mouse drags, six wheel steps, the drags again with thermal points, and a burst of 100 SSE arrivals, each followed by the client's compact detail read, with the feed showing. 5,000 incidents is a stress case beyond the API cap. This is desktop Chromium, not a phone; no claim here covers iPhone smoothness.
+
+### Budgets
+
+| Budget                                                                          | Before                         | After                                    |
+| ------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------------- |
+| Windowed regional snapshot, D1 rows read on the reference store, at most 10,000 | 8,581 to 59,818                | 805 to 8,595                             |
+| Issuer ingest of three records, rows read, at most 1,000                        | 100,535                        | 508                                      |
+| Plan gate: p95 accepted structured record to projection under 60 s              | Met locally, 2.8 s             | Met locally, 1.4 s                       |
+| Plan gate: p95 warm viewport response under 500 ms                              | Not met                        | Not met for 1,000-incident views (below) |
+| Plan gate: p95 frame time under 33 ms on the reference scene                    | 16.8 ms Chromium, 18 ms WebKit | 16.7 ms Chromium, 18 ms WebKit           |
+| Map source data sent by a pan                                                   | 8 loads                        | 0 (`tests/client-render-budget.test.ts`) |
+| Feed rows rendered by one SSE arrival                                           | every row                      | 1 (same test)                            |
+
+`tests/geography.test.ts` asserts that a windowed bbox read seeks `incidents_cell` on both of its columns, and `tests/search-index.test.ts` that a revision replaces its one search row.
+
+### Server results
+
+D1 rows read are identical in every run. Latency medians are from five runs; the "before" run had a load average of 27 to 36 and the "after" run 7 to 11, so their latencies are not a fair comparison, but in an earlier pair at similar load (24 to 69 before, 53 to 56 after) 10 of 60 "before" regional reads failed inside local D1 and none failed after.
+
+| Snapshot (`include_incoming=0`)      | Rows read before | after  | Median ms before (load) | after (load) | Bytes     |
+| ------------------------------------ | ---------------- | ------ | ----------------------- | ------------ | --------- |
+| World, 168 h                         | 1,211            | 1,211  | 144 (36)                | 103 (8)      | 4,650,536 |
+| Europe, 24 h                         | 58,314           | 5,482  | 5,405 (33)              | 173 (8)      | 3,852,716 |
+| Europe, 168 h                        | 59,818           | 8,595  | 1,631 (31)              | 410 (8)      | 3,908,396 |
+| Contiguous US, 24 h                  | 57,400           | 6,878  | 2,001 (29)              | 605 (8)      | 5,802,872 |
+| Japan, 24 h                          | 43,339           | 1,771  | 339 (29)                | 116 (8)      | 1,138,231 |
+| Fiji across the dateline, 24 h       | 8,581            | 1,103  | 580 (29)                | 100 (8)      | 644,219   |
+| Fiji across the dateline, all time   | 13,100           | 10,329 | 158 (29)                | 291 (7)      | 3,342,105 |
+| Aleutians across the dateline, 168 h | 24,877           | 2,441  | 330 (29)                | 199 (8)      | 2,848,293 |
+| Sahara (quiet), 168 h                | 11,399           | 805    | 432 (27)                | 34 (8)       | 220,460   |
+| Search "earthquake", 168 h           | 15,320           | 15,320 | 825 (27)                | 422 (8)      | 1,866,904 |
+
+A three-record issuer POST read 100,535 rows before and 508 after; a 60-record burst with a third of it revisions read 2.01 million rows before and 8,558 to 11,322 after, writing 3,420 either way. In three alternating ingest-only runs at a load of 5 to 20, the median POST took 300 ms before and 205 ms after and record-to-projection p95 was 713 and 651 ms; local D1 scans its in-process index fast enough that the scan shows in rows read, which D1 bills, far more than in latency. Delivery to ten live streams added up to one 1 s poll. Applying the cell and search-index migrations (now 0010 and 0011) to the 100,000-incident store took 33 to 114 s locally; on D1 the rebuild reads and writes every live incident once.
+
+The SSE stream used to select whole outbox payloads, which average 2,320 bytes on the reference store because they carry incident views, and now selects about 130 bytes of event fields per row. In three alternating runs at a load of 4 to 16, catching up 200 outbox rows (100 incident events) took a median 70 µs of handler CPU per incident event per stream before and 52 µs after with one stream in its own isolate, and 52 and 30 µs with ten. Rows read stayed 203 per stream.
+
+Uncached structured briefs read 104 rows and used 10 to 30 ms of handler CPU. A geospatial request parsing all three synthetic FIRMS files cold used 476 to 718 ms of CPU per isolate and ten minutes; warm world requests used 30 to 60 ms and returned 2,000 features in 1.66 MB.
+
+### Client results
+
+Chromium at 1,000 incidents, medians of three alternating runs at a load average of 8 to 21:
+
+| Scene                         | Measure                                            | Before                    | After                   |
+| ----------------------------- | -------------------------------------------------- | ------------------------- | ----------------------- |
+| Load                          | First feed row, ready                              | 314 ms, 1,573 ms          | 299 ms, 1,530 ms        |
+| Pan                           | Map source loads, script, LoAF blocking, p99 frame | 8, 195 ms, 14 ms, 33.3 ms | 0, 93 ms, 0 ms, 16.8 ms |
+| Pan with 2,000 thermal points | Map source loads, script                           | 24, 117 ms                | 2, 95 ms                |
+| 100 SSE arrivals              | Task, script, wall                                 | 4,828 ms, 3,465 ms, 5.4 s | 591 ms, 268 ms, 1.7 s   |
+| 100 SSE arrivals              | Component renders, elements reconciled, map loads  | 105,468, 1,341,504, 432   | 6,979, 40,127, 40       |
+
+WebKit at 1,000 incidents: the burst's component renders fell from 61,006 to 4,803 and its wall time from 3.7 to 1.8 s, and pan p99 from 29 to 18 ms. At 5,000 incidents (Chromium, load 60 to 200, two or three runs; some runs timed out clicking the layer control) pan script time fell from 1,237 to 184 ms and LoAF blocking from 1,045 to 0 ms, and the burst's task time from 14.2 to 1.1 s. Frame p95 stayed at one display frame in Chromium in every scene before and after: the costs were long frames around each settled view and SSE arrival, not steady panning. The end-of-run JS heap varied from 40 to 79 MB between runs with no consistent direction. An attempt at 20,000 incidents closed the page in the baseline build before the restart; its log was lost and it is not in the tables.
+
+### Remaining costs, largest first
+
+- Snapshot shape. A 1,000-incident world snapshot is 4.65 MB (546 KB gzip) and needs 33 to 126 ms of handler CPU, mostly view JSON. That misses Workers Free's 10 ms and is why the 500 ms gate fails for full views. A list shape without excerpts, summaries and per-report rights text, with the detail endpoint serving the rest, needs a client audit first.
+- SSE fan-out. Every incident event makes every client read its compact detail: ten clients and 100 events made 900 to 1,000 requests and about 0.5 to 1.6 ms of handler CPU per event per client. Rights-checked compact views in the event would remove those requests.
+- Search reads every match before ranking (15,320 rows for "earthquake"), and all-time area views read every row in their cells (10,329 for Fiji).
+- Each three-record ingest still reads about 500 rows, mostly the alert delivery ledger, and the store grows to 4.7 GB at 100,000 incidents, 1.24 million rows of it alert deliveries from 20 rules, which needs checking against D1's per-database size limit.
+- The first geospatial request in an isolate parses about 30 MB of FIRMS text.
+- No phone was measured. iPhone claims need Safari Web Inspector timelines on a physical device with the same scene.
+
 ## Unproven
 
 - Representative discovery recall, relevance precision, false merges, severity calibration and multilingual robustness.
 - Reliable event geography or city-level coverage beyond selected sources.
 - End-to-end latency percentiles, week-long operation, restart/restore drills and account-wide capacity.
 - Always-on inference when the initial Mac is asleep or unavailable.
-- Physical-iPhone fidelity, assistive-technology usability and large-volume map performance.
+- Physical-iPhone fidelity, assistive-technology usability, and map and API performance on real devices and on Cloudflare.
 - Broad audiovisual verification, reliable automated crowd counts or cross-domain causal inference.
 - External notification delivery, full-corpus spatial search and durable multi-operator workflows.
 
