@@ -23,14 +23,14 @@ test(
   async () => {
     const server = spawn(
       process.execPath,
-      ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "5197", "--strictPort"],
+      ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "5200", "--strictPort"],
       { stdio: "ignore" },
     );
     let browser: any;
     try {
       for (let n = 0; n < 100; n++) {
         try {
-          if ((await fetch("http://127.0.0.1:5197")).ok) break;
+          if ((await fetch("http://127.0.0.1:5200")).ok) break;
         } catch {}
         await new Promise((r) => setTimeout(r, 100));
       }
@@ -77,7 +77,7 @@ test(
         if (u.hostname !== "127.0.0.1") return route.abort();
         return route.continue();
       });
-      await page.goto("http://127.0.0.1:5197");
+      await page.goto("http://127.0.0.1:5200");
       const map = page.locator(".map");
       await page.waitForFunction(() => document.querySelector(".map")?.getAttribute("data-map-bounds"));
       // Screen position of a place in the current Web Mercator view.
