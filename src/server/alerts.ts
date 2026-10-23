@@ -241,6 +241,9 @@ export function intersects(location: IncidentView["location"], geometry: any) {
   );
 }
 
+/** Reason prefix of a notice that corrects an earlier one; the cause follows in parentheses. */
+export const CORRECTION = "correction_or_retraction";
+
 const impactRank: Record<string, number> = {
   informational: 0,
   minor: 1,
@@ -269,7 +272,7 @@ export function alertDecision(
   );
   const correction = (reason: string) => ({
     state: "eligible_ui",
-    reason: `correction_or_retraction; notify prior eligible recipient (${reason})`,
+    reason: `${CORRECTION}; notify prior eligible recipient (${reason})`,
     material_version: materialVersion,
   });
 

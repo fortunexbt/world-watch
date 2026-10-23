@@ -59,6 +59,7 @@ The parts worth a closer look:
 - An Internet routing drop is World Watch's own measurement, not an issuer's alert. Each country's hourly count of visible IPv4 prefixes and networks is compared with the median of the week before, and a drop needs two consecutive hours with half the prefixes gone, or a quarter of them along with a tenth of the networks. Replayed over RIPEstat's history it found Egypt in 2011, Syria in 2012, Iran in 2019, Sudan in 2021 and the Iberian blackout in 2025 among 10 of 14 documented events, and missed shutdowns that filter traffic but leave routes up. It is labelled as a measured drop, never a confirmed shutdown or a cause.
 - A model can't escalate a claim to severe or critical on its own say-so. The claim has to quote an affirmed consequence from its own cited evidence, such as "120 homes destroyed", or a matching official directive. Negated, hypothetical and drill wording is rejected within the same clause, using 22 lexicon tables that cover 23 languages. Chinese, Japanese and Thai, which don't put spaces between words, use substring matching. Anything the tables don't recognise fails closed. [An offline evaluation](docs/severity-evaluation.md) measures the gate on 1,908 Wikipedia excerpts about 264 earthquakes.
 - When a source corrects or retracts an event, each watch rule that received the original alert gets the correction, even if the corrected location has left their watch area. A new alert fires only when a versioned projection of location, timing, instructions, severity or evidence changes. A reworded headline doesn't count.
+- Watch rules reach outside the app two ways, and neither needs a provider account. Each rule has private Atom and GeoJSON feeds behind a key derived from the owner token, with one entry per incident whose ID never changes; a correction updates that entry and says so in its title. The owner app can also send Web Push to a browser, encrypted and signed with the server's own VAPID keys, one message per situation, with a correction going only to devices that were subscribed when the earlier notice went out. Only records whose every source permits redistribution go into a feed. Without VAPID keys nothing is queued or sent.
 - Geography works across the 180° line. Watch areas, map views and queries treat a box whose west edge is east of its east edge as crossing the dateline, so Fiji and the Aleutians resolve correctly. Place names come from a 34,174-place GeoNames gazetteer covering 244 country codes, with alternate names in local scripts.
 - News signals come from GDELT's 15-minute knowledge graph files in English and in translation from 65 languages. A matched theme such as protest, curfew or refugees must sit within a sentence of a city GDELT geocoded, so a passing mention elsewhere in an article doesn't count. Mentions cluster by place, syndicated copies share one headline, and a place ranks by how far its last six hours sit above its own seven-day baseline. Only links, headlines and GDELT metadata are kept.
 - The thermal layer reads the public 24-hour global files for NOAA-20, NOAA-21 and Suomi NPP and filters by the visible area on the server. NASA stops delivering new Suomi NPP data at 13:00 UTC on 2 November 2026 ([notice](https://www.earthdata.nasa.gov/data/alerts-outages/reminder-new-suomi-npp-observations-cease-november-2-2026)); from then the layer stops reading that file and shows the sensor as ended rather than as zero detections. When a view holds more than 2,000 detections, it takes the newest one from each cell of a 48 by 24 grid before taking second picks, so one busy region can't hide the rest. The panel says how many it is showing out of how many.
@@ -66,7 +67,7 @@ The parts worth a closer look:
 - Snapshot queries filter by area in SQL before their 1,000-row limit, so a quiet region still shows up beside a busy one. The project exhausted the free D1 read allowance once, and the read path is built around that lesson.
 - The pipeline treats source text as evidence and ignores instructions inside it. The extraction worker runs without tools or file access, and a malicious-input evaluation recorded zero tool attempts.
 
-The test suite has 410 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
+The test suite has 419 tests, all offline, including intercepted browser runs. One opt-in test needs an authorised Codex host and is skipped by default.
 
 ## Honest status
 
@@ -107,6 +108,16 @@ Tests use disposable stores and fixtures, with temporary browser servers. They l
 EUROPE_WATCH_OWNER_TOKEN=replace-with-a-random-owner-secret
 EUROPE_WATCH_COLLECTOR_TOKEN=replace-with-a-different-collector-secret
 EUROPE_WATCH_WORKER_TOKEN=replace-with-a-different-worker-secret
+```
+
+For Web Push, add a VAPID key pair and a contact URI (`mailto:` or `https:`) to the same file. This prints a fresh pair; keep the private key out of the repository.
+
+```sh
+node -e 'const {privateKey}=require("node:crypto").generateKeyPairSync("ec",{namedCurve:"P-256"});const j=privateKey.export({format:"jwk"});console.log("VAPID_PUBLIC_KEY="+Buffer.concat([Buffer.from([4]),Buffer.from(j.x,"base64url"),Buffer.from(j.y,"base64url")]).toString("base64url")+"\nVAPID_PRIVATE_KEY="+j.d)'
+```
+
+```dotenv
+VAPID_SUBJECT=mailto:replace-with-your-contact
 ```
 
 ```sh

@@ -43,22 +43,24 @@ export function situations(views: IncidentView[]): Situation[] {
     const key = find(v.id);
     if (seen.has(key)) return [];
     seen.add(key);
-    const members = groups.get(key)!;
-    if (members.length === 1) return [v];
-    members.sort(lead);
-    const impact = members.reduce(
-      (top, m) => ((RANK[m.impact] ?? 0) > (RANK[top] ?? 0) ? m.impact : top),
-      members[0].impact,
-    );
-    return [
-      {
-        ...members[0],
-        impact,
-        reports: members.flatMap((m) => m.reports),
-        members,
-      },
-    ];
+    return [fusedSituation(groups.get(key)!)];
   });
+}
+
+/** One situation from records already known to be one occurrence. */
+export function fusedSituation(records: IncidentView[]): Situation {
+  if (records.length === 1) return records[0];
+  const members = [...records].sort(lead);
+  const impact = members.reduce(
+    (top, m) => ((RANK[m.impact] ?? 0) > (RANK[top] ?? 0) ? m.impact : top),
+    members[0].impact,
+  );
+  return {
+    ...members[0],
+    impact,
+    reports: members.flatMap((m) => m.reports),
+    members,
+  };
 }
 
 /** The same_event links between members of one situation, each pair once. */

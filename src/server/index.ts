@@ -33,9 +33,28 @@ import {
   alertMaterialityVersion,
   situationDecision,
   SAME_SITUATION,
+  CORRECTION,
   type AlertRule,
   type AlertDeliverySnapshot,
 } from "./alerts";
+import {
+  atomFeed,
+  geojsonFeature,
+  geojsonFeed,
+  incidentCorrection,
+  noticeCorrection,
+  redistributable,
+  type FeedEntry,
+} from "./feeds";
+import { FEED_ENTRY_LIMIT } from "../shared/feeds";
+import {
+  base64url,
+  fromBase64url,
+  pushKeys,
+  pushMessage,
+  sendPush,
+  PUSH_TTL_SECONDS,
+} from "./push";
 type Stmt = {
   bind(...v: any[]): Stmt;
   first<T = any>(column?: string): Promise<T | null>;
@@ -54,6 +73,8 @@ export type Env = {
     queries: number;
     unknown: number;
   };
+  /** Set when this request queued Web Push messages for the owner's devices. */
+  _pushQueued?: boolean;
   ASSETS: { fetch(r: Request): Promise<Response> };
   EUROPE_WATCH_OWNER_TOKEN: string;
   EUROPE_WATCH_WORKER_TOKEN: string;
@@ -62,6 +83,10 @@ export type Env = {
   ANALYSIS_MODE?: string;
   /** Comma-separated provider/model pairs whose chat-completions results the owner accepts. */
   ACCEPTED_ANALYSIS_MODELS?: string;
+  /** VAPID application server keys (base64url P-256 point and scalar) and contact URI; Web Push is off without all three. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 };
 /** Luna through Codex, or a chat-completions provider/model the owner listed explicitly. */
 export function acceptedModelRun(
@@ -169,6 +194,86 @@ const newsContext = (e: Env): NewsContext => ({
 });
 async function cookie(e: Env) {
   return hash(`europe-watch-session:${e.EUROPE_WATCH_OWNER_TOKEN}`);
+}
+/** A feed reader can't sign in, so each rule's feed URL carries a key only the owner token can mint. */
+async function ruleFeedKey(e: Env, ruleId: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(e.EUROPE_WATCH_OWNER_TOKEN),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return base64url(
+    new Uint8Array(
+      await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("rule-feed:" + ruleId)),
+    ),
+  );
+}
+async function ruleFeedUrls(e: Env, origin: string, ruleId: string) {
+  const base = `${origin}/api/alert-rules/${encodeURIComponent(ruleId)}/feed`,
+    key = "?key=" + (await ruleFeedKey(e, ruleId));
+  return { atom: base + ".atom" + key, geojson: base + ".geojson" + key };
+}
+/** The latest eligible notice per incident for one rule, as the revision it was given for. */
+async function ruleFeed(e: Env, u: URL, ruleId: string, format: string) {
+  const rule = await stmt(
+    e,
+    "SELECT rule FROM alert_rules WHERE id=? AND owner_id='owner'",
+    ruleId,
+  ).first<any>();
+  if (!rule) return json({ error: "not_found" }, 404);
+  const notices = await rows(
+    e,
+    `SELECT d.incident_id,d.reason,d.created_at,v.view FROM alert_deliveries d
+     JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version
+     WHERE d.rule_id=? AND d.state='eligible_ui' ORDER BY d.created_at DESC LIMIT ?`,
+    ruleId,
+    FEED_ENTRY_LIMIT * 4,
+  );
+  const latest = new Map<string, any>();
+  for (const n of notices) if (!latest.has(n.incident_id)) latest.set(n.incident_id, n);
+  const given = [...latest.values()]
+    .slice(0, FEED_ENTRY_LIMIT)
+    .map((n) => ({ ...n, view: parse(n.view) as IncidentView }));
+  const rights = await currentRights(e, [
+    ...new Set(given.flatMap((n) => n.view.reports.map((r: any) => r.source_id))),
+  ]);
+  const entries: FeedEntry[] = given
+    .map((n) => ({
+      id: n.incident_id,
+      incident: refreshRights(n.view, rights),
+      updated: n.created_at,
+      correction: noticeCorrection(n.reason, n.view),
+    }))
+    .filter((entry) => redistributable(entry.incident));
+  const withheld = given.length - entries.length;
+  const urls = await ruleFeedUrls(e, u.origin, ruleId);
+  const meta = {
+    id: `urn:world-watch:rule:${ruleId}`,
+    title: `World Watch: ${(parse(rule.rule) as AlertRule).name ?? ruleId}`,
+    subtitle:
+      "Notices this watch rule made eligible, newest first, one entry per incident. A correction updates the entry it corrects." +
+      (withheld
+        ? ` ${withheld} left out because a source doesn't permit redistribution.`
+        : ""),
+    self: format === "atom" ? urls.atom : urls.geojson,
+    alternate: format === "atom" ? urls.geojson : urls.atom,
+    attribution: [
+      ...new Set(
+        entries.flatMap((x) => x.incident.reports.map((r: any) => r.rights.attribution)),
+      ),
+    ],
+    updated: now(),
+  };
+  const headers = { "cache-control": "private, no-store", "x-content-type-options": "nosniff" };
+  return format === "atom"
+    ? new Response(atomFeed(meta, entries), {
+        headers: { ...headers, "content-type": "application/atom+xml; charset=utf-8" },
+      })
+    : new Response(JSON.stringify(geojsonFeed(meta, entries)), {
+        headers: { ...headers, "content-type": "application/geo+json" },
+      });
 }
 async function role(r: Request, e: Env) {
   const token = r.headers.get("authorization")?.replace(/^Bearer /i, "") ?? "";
@@ -314,23 +419,98 @@ async function correctionAlerts(
           await lastAlertDelivery(e, view.id, rule.id, policy, true),
         );
     }
+    const delivery = await hash(`${view.id}:${view.version}:${rule.id}:${rule.version}`),
+      time = now();
     result.push(
       stmt(
         e,
         `INSERT OR IGNORE INTO alert_deliveries(id,incident_id,incident_version,rule_id,rule_version,state,reason,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${acceptance?.sql ?? "1"}`,
-        await hash(`${view.id}:${view.version}:${rule.id}:${rule.version}`),
+        delivery,
         view.id,
         view.version,
         rule.id,
         rule.version,
         decision.state,
         decision.reason,
-        now(),
+        time,
         ...(acceptance?.values ?? []),
       ),
     );
+    // Queue a push per owner device only when this batch inserted the notice, which its creation
+    // time shows. A correction goes only to devices already subscribed at the last earlier notice.
+    if (decision.state === "eligible_ui" && pushKeys(e)) {
+      e._pushQueued = true;
+      result.push(
+        stmt(
+          e,
+          `INSERT OR IGNORE INTO push_outbox(delivery_id,subscription_id,created_at)
+           SELECT d.id,s.id,d.created_at FROM alert_deliveries d JOIN push_subscriptions s ON s.owner_id='owner'
+           WHERE d.id=? AND d.created_at=?${
+             decision.reason.startsWith(CORRECTION)
+               ? " AND s.created_at<=(SELECT max(p.created_at) FROM alert_deliveries p WHERE p.incident_id=d.incident_id AND p.rule_id=d.rule_id AND p.state='eligible_ui' AND p.id<>d.id)"
+               : ""
+           }`,
+          delivery,
+          time,
+        ),
+      );
+    }
   }
   return result;
+}
+/** Sends queued pushes. A subscription its push service reports gone is removed; other failures retry until the TTL. */
+async function dispatchPush(e: Env) {
+  const keys = pushKeys(e);
+  if (!keys) return;
+  await stmt(
+    e,
+    "DELETE FROM push_outbox WHERE created_at<?",
+    new Date(Date.now() - PUSH_TTL_SECONDS * 1000).toISOString(),
+  ).run();
+  const queued = await rows(
+    e,
+    `SELECT o.delivery_id,o.subscription_id,s.endpoint,s.p256dh,s.auth,d.reason,v.view
+     FROM push_outbox o JOIN push_subscriptions s ON s.id=o.subscription_id
+     JOIN alert_deliveries d ON d.id=o.delivery_id
+     LEFT JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version
+     ORDER BY o.created_at LIMIT 20`,
+  );
+  if (!queued.length) return;
+  const views = queued.map((q) => (q.view ? (parse(q.view) as IncidentView) : null));
+  const rights = await currentRights(e, [
+    ...new Set(views.flatMap((v) => v?.reports.map((r: any) => r.source_id) ?? [])),
+  ]);
+  for (const [n, q] of queued.entries()) {
+    const view = views[n];
+    // A purged revision, or a record whose source the app no longer shows, sends nothing.
+    if (view && permittedView(view, rights)) {
+      const response = await sendPush(
+        q,
+        pushMessage(view, noticeCorrection(q.reason, view)),
+        keys,
+      ).catch((error) => {
+        console.error("push_send_failed", String(error).slice(0, 120));
+        return null;
+      });
+      if (response?.status === 404 || response?.status === 410) {
+        await measuredBatch(e, [
+          stmt(e, "DELETE FROM push_outbox WHERE subscription_id=?", q.subscription_id),
+          stmt(e, "DELETE FROM push_subscriptions WHERE id=?", q.subscription_id),
+        ]);
+        continue;
+      }
+      if (!response?.ok) {
+        if (response) console.error("push_rejected", response.status);
+        continue;
+      }
+    }
+    await stmt(
+      e,
+      "DELETE FROM push_outbox WHERE delivery_id=? AND subscription_id=?",
+      q.delivery_id,
+      q.subscription_id,
+    ).run();
+  }
 }
 export async function enforceRetention(e: Env) {
   await pruneBrief({stmt:(sql,...values)=>stmt(e,sql,...values)});
@@ -1297,38 +1477,9 @@ async function complete(
         aid,
       ),
     );
-    const rules = await rows(
-      e,
-      "SELECT r.*,a.geometry FROM alert_rules r LEFT JOIN watch_areas a ON a.id=json_extract(r.rule,'$.watch_area_id') WHERE r.owner_id='owner'",
+    statements.push(
+      ...(await correctionAlerts(e, view, { sql: guard, values: [aid] })),
     );
-    for (const rule of rules) {
-      const policy = parse(rule.rule) as AlertRule;
-      const last = await lastAlertDelivery(e, iid, rule.id, policy);
-      const decision = alertDecision(
-        view,
-        policy,
-        rule.geometry ? parse(rule.geometry) : null,
-        last,
-      );
-      const delivery = await hash(
-        `${iid}:${version}:${rule.id}:${rule.version}`,
-      );
-      statements.push(
-        stmt(
-          e,
-          `INSERT OR IGNORE INTO alert_deliveries(id,incident_id,incident_version,rule_id,rule_version,state,reason,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${guard}`,
-          delivery,
-          iid,
-          version,
-          rule.id,
-          rule.version,
-          decision.state,
-          decision.reason,
-          time,
-          aid,
-        ),
-      );
-    }
   }
   const previousSupports = await rows(
     e,
@@ -1789,7 +1940,18 @@ async function routes(r: Request, e: Env) {
     const camera = await media.getPublicCamera(decodeURIComponent(p.slice("/api/cameras/".length)));
     return camera ? json(camera) : json({error:"camera_not_found"},404);
   }
-  if (!who) {
+  const feed =
+    r.method === "GET"
+      ? p.match(/^\/api\/alert-rules\/([^/]+)\/feed\.(atom|geojson)$/)
+      : null;
+  const feedReader =
+    !!feed &&
+    who !== "owner" &&
+    (await eq(
+      u.searchParams.get("key") ?? "",
+      await ruleFeedKey(e, decodeURIComponent(feed[1])),
+    ));
+  if (!who && !feedReader) {
     if (p.startsWith("/api/")) return json({ error: "unauthorized" }, 401);
     return new Response(
       '<!doctype html><meta name="viewport" content="width=device-width"><title>World Watch · Private</title><style>body{background:#0d151c;color:#e7edf1;font:18px system-ui;display:grid;place-content:center;height:95vh}input,button{font:inherit;padding:12px;border-radius:8px;border:1px solid #354650;background:#192730;color:inherit}form{display:grid;gap:16px;max-width:360px}p{color:#a6b5be}</style><form id="login"><h1>World Watch</h1><p>Private owner access</p><input aria-label="Owner access token" type="password" id="token" autocomplete="current-password" required><button>Open map</button><output id="status"></output></form><script>login.onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token.value})});if(r.ok)location.reload();else status.textContent="Access token not accepted"}</script>',
@@ -1816,6 +1978,8 @@ async function routes(r: Request, e: Env) {
       },
       503,
     );
+  if (feed && (who === "owner" || feedReader))
+    return ruleFeed(e, u, decodeURIComponent(feed[1]), feed[2]);
   if (!p.startsWith("/api/")) {
     if (who !== "owner") return json({ error: "forbidden" }, 403);
     return e.ASSETS.fetch(r);
@@ -2744,26 +2908,14 @@ async function routes(r: Request, e: Env) {
         type: "FeatureCollection",
         features: permitted
           .filter((i) => i.location)
-          .map((i) => ({
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: [i.location!.lon, i.location!.lat],
-            },
-            properties: {
+          .map((i) =>
+            geojsonFeature({
               id: i.id,
-              headline: i.headline,
-              impact: i.impact,
-              event_start: i.event_start,
-              accuracy: i.location!.accuracy,
-              urls: i.reports.map((r: any) => r.canonical_url),
-              attribution: i.reports.map((r: any) => ({
-                source: r.source_name ?? r.source_id,
-                attribution: r.rights.attribution,
-                license: r.rights.basis,
-              })),
-            },
-          })),
+              incident: i,
+              updated: i.updated_at,
+              correction: incidentCorrection(i),
+            }),
+          ),
       });
     if (format === "csv") {
       const escape = (s: any) => {
@@ -2828,14 +2980,24 @@ async function routes(r: Request, e: Env) {
   if (p === "/api/alert-rules") {
     if (r.method === "GET")
       return json({
-        rules: (
-          await rows(e, "SELECT * FROM alert_rules WHERE owner_id='owner'")
-        ).map((v) => ({ ...v, rule: parse(v.rule) })),
+        rules: await Promise.all(
+          (await rows(e, "SELECT * FROM alert_rules WHERE owner_id='owner'")).map(
+            async (v) => ({
+              ...v,
+              rule: parse(v.rule),
+              feeds: await ruleFeedUrls(e, u.origin, v.id),
+            }),
+          ),
+        ),
         deliveries: await rows(
           e,
           "SELECT * FROM alert_deliveries ORDER BY created_at DESC LIMIT 200",
         ),
-        channels: { in_app: true, external: "not configured" },
+        channels: {
+          in_app: true,
+          feeds: true,
+          web_push: pushKeys(e) ? "configured" : "not configured",
+        },
       });
     if (r.method === "POST") {
       const b = (await r.json()) as any;
@@ -2854,6 +3016,47 @@ async function routes(r: Request, e: Env) {
         JSON.stringify(b.rule),
       ).run();
       return json({ id, version: (old?.version ?? 0) + 1 });
+    }
+  }
+  if (p === "/api/push") {
+    const keys = pushKeys(e);
+    if (r.method === "GET")
+      return json({
+        configured: !!keys,
+        public_key: keys?.publicKey ?? null,
+        subscriptions:
+          (await stmt(e, "SELECT count(*) AS n FROM push_subscriptions WHERE owner_id='owner'").first<any>())?.n ?? 0,
+      });
+    const b = (await r.json()) as any;
+    if (r.method === "DELETE") {
+      const id = await hash(new URL(b.endpoint).href);
+      await measuredBatch(e, [
+        stmt(e, "DELETE FROM push_outbox WHERE subscription_id=?", id),
+        stmt(e, "DELETE FROM push_subscriptions WHERE id=? AND owner_id='owner'", id),
+      ]);
+      return json({ unsubscribed: true });
+    }
+    if (r.method === "POST") {
+      if (!keys) return json({ error: "push_not_configured" }, 409);
+      const endpoint = new URL(b.endpoint);
+      if (
+        endpoint.protocol !== "https:" ||
+        endpoint.username ||
+        endpoint.password ||
+        fromBase64url(String(b.keys?.p256dh)).length !== 65 ||
+        fromBase64url(String(b.keys?.auth)).length !== 16
+      )
+        throw Error("invalid_push_subscription");
+      await stmt(
+        e,
+        "INSERT INTO push_subscriptions(id,owner_id,endpoint,p256dh,auth,created_at) VALUES(?,'owner',?,?,?,?) ON CONFLICT(id) DO UPDATE SET p256dh=excluded.p256dh,auth=excluded.auth",
+        await hash(endpoint.href),
+        endpoint.href,
+        b.keys.p256dh,
+        b.keys.auth,
+        now(),
+      ).run();
+      return json({ subscribed: true });
     }
   }
   if (p === "/api/notes" && r.method === "POST") {
@@ -3006,7 +3209,7 @@ async function routes(r: Request, e: Env) {
   return json({ error: "not_found" }, 404);
 }
 export default {
-  async fetch(r: Request, e: Env) {
+  async fetch(r: Request, e: Env, ctx?: { waitUntil(p: Promise<unknown>): void }) {
     e = { ...e, _metrics: { read: 0, written: 0, queries: 0, unknown: 0 } };
     try {
       if (
@@ -3024,6 +3227,11 @@ export default {
         return json({ error: "body_too_large" }, 413);
       const upstream = await routes(r, e);
       if (r.method !== "GET" && upstream.ok) readMemo.delete(e.DB);
+      if (e._pushQueued) {
+        const pushes = dispatchPush(e);
+        if (ctx) ctx.waitUntil(pushes);
+        else await pushes;
+      }
       const response = new Response(upstream.body, upstream);
       if (e._metrics && !e._metrics.unknown) {
         response.headers.set("x-ew-rows-read", String(e._metrics.read));
@@ -3073,6 +3281,8 @@ export default {
       e,
       "DELETE FROM outbox WHERE created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')",
     ).run();
+    // Retries pushes a failed or interrupted dispatch left queued.
+    await dispatchPush(e);
     ctx.waitUntil(
       import("../collector/index")
         .then((m) =>

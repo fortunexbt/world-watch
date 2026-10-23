@@ -123,8 +123,22 @@ export const italian: Record<string, string> = {
   "Supported reported danger": "Pericolo segnalato supportato da prove",
   "Save private area": "Salva area privata",
   "Remove area": "Rimuovi area",
-  "Local watch areas do not enable remote push or email. Configure a permitted notification channel before remote delivery.":
-    "Le aree locali non attivano notifiche push o email. Per l’invio remoto occorre configurare un canale autorizzato.",
+  "Areas saved in this browser only cue this page. Delivery outside the app follows the server's watch rules below.":
+    "Le aree salvate in questo browser avvisano solo in questa pagina. L’invio fuori dall’app segue le regole di monitoraggio del server qui sotto.",
+  "Server watch rules": "Regole di monitoraggio del server",
+  "Notices from the server's watch rules reach this device by Web Push, one per situation, with corrections for notices it received. Each rule also has private Atom and GeoJSON feeds; anyone with a feed link can read it.":
+    "Gli avvisi delle regole di monitoraggio del server arrivano su questo dispositivo tramite Web Push, uno per situazione, con le rettifiche degli avvisi ricevuti. Ogni regola ha anche feed Atom e GeoJSON privati; chiunque abbia il collegamento a un feed può leggerlo.",
+  "This browser doesn't support Web Push.": "Questo browser non supporta Web Push.",
+  "Web Push isn't configured on this server. It needs VAPID keys in its environment.":
+    "Web Push non è configurato su questo server. Servono chiavi VAPID nel suo ambiente.",
+  "Notify this device": "Avvisa questo dispositivo",
+  "Stop notifying this device": "Non avvisare più questo dispositivo",
+  "Notifications are blocked for this site in the browser settings.":
+    "Le notifiche per questo sito sono bloccate nelle impostazioni del browser.",
+  "This device will be notified.": "Questo dispositivo riceverà gli avvisi.",
+  "This device will no longer be notified.": "Questo dispositivo non riceverà più gli avvisi.",
+  "No server watch rules yet. Create one through the alert rules API.":
+    "Nessuna regola di monitoraggio sul server. Creane una tramite l’API delle regole di avviso.",
   "Replay observed history": "Rivedi la cronologia osservata",
   "View what the system knew at a chosen time. Later revisions are excluded. Replay never emits live alerts.":
     "Consulta ciò che il sistema conosceva al momento scelto. Le revisioni successive sono escluse. La cronologia non emette avvisi in diretta.",
@@ -550,6 +564,26 @@ Object.assign(italian, {
   "Public demo. Live public sources. Some layers and analysis disabled.":
     "Demo pubblica. Fonti pubbliche in diretta. Alcuni livelli e l’analisi sono disattivati.",
   "Sources and credits": "Fonti e crediti",
+  Feeds: "Feed",
+  "Follow an area in a feed reader or a map tool. Each feed holds up to 100 records, updated with the snapshot. Records from sources that don't permit redistribution are left out.":
+    "Segui un’area in un lettore di feed o in uno strumento cartografico. Ogni feed contiene fino a 100 record, aggiornati con l’istantanea. Sono esclusi i record di fonti che non ne consentono la ridistribuzione.",
+  Area: "Area",
+  Hazard: "Rischio",
+  Impact: "Impatto",
+  "All hazards": "Tutti i rischi",
+  "Any impact": "Qualsiasi impatto",
+  "Significant or higher": "Significativo o superiore",
+  "Severe or higher": "Grave o superiore",
+  "North America": "America settentrionale",
+  "Central America and the Caribbean": "America centrale e Caraibi",
+  "South America": "America meridionale",
+  Europe: "Europa",
+  Africa: "Africa",
+  "Middle East": "Medio Oriente",
+  "South Asia": "Asia meridionale",
+  "East Asia": "Asia orientale",
+  "Southeast Asia": "Sud-est asiatico",
+  "Oceania and the Pacific": "Oceania e Pacifico",
   "Public snapshot": "Istantanea pubblica",
   Updated: "Aggiornata",
   "Snapshot generated": "Istantanea generata",

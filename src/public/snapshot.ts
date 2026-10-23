@@ -10,6 +10,14 @@ import { configuredRegistry } from "../collector/registry";
 import { getGeospatialCatalog, WORLD } from "../server/geospatial";
 import server, { type Env } from "../server/index";
 import { structuredBrief } from "../server/structured-brief";
+import { alertMaterialityVersion } from "../server/alerts";
+import {
+  atomFeed,
+  geojsonFeed,
+  incidentCorrection,
+  redistributable,
+  type FeedEntry,
+} from "../server/feeds";
 import type { IncidentView, SourceRecord } from "../shared/contracts";
 import {
   issuerLag,
@@ -20,10 +28,20 @@ import {
   sourceLatency,
   type LagSample,
 } from "../shared/coverage";
+import {
+  FEED_AREAS,
+  FEED_ENTRY_LIMIT,
+  feedFilters,
+  feedMatches,
+  feedPath,
+  type FeedFilter,
+} from "../shared/feeds";
+import { fusedSituation, situations } from "../shared/fusion";
 import type { GeospatialCatalog } from "../shared/geospatial";
 import { incidentInWindow } from "../shared/temporal";
 import {
   BRIEF_WINDOWS,
+  FEED_FILE_LIMIT,
   MANIFEST,
   PUBLIC_FILE_LIMITS,
   SNAPSHOT_CADENCE_SECONDS,
@@ -127,8 +145,113 @@ export type PublicSnapshot = {
   manifest: PublicManifest;
   /** Serialised files by name, the manifest included; write the manifest last. */
   files: Map<string, string>;
+  /** Atom and GeoJSON feeds and their index, by path under the data directory. */
+  feeds: Map<string, string>;
   results: CollectorResult[];
 };
+
+/**
+ * The records of each situation whose every source permits redistribution. The others add nothing
+ * to a feed, not even their impact, but the situation still reaches feeds through the rest.
+ */
+const shareable = (views: IncidentView[]) =>
+  situations(views).flatMap((s) => {
+    const members = (s.members ?? [s]).filter(redistributable);
+    return members.length ? [members] : [];
+  });
+
+/**
+ * Per feed record, when it last changed materially by the alert-material-v1 projection, and the
+ * entry it belongs to. A record whose projection matches the previous snapshot's keeps that time,
+ * so a reworded headline or a fresh run leaves feed readers alone while a moved epicentre or a
+ * cancellation updates the entry. An entry stays keyed to a record it was keyed to before, so a
+ * new lead or member doesn't start a new entry; records are disjoint across situations, so keys
+ * stay unique.
+ */
+export function feedState(
+  views: IncidentView[],
+  previous: PublicIncidents["feed_state"] | undefined,
+  at: string,
+): PublicIncidents["feed_state"] {
+  const keyed = new Set(Object.values(previous ?? {}).map((v) => v.entry));
+  return Object.fromEntries(
+    shareable(views).flatMap((members) => {
+      const entry =
+        members.map((m) => m.id).filter((id) => keyed.has(id)).sort()[0] ??
+        fusedSituation(members).id;
+      return members.map((m) => {
+        const material = createHash("sha256")
+          .update(alertMaterialityVersion(m, {}))
+          .digest("hex");
+        const prior = previous?.[m.id];
+        return [
+          m.id,
+          { entry, material, updated: prior?.material === material ? prior.updated : at },
+        ];
+      });
+    }),
+  );
+}
+
+const IMPACT_LABEL: Record<FeedFilter["impact"], string> = {
+  any: "any impact",
+  significant: "significant impact or higher",
+  severe: "severe impact or higher",
+};
+
+/** Every feed combination, one entry per situation with records whose sources permit redistribution. */
+export function publicFeeds(
+  views: IncidentView[],
+  state: PublicIncidents["feed_state"],
+  attribution: string[],
+  generated_at: string,
+) {
+  const entries: FeedEntry[] = shareable(views).map((members) => {
+    const incident = fusedSituation(members);
+    return {
+      id: state[members[0].id].entry,
+      incident,
+      updated: members.map((m) => state[m.id].updated).sort().at(-1)!,
+      correction: incidentCorrection(incident),
+    };
+  });
+  const feeds = new Map<string, string>();
+  const index = feedFilters().map((filter) => {
+    const area = FEED_AREAS.find((a) => a.bbox === filter.bbox)!;
+    const matched = entries
+      .filter((e) => feedMatches(e.incident, filter))
+      .sort(
+        (a, b) =>
+          b.updated.localeCompare(a.updated) || a.id.localeCompare(b.id),
+      )
+      .slice(0, FEED_ENTRY_LIMIT);
+    const [atom, geojson] = [feedPath(filter, "atom"), feedPath(filter, "geojson")];
+    const meta = {
+      id: `urn:world-watch:feed:${filter.bbox.join(",")}:${filter.activity}:${filter.impact}`,
+      title: `World Watch: ${area.name}, ${filter.activity === "all" ? "all hazards" : filter.activity.replaceAll("_", " ")}, ${IMPACT_LABEL[filter.impact]}`,
+      subtitle: `Structured hazard records in ${filter.bbox.join(", ")} (west, south, east, north), newest change first, up to ${FEED_ENTRY_LIMIT}. Records from sources that don't permit redistribution are left out. A correction updates the entry it corrects.`,
+      self: atom.split("/").at(-1)!,
+      alternate: geojson.split("/").at(-1)!,
+      attribution,
+      updated: generated_at,
+    };
+    feeds.set(atom, bounded(atom, atomFeed(meta, matched), FEED_FILE_LIMIT));
+    feeds.set(
+      geojson,
+      bounded(geojson, JSON.stringify(geojsonFeed(meta, matched)), FEED_FILE_LIMIT),
+    );
+    return { title: meta.title, ...filter, atom, geojson, entries: matched.length };
+  });
+  feeds.set(
+    "feeds/index.json",
+    bounded(
+      "feeds/index.json",
+      JSON.stringify({ generated_at, attribution, feeds: index }),
+      FEED_FILE_LIMIT,
+    ),
+  );
+  return feeds;
+}
 
 export async function buildPublicSnapshot(
   options: {
@@ -268,8 +391,16 @@ export async function buildPublicSnapshot(
             ),
           ]);
     const now = Date.parse(generated_at);
+    const state = feedState(views, previous.incidents?.feed_state, generated_at);
+    const feeds = publicFeeds(
+      views,
+      state,
+      sources.filter((s) => s.rights.redistribute).map((s) => s.rights.attribution),
+      generated_at,
+    );
     const incidents: PublicIncidents = {
       incidents: views,
+      feed_state: state,
       sources: snapshot.sources.map((s: any) => ({
         ...s,
         health: {
@@ -302,7 +433,7 @@ export async function buildPublicSnapshot(
       PublicFile,
       unknown,
     ][]) {
-      const text = bounded(name, JSON.stringify(value));
+      const text = bounded(name, JSON.stringify(value), PUBLIC_FILE_LIMITS[name]);
       files.set(name, text);
       sizes[name] = {
         bytes: Buffer.byteLength(text),
@@ -347,19 +478,22 @@ export async function buildPublicSnapshot(
             }
           : {}),
       })),
+      feeds: {
+        index: "feeds/index.json",
+        files: feeds.size,
+        bytes: [...feeds.values()].reduce((n, text) => n + Buffer.byteLength(text), 0),
+      },
     };
-    files.set(MANIFEST, bounded(MANIFEST, JSON.stringify(manifest)));
-    return { manifest, files, results };
+    files.set(MANIFEST, bounded(MANIFEST, JSON.stringify(manifest), PUBLIC_FILE_LIMITS[MANIFEST]));
+    return { manifest, files, feeds, results };
   } finally {
     db.close();
   }
 }
 
-function bounded(name: keyof typeof PUBLIC_FILE_LIMITS, text: string) {
+function bounded(name: string, text: string, limit: number) {
   const bytes = Buffer.byteLength(text);
-  if (bytes > PUBLIC_FILE_LIMITS[name])
-    throw Error(
-      `public_snapshot_size: ${name} ${bytes} > ${PUBLIC_FILE_LIMITS[name]}`,
-    );
+  if (bytes > limit)
+    throw Error(`public_snapshot_size: ${name} ${bytes} > ${limit}`);
   return text;
 }

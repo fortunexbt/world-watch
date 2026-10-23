@@ -16,6 +16,8 @@ export const PUBLIC_FILE_LIMITS = {
   "brief.json": 256 * 1024,
   "geospatial.json": 3 * 1024 * 1024,
 } as const;
+/** Byte ceiling of each feed file and of the feed index. */
+export const FEED_FILE_LIMIT = 512 * 1024;
 export type PublicFile = Exclude<
   keyof typeof PUBLIC_FILE_LIMITS,
   typeof MANIFEST
@@ -24,6 +26,8 @@ export type PublicFile = Exclude<
 export const BRIEF_WINDOWS = ["24", "168", "720", "0"] as const;
 export type PublicIncidents = {
   incidents: IncidentView[];
+  /** Per feed record, the incident ID its feed entry is keyed to, a digest of its alert-material-v1 projection and when that last changed. */
+  feed_state: Record<string, { entry: string; material: string; updated: string }>;
   sources: any[];
   limited: boolean;
 };
@@ -58,4 +62,6 @@ export type PublicManifest = {
     coverage: CoverageStatus;
     sensors?: { id: ThermalSensorId; coverage: CoverageStatus }[];
   })[];
+  /** The Atom and GeoJSON feeds beside the snapshot, listed in `index`. */
+  feeds: { index: string; files: number; bytes: number };
 };

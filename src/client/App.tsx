@@ -3,6 +3,8 @@ import RollingBrief from "./RollingBrief";
 import GeospatialPanel from "./GeospatialPanel";
 import PublicBanner from "./PublicBanner";
 import { CountryCoverage, CoverageChip, CoverageView, freshness, sourceStatus } from "./Coverage";
+import PublicFeeds from "./PublicFeeds";
+import Notifications from "./Notifications";
 import { publicRequest } from "./public-data";
 import type {GeospatialCatalog} from "../shared/geospatial";
 import type {NewsSignalCatalog} from "../shared/news";
@@ -1423,6 +1425,7 @@ export default function App() {
                 "These are observed reports from monitored sources. Coverage is incomplete and varies by country.",
               )}
             </p>
+            {__PUBLIC_DEMO__ && <PublicFeeds language={language} />}
           </section>
         ) : surface === "search" ? (
           <section className="panel-content">
@@ -1690,9 +1693,10 @@ export default function App() {
             ))}
             <p className="caution">
               {tr(
-                "Local watch areas do not enable remote push or email. Configure a permitted notification channel before remote delivery.",
+                "Areas saved in this browser only cue this page. Delivery outside the app follows the server's watch rules below.",
               )}
             </p>
+            <Notifications language={language} />
           </section>
         ) : !__PUBLIC_DEMO__ && surface === "replay" ? (
           <section className="panel-content">

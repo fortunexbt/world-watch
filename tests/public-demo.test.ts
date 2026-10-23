@@ -28,9 +28,12 @@ import { ECCC_ALERTS_URL } from "../src/collector/adapters/eccc.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import {
   BRIEF_WINDOWS,
+  FEED_FILE_LIMIT,
   MANIFEST,
   PUBLIC_FILE_LIMITS,
 } from "../src/shared/public-snapshot.js";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { DEFAULT_FEED, feedFilters, feedPath } from "../src/shared/feeds.js";
 import type { IncidentView } from "../src/shared/contracts.js";
 import { situations } from "../src/shared/fusion.js";
 
@@ -201,6 +204,144 @@ test("the snapshot publishes the API's projection, briefs for every window and a
     PUBLIC_SOURCES.map((s) => [s.id, s.rights.redistribute]).sort(),
   );
   assert(manifest.sources.every((s) => s.attribution.length > 0));
+});
+
+const xml = new XMLParser({
+  ignoreAttributes: false,
+  isArray: (name) => ["entry", "category", "link"].includes(name),
+});
+const redistributed = PUBLIC_SOURCES.filter((s) => s.rights.redistribute);
+
+test("every area, hazard and impact feed is valid, bounded, attributed and limited to redistributable sources", async () => {
+  const { manifest, feeds, files } = await buildPublicSnapshot({ fetch: upstream() });
+  assert.equal(feeds.size, feedFilters().length * 2 + 1);
+  assert.equal(manifest.feeds.files, feeds.size);
+  assert.equal(
+    manifest.feeds.bytes,
+    [...feeds.values()].reduce((n, t) => n + Buffer.byteLength(t), 0),
+  );
+  assert(redistributed.some((s) => s.id === "global-emsc-earthquakes"));
+  const incidents: IncidentView[] = JSON.parse(files.get("incidents.json")!).incidents;
+  const allowed = new Set(redistributed.map((s) => s.id));
+  const shareable = (i: IncidentView) => i.reports.every((r) => allowed.has(r.source_id));
+  for (const filter of feedFilters()) {
+    const atom = feeds.get(feedPath(filter, "atom"))!;
+    const geojson = feeds.get(feedPath(filter, "geojson"))!;
+    for (const text of [atom, geojson]) assert(Buffer.byteLength(text) <= FEED_FILE_LIMIT);
+    assert.equal(XMLValidator.validate(atom), true);
+    const feed = xml.parse(atom).feed;
+    assert.equal(feed["@_xmlns"], "http://www.w3.org/2005/Atom");
+    assert.match(feed.id, /^urn:world-watch:feed:/);
+    for (const s of redistributed) assert(feed.rights["#text"].includes(s.rights.attribution));
+    const collection = JSON.parse(geojson);
+    assert.equal(collection.type, "FeatureCollection");
+    assert.deepEqual(collection.attribution, redistributed.map((s) => s.rights.attribution));
+    assert.deepEqual(
+      (feed.entry ?? []).map((e: any) => e.id),
+      collection.features.map((f: any) => "urn:world-watch:incident:" + f.id),
+    );
+    for (const f of collection.features) {
+      // GDACS may be shown but not redistributed, and RIPEstat, ADSB.lol and GDELT never enter the demo.
+      assert(f.properties.incident_ids.includes(f.id));
+      for (const id of f.properties.incident_ids)
+        assert(shareable(incidents.find((i) => i.id === id)!), id);
+      assert(f.properties.attribution.every((a: any) => !/GDACS|RIPE|ADSB|GDELT/.test(a.attribution)));
+      assert.equal(f.geometry.type, "Point");
+    }
+  }
+  // One entry per fused situation. A situation with a GDACS record still appears, through its
+  // redistributable records only; one with nothing redistributable doesn't.
+  const world = JSON.parse(feeds.get(feedPath({ ...DEFAULT_FEED, impact: "any" }, "geojson"))!);
+  const expected = situations(incidents)
+    .map((s) => (s.members ?? [s]).filter(shareable).map((m) => m.id).sort())
+    .filter((ids) => ids.length);
+  assert.deepEqual(
+    world.features.map((f: any) => [...f.properties.incident_ids].sort()).sort(),
+    expected.sort(),
+  );
+  const usgsEmsc = world.features.filter(
+    (f: any) => f.properties.incident_ids.length === 2,
+  );
+  assert(usgsEmsc.length >= 3);
+  for (const f of usgsEmsc)
+    assert.deepEqual(
+      f.properties.incident_ids
+        .map((id: string) => incidents.find((i) => i.id === id)!.reports[0].source_id)
+        .sort(),
+      ["global-emsc-earthquakes", "global-usgs-earthquakes"],
+    );
+  const partial = situations(incidents).filter(
+    (s) => (s.members ?? [s]).some(shareable) && !(s.members ?? [s]).every(shareable),
+  );
+  assert(partial.length >= 2);
+  const index = JSON.parse(feeds.get("feeds/index.json")!);
+  assert.equal(index.feeds.length, feedFilters().length);
+  assert(index.feeds.every((f: any) => feeds.has(f.atom) && feeds.has(f.geojson)));
+});
+
+test("a feed entry keeps its ID and update time across runs and fusion changes, and moves only on a material change", async () => {
+  const first = await buildPublicSnapshot({ fetch: upstream() });
+  const previous = { incidents: JSON.parse(first.files.get("incidents.json")!) };
+  const world = feedPath({ ...DEFAULT_FEED, impact: "any" }, "atom");
+  const again = await buildPublicSnapshot({ fetch: upstream(), previous });
+  // An unchanged source gives a byte-identical feed, so readers see nothing new.
+  assert.equal(again.feeds.get(world), first.feeds.get(world));
+  const entries = (run: { feeds: Map<string, string> }) =>
+    Object.fromEntries(
+      xml.parse(run.feeds.get(world)!).feed.entry.map((e: any) => [e.id, e]),
+    );
+  const quake = feeds[USGS_FEED_URL] as any;
+  const edited = (change: (feature: any) => void) => {
+    const copy = structuredClone(quake);
+    change(copy.features[0]);
+    return (async (input: any, init: any) =>
+      String(input) === USGS_FEED_URL ? Response.json(copy) : upstream()(input, init)) as typeof fetch;
+  };
+  const before = entries(first);
+  const reworded = entries(
+    await buildPublicSnapshot({
+      fetch: edited((f) => (f.properties.title += " (reviewed)")),
+      previous,
+    }),
+  );
+  assert.deepEqual(Object.keys(reworded).sort(), Object.keys(before).sort());
+  for (const id of Object.keys(before)) assert.equal(reworded[id].updated, before[id].updated);
+  const moved = entries(
+    await buildPublicSnapshot({
+      fetch: edited((f) => (f.geometry.coordinates[0] += 0.05)),
+      previous,
+    }),
+  );
+  assert.deepEqual(Object.keys(moved).sort(), Object.keys(before).sort());
+  const changed = Object.keys(before).filter((id) => moved[id].updated !== before[id].updated);
+  assert.equal(changed.length, 1);
+  assert(moved[changed[0]].updated > before[changed[0]].updated);
+
+  // Without EMSC each USGS quake is its own entry. When EMSC's records arrive and fuse with them,
+  // the entries keep their USGS keys whichever record now leads, and update for the new source.
+  const emscDown = (async (input: any, init: any) =>
+    String(input).startsWith(EMSC_QUERY_URL)
+      ? new Response("unavailable", { status: 503 })
+      : upstream()(input, init)) as typeof fetch;
+  const alone = await buildPublicSnapshot({ fetch: emscDown });
+  const fused = await buildPublicSnapshot({
+    fetch: upstream(),
+    previous: { incidents: JSON.parse(alone.files.get("incidents.json")!) },
+  });
+  const geo = (run: { feeds: Map<string, string> }) =>
+    JSON.parse(run.feeds.get(feedPath({ ...DEFAULT_FEED, impact: "any" }, "geojson"))!).features;
+  const usgsIds = new Set(
+    JSON.parse(alone.files.get("incidents.json")!)
+      .incidents.filter((i: IncidentView) => i.reports[0].source_id === "global-usgs-earthquakes")
+      .map((i: IncidentView) => i.id),
+  );
+  const pairs = geo(fused).filter((f: any) => f.properties.incident_ids.length === 2);
+  assert(pairs.length >= 3);
+  const earlier = new Map(geo(alone).map((f: any) => [f.id, f.properties.updated]));
+  for (const f of pairs) {
+    assert(usgsIds.has(f.id), f.id);
+    assert(f.properties.updated > earlier.get(f.id)!);
+  }
 });
 
 test("a source whose rights forbid display is never collected or published", async () => {
@@ -428,8 +569,19 @@ test(
         "/api/news-signals",
         "/api/incidents/link",
         "EventSource",
+        "/api/push",
+        "/api/alert-rules",
+        "serviceWorker",
+        "PushManager",
+        "sw.js",
       ])
         assert(!bundle.includes(owner), owner);
+      assert(!existsSync(path.join(out, "sw.js")));
+      assert(
+        readFileSync(path.join(out, "index.html"), "utf8").includes(
+          `<link rel="alternate" type="application/atom+xml" title="World Watch: world, significant impact or higher" href="data/${feedPath(DEFAULT_FEED, "atom")}">`,
+        ),
+      );
       const { files } = await buildPublicSnapshot({ fetch: upstream() });
       const base = "/world-watch/";
       const types: Record<string, string> = {
@@ -536,6 +688,11 @@ test(
       const sources = await page.locator(".panel-content").innerText();
       for (const s of PUBLIC_SOURCES)
         assert(sources.includes(s.rights.attribution), s.id);
+      await page.getByLabel("Impact").selectOption("severe");
+      assert.equal(
+        await page.getByRole("link", { name: "GeoJSON" }).getAttribute("href"),
+        "./data/" + feedPath({ ...DEFAULT_FEED, impact: "severe" }, "geojson"),
+      );
       const local = requests.filter((r) => r.url.startsWith(origin));
       assert(local.some((r) => r.url.includes("/data/geospatial.json")));
       assert(requests.every((r) => r.method === "GET" && !r.auth));

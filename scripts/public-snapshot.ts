@@ -46,6 +46,10 @@ const snapshot = await buildPublicSnapshot({
     : undefined,
 });
 await mkdir(out, { recursive: true });
+for (const [name, text] of snapshot.feeds) {
+  await mkdir(path.dirname(path.join(out, name)), { recursive: true });
+  await writeFile(path.join(out, name), text);
+}
 for (const [name, text] of snapshot.files)
   await writeFile(path.join(out, name), text);
 for (const s of snapshot.manifest.sources)
@@ -58,4 +62,7 @@ for (const layer of snapshot.manifest.layers)
   );
 for (const [name, { bytes }] of Object.entries(snapshot.manifest.files))
   console.log(`${name}: ${bytes} bytes`);
+console.log(
+  `feeds: ${snapshot.manifest.feeds.files} files, ${snapshot.manifest.feeds.bytes} bytes`,
+);
 console.log(`Snapshot ${snapshot.manifest.generated_at} written to ${out}`);
