@@ -67,3 +67,21 @@ export function countryAt(lon: number, lat: number): string | null {
   }
   return null;
 }
+
+/** The country's largest polygon. A box around every part would centre France in the Atlantic, between Europe and French Guiana. */
+export function mainland(country: string) {
+  // Shoelace area with longitude scaled at the ring's first latitude; only the ranking matters.
+  const size = (ring: number[][]) => {
+    const [x0, y0] = ring[0],
+      k = Math.cos((y0 * Math.PI) / 180);
+    let sum = 0;
+    for (let i = 1; i < ring.length; i++)
+      sum +=
+        (ring[i - 1][0] - x0) * k * (ring[i][1] - y0) -
+        (ring[i][0] - x0) * k * (ring[i - 1][1] - y0);
+    return Math.abs(sum);
+  };
+  return countries
+    .find((c) => c.code === country)?.polygons
+    .reduce((a, b) => (size(b[0]) > size(a[0]) ? b : a));
+}

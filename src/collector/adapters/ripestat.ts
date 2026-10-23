@@ -1,5 +1,6 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 import borders from "../../shared/borders.json";
+import { mainland } from "../../shared/borders.js";
 import { polygonArea } from "./area.js";
 
 export const RIPESTAT_ROUTING_URL =
@@ -141,23 +142,6 @@ function routingDrops(series: Sample[]): RoutingDrop[] {
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
-/** The country's largest polygon. A box around every part would centre France in the Atlantic, between Europe and French Guiana. */
-function mainland(country: string) {
-  // Shoelace area with longitude scaled at the ring's first latitude; only the ranking matters.
-  const size = (ring: number[][]) => {
-    const [x0, y0] = ring[0],
-      k = Math.cos((y0 * Math.PI) / 180);
-    let sum = 0;
-    for (let i = 1; i < ring.length; i++)
-      sum +=
-        (ring[i - 1][0] - x0) * k * (ring[i][1] - y0) -
-        (ring[i][0] - x0) * k * (ring[i - 1][1] - y0);
-    return Math.abs(sum);
-  };
-  return (borders as [string, number[][][][]][])
-    .find(([code]) => code === country)?.[1]
-    .reduce((a, b) => (size(b[0]) > size(a[0]) ? b : a));
-}
 
 /**
  * World Watch's own drop detection for one country from a RIPEstat country-resource-stats response.
