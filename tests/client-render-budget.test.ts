@@ -91,10 +91,22 @@ test(
       await page.goto("http://127.0.0.1:5194");
       await page.getByRole("heading", { name: "Fixture 299", exact: true }).waitFor();
       await page.waitForSelector('.map[data-boundaries="loaded"]');
-      await page.waitForTimeout(1000);
       const counts = () => page.evaluate(() => ({ ...(window as any).__perf }));
+      // Fixed sleeps let start-up or arrival work spill into the next measurement on a
+      // busy machine, so each reading waits until the counters stop moving.
+      const settled = async () => {
+        let last = JSON.stringify(await counts());
+        let quietSince = Date.now();
+        for (const deadline = Date.now() + 20000; Date.now() < deadline; ) {
+          await page.waitForTimeout(150);
+          const now = JSON.stringify(await counts());
+          if (now !== last) [last, quietSince] = [now, Date.now()];
+          else if (Date.now() - quietSince >= 600) return JSON.parse(now);
+        }
+        throw Error("render and map counters never settled");
+      };
 
-      const before = await counts();
+      const before = await settled();
       // The world frame cannot pan, so zoom in and then drag; each settled view reaches App as a bbox.
       const bounds = () => page.locator(".map").getAttribute("data-map-bounds");
       const moved = async (act: () => Promise<void>) => {
@@ -109,15 +121,13 @@ test(
         for (let s = 1; s <= 20; s++) await page.mouse.move(900 - s * 15, 450 + s * 3);
         await page.mouse.up();
       });
-      await page.waitForTimeout(800);
-      const panned = await counts();
+      const panned = await settled();
       assert.equal(panned.loads - before.loads, 0, "a pan sends no source data to the map worker");
       assert.equal(panned.rows - before.rows, 0, "a pan re-renders no feed row");
 
       await page.evaluate(() => (window as any).__streams.at(-1).emit("incident.created", { incident_id: "fixture-arrival", version: 1, catchup: false }, 2));
       await page.getByRole("heading", { name: "Fixture arrival", exact: true }).waitFor();
-      await page.waitForTimeout(800);
-      const arrived = await counts();
+      const arrived = await settled();
       assert.equal(arrived.rows - panned.rows, 1, "only the new row renders");
       assert.equal(arrived.loads - panned.loads, 1, "only the incident source is sent");
       assert.equal(details, 1, "an event without its view is read back");
@@ -126,7 +136,7 @@ test(
       const carried = { ...incident(1001), id: "fixture-carried", headline: "Fixture carried" };
       await page.evaluate((view: any) => (window as any).__streams.at(-1).emit("incident.created", { incident_id: view.id, version: 1, catchup: false, incident: view }, 3), carried);
       await page.getByRole("heading", { name: "Fixture carried", exact: true }).waitFor();
-      await page.waitForTimeout(500);
+      await settled();
       assert.equal(details, 1, "the carried view is used as it is");
     } finally {
       if (browser) await browser.close();
