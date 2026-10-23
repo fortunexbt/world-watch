@@ -18,6 +18,8 @@
     "eval:severity": "tsx scripts/severity-eval/run.ts",
     "snapshot:public": "tsx scripts/public-snapshot.ts",
     "test:browser": "tsx tests/browser-verify.ts",
+    "perf:load": "tsx scripts/load-harness.ts",
+    "perf:client": "tsx scripts/client-perf.ts",
     "build:sites": "npm run build && node scripts/build-sites.mjs",
     "audit:public": "node scripts/audit-public.mjs",
     "atlas:build": "node scripts/atlas.mjs --build",
