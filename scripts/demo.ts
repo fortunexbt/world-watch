@@ -1,5 +1,5 @@
-// Local-only showcase: a throwaway database fed by the worldwide structured
-// sources (USGS, EMSC, GDACS, NWS, ECCC, ADSB.lol, AWC ash SIGMETs, EASA
+// Local-only showcase: a throwaway database fed by the structured sources
+// (USGS, EMSC, GDACS, NWS, ECCC, PAGASA, INMET, ADSB.lol, AWC ash SIGMETs, EASA
 // conflict zone bulletins), World Watch's routing drop detector on RIPEstat and
 // GDELT news coverage signals. No model runs and no private file is read.
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
@@ -19,6 +19,8 @@ const DEMO_SOURCES = [
   "global-gdacs-alerts",
   "us-nws-warnings",
   "ca-eccc-warnings",
+  "ph-pagasa-warnings",
+  "br-inmet-warnings",
   "global-adsblol-emergency-squawks",
   "global-awc-volcanic-ash-sigmets",
   "global-easa-conflict-zone-bulletins",
@@ -144,7 +146,7 @@ try {
   await waitFor(`http://127.0.0.1:${PREVIEW_PORT}/api/health`);
   console.log(
     `\nWorld Watch demo: http://127.0.0.1:${PREVIEW_PORT}/?hours=168\n` +
-      "Live USGS and EMSC earthquakes, GDACS alerts, NWS and ECCC warnings, ADSB.lol emergency squawks, volcanic ash SIGMETs, EASA conflict zone bulletins, Internet routing drops and GDELT news signals, refreshed every 5 minutes. " +
+      "Live USGS and EMSC earthquakes, GDACS alerts, NWS, ECCC, PAGASA and INMET warnings, ADSB.lol emergency squawks, volcanic ash SIGMETs, EASA conflict zone bulletins, Internet routing drops and GDELT news signals, refreshed every 5 minutes. " +
       "Toggle the thermal layer for NASA FIRMS detections. Ctrl-C stops everything and deletes the demo data.",
   );
   setInterval(() => void collect().catch((e) => console.error(String(e))), REFRESH_MS);

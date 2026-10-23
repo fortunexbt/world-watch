@@ -758,30 +758,33 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           }),
         ),
       );
+    // BBK and issuer CAP feeds name the earlier messages an update or cancellation supersedes.
+    const refs =
+      s.family === "bbk" || s.family === "cap"
+        ? (item.official?.references ?? []).slice(0, 20)
+        : [];
+    const publishes =
+      !!item.official && (!!item.source_geo || refs.length > 0) && s.rights.display && existing?.latest_revision !== rev;
+    const ancestors = publishes && refs.length
+      ? await rows(
+          e,
+          `SELECT DISTINCT i.id FROM observations o JOIN evidence_links l ON l.report_id=o.id JOIN incidents i ON i.id=l.incident_id WHERE o.source_id=? AND o.native_id IN(${refs.map(() => "?").join(",")}) AND i.deleted_at IS NULL`,
+          item.source_id,
+          ...refs,
+        )
+      : [];
+    const iid = publishes ? ancestors[0]?.id ?? (await hash(item.source_event_id ? `${item.source_id}:${item.source_event_id}:0` : `${id}:0`)) : "";
+    const previous = publishes
+      ? await stmt(e, "SELECT version,view FROM incidents WHERE id=?", iid).first<any>()
+      : null;
+    // A message that names earlier ones but finds no warning World Watch published, whether a
+    // cancellation or one without its own geometry, has nothing to end or place; it stays an observation.
     if (
       item.official &&
-      (item.source_geo ||
-        ((item.official.references?.length ?? 0) > 0 && s.family === "bbk")) &&
-      s.rights.display &&
-      existing?.latest_revision !== rev
+      publishes &&
+      (previous || (item.source_geo && !(item.official.cancelled && refs.length)))
     ) {
-      const refs =
-        s.family === "bbk" ? (item.official.references ?? []).slice(0, 20) : [];
-      const ancestors = refs.length
-        ? await rows(
-            e,
-            `SELECT DISTINCT i.id FROM observations o JOIN evidence_links l ON l.report_id=o.id JOIN incidents i ON i.id=l.incident_id WHERE o.source_id=? AND o.native_id IN(${refs.map(() => "?").join(",")}) AND i.deleted_at IS NULL`,
-            item.source_id,
-            ...refs,
-          )
-        : [];
-      const iid = ancestors[0]?.id ?? (await hash(item.source_event_id ? `${item.source_id}:${item.source_event_id}:0` : `${id}:0`));
-      const previous = await stmt(
-          e,
-          "SELECT version,view FROM incidents WHERE id=?",
-          iid,
-        ).first<any>(),
-        version = (previous?.version ?? 0) + 1,
+      const version = (previous?.version ?? 0) + 1,
         g = item.source_geo,
         // A cancellation without geometry keeps the geometry of the warning it ends.
         ended =

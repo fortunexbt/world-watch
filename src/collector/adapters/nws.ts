@@ -1,6 +1,7 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 import { polygonArea } from "./area.js";
 import { buildFootprint } from "../../shared/footprint.js";
+import { CAP_IMPACT } from "./cap.js";
 
 /**
  * Active storm-based warnings. NWS draws each of these as its own polygon, so no zone boundary has
@@ -19,13 +20,6 @@ const HAZARD = {
   FF: "flood",
   FA: "flood",
   FL: "flood",
-} as const;
-/** CAP severity states a threat, not observed harm, so each level maps one step down and Extreme never becomes critical. */
-export const NWS_IMPACT = {
-  Minor: "informational",
-  Moderate: "minor",
-  Severe: "significant",
-  Extreme: "severe",
 } as const;
 const STATES = new Set(
   "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(
@@ -96,8 +90,8 @@ export function parseNws(
         return STATES.has(state) ? "US" : TERRITORIES.has(state) ? state : null;
       }),
     );
-    const severity = Object.hasOwn(NWS_IMPACT, p.severity)
-      ? (p.severity as keyof typeof NWS_IMPACT)
+    const severity = Object.hasOwn(CAP_IMPACT, p.severity)
+      ? (p.severity as keyof typeof CAP_IMPACT)
       : null;
     const parameters = Object.fromEntries(
       PARAMETERS.flatMap((k) =>
@@ -159,7 +153,7 @@ export function parseNws(
         effective_at: first,
         expires_at: stamp(p.ends) ?? stamp(p.expires),
         activity: HAZARD[phenomenon as keyof typeof HAZARD],
-        impact: severity ? NWS_IMPACT[severity] : ("unknown" as const),
+        impact: severity ? CAP_IMPACT[severity] : ("unknown" as const),
         cancelled: action === "CAN" || action === "UPG",
         message_type: text(p.messageType) || undefined,
       },

@@ -147,7 +147,7 @@ const meteo = Object.entries(METEO_COUNTRIES).map(
       display: false,
       redistribute: false,
       basis:
-        "Live Atom feed declares CC BY 4.0 equivalent AND additional redistributor Terms and Conditions. Additional requirements not yet verified; no operational ingestion until reviewed.",
+        'MeteoAlarm Terms and Conditions (last updated 15 March 2024, read 23 October 2026): information "may be used and redistributed under terms equivalent to the Creative Commons Attribution 4.0 International License (CC BY 4.0), along with the following additional requirements": modified information must be accompanied by the unmodified original; the source is shown as "EUMETNET – MeteoAlarm", or the participating service for one country; the time of issue is included; internet applications link www.meteoalarm.org and show its time-delay disclaimer; and "Any Information being operationally redistributed must always be made available to users in real-time, with the delay between the publishing on the MeteoAlarm Website and the redistributor\'s website being on average less than five minutes and never longer than ten minutes." https://meteoalarm.org/en/live/page/terms-and-conditions . Not integrated: see unresolved_permission.',
       attribution: "MeteoAlarm / originating national meteorological service",
       retention_days: 0,
     },
@@ -155,6 +155,8 @@ const meteo = Object.entries(METEO_COUNTRIES).map(
       format: "atom_cap",
       validation:
         "HTTP 200 valid Atom on 2026-10-21; weather only, NOT demonstration coverage",
+      unresolved_permission:
+        "The delay clause rules out the public demo, which is rebuilt every ten minutes on a schedule that drifts. The private collector reads sources in turn under one shared request budget and backs off after failures, so it can't promise the ten-minute ceiling either. Warnings name their areas only by EMMA_ID or NUTS geocodes, so mapping them also needs MeteoAlarm's separately distributed geocode boundary file.",
     },
   }),
 );
@@ -569,6 +571,61 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "structured_natural_hazard",
       coverage:
         "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex; the region polygon is kept as the warning's advisory area, simplified to the tolerance stored with it.",
+    },
+  },
+  {
+    ...base,
+    id: "ph-pagasa-warnings",
+    name: "PAGASA: public weather warnings, Philippines",
+    owner:
+      "Philippine Atmospheric, Geophysical and Astronomical Services Administration (PAGASA-DOST)",
+    url: "https://publicalert.pagasa.dost.gov.ph/feeds/",
+    docs: "https://publicalert.pagasa.dost.gov.ph/feeds/",
+    countries: ["PH"],
+    languages: ["en"],
+    categories: ["natural_hazard", "severe_weather", "flood", "tropical_cyclone"],
+    family: "cap",
+    verified_at: "2026-10-23T15:45:00Z",
+    rights: rights(
+      'PAGASA\'s public alert feed states: "Copyright, Philippine Atmospheric Geophysical and Astronomical Services Administration. Licensed under CC BY 4.0." https://publicalert.pagasa.dost.gov.ph/feeds/ (read 23 October 2026); no separate terms page was found. https://creativecommons.org/licenses/by/4.0/ . Warning text is reproduced unchanged; derived labels are World Watch\'s. Deterministic structured publication; no model analysis.',
+      "PAGASA-DOST, Philippine Atmospheric, Geophysical and Astronomical Services Administration, CC BY 4.0. Warning text unchanged; impact labels, map points and simplified areas are World Watch derivations, not PAGASA products.",
+      false,
+    ),
+    config: {
+      format: "cap_index",
+      document_path: "^/output/[a-z]+/[0-9a-f-]{36}\\.cap$",
+      issuer_label: "PAGASA",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Every CAP message PAGASA's public alert feed lists: general flood advisories with province polygons and tropical cyclone wind signal warnings, one message per province. Wind signal warnings name their province only by PSGC code, so they are stored but not mapped. Each document is read once; points are bounding-box centres of the warned provinces with a radius to the farthest vertex, and the polygons are kept as advisory areas, simplified to the tolerance stored with them.",
+    },
+  },
+  {
+    ...base,
+    id: "br-inmet-warnings",
+    name: "INMET: severe weather warnings, Brazil",
+    owner: "Instituto Nacional de Meteorologia (INMET)",
+    url: "https://apiprevmet3.inmet.gov.br/avisos/rss",
+    docs: "https://avisos.inmet.gov.br/",
+    countries: ["BR"],
+    languages: ["pt"],
+    categories: ["natural_hazard", "severe_weather"],
+    family: "cap",
+    verified_at: "2026-10-23T15:45:00Z",
+    rights: rights(
+      'INMET\'s warning feed and warnings site state: "O conteudo deste site, podera ser reproduzido desde que citada a fonte, excetuando os casos especificados em contrario e os conteudos replicados de outras fontes." https://apiprevmet3.inmet.gov.br/avisos/rss ; https://avisos.inmet.gov.br/ (read 23 October 2026). Reproduction is permitted with the source cited; the feed\'s "public domain" copyright element is generic and not relied on. Modification is not addressed, so warning text is kept unchanged. INMET accepts no liability for content hosted by third parties. Deterministic structured publication; no model analysis.',
+      "Fonte: Instituto Nacional de Meteorologia (INMET), https://avisos.inmet.gov.br . Warning text unchanged; impact labels, map points and simplified areas are World Watch derivations, not INMET products.",
+      false,
+    ),
+    config: {
+      format: "cap_index",
+      document_path: "^/avisos/rss/\\d+$",
+      issuer_label: "INMET",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Every CAP message INMET's warning feed lists, each with its own polygon: storms, heavy rain, accumulated rain, coastal winds, frost and low humidity. The feed also lists cancellations of warnings it no longer lists; a cancellation of a warning World Watch never read publishes nothing. Each document is read once; points are bounding-box centres with a radius to the farthest vertex, and the polygons are kept as advisory areas, simplified to the tolerance stored with them.",
     },
   },
   ...gdelt,

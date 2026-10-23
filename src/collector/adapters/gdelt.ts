@@ -1,4 +1,5 @@
 import { countryAt } from "../../shared/borders.js";
+import { decodeEntities } from "../parsers.js";
 import type {
   NewsArticle,
   NewsBatch,
@@ -137,26 +138,10 @@ export async function* zipLines(bytes: Uint8Array<ArrayBuffer>) {
   }
 }
 
-const ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-};
 function headline(extras: string) {
   const raw = extras.match(/<PAGE_TITLE>(.*?)<\/PAGE_TITLE>/s)?.[1];
   if (!raw) return null;
-  const title = raw
-    .replace(
-      /&(?:#x([0-9a-f]{1,6})|#(\d{1,7})|([a-z]+));/gi,
-      (all, hex, dec, name) => {
-        const code = hex ? parseInt(hex, 16) : dec ? Number(dec) : null;
-        if (code === null) return ENTITIES[name.toLowerCase()] ?? all;
-        return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
-      },
-    )
+  const title = decodeEntities(raw)
     .replace(/[\p{Cc}\s]+/gu, " ")
     .trim();
   return title ? title.slice(0, 300).replace(/[\uD800-\uDBFF]$/, "") : null;

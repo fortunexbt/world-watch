@@ -18,11 +18,8 @@ import {
   GDACS_IMPACT,
   GDACS_EVENTS_URL,
 } from "../src/collector/adapters/gdacs.js";
-import {
-  parseNws,
-  NWS_IMPACT,
-  NWS_ALERTS_URL,
-} from "../src/collector/adapters/nws.js";
+import { parseNws, NWS_ALERTS_URL } from "../src/collector/adapters/nws.js";
+import { CAP_IMPACT } from "../src/collector/adapters/cap.js";
 import {
   parseEccc,
   ECCC_IMPACT,
@@ -987,12 +984,12 @@ test("an NWS cancellation is the latest revision of its warning, and CAP severit
   assert.equal(live.official?.cancelled, false);
   assert.equal(live.official?.impact, "severe");
   assert.equal(record(live).tornadoDetection, "RADAR INDICATED");
-  for (const [severity, impact] of Object.entries(NWS_IMPACT)) {
+  for (const [severity, impact] of Object.entries(CAP_IMPACT)) {
     const copy = structuredClone(nws);
     copy.features[0].properties.severity = severity;
     assert.equal(parseNws(nwsSource, copy)[0].official?.impact, impact);
   }
-  assert.equal(NWS_IMPACT.Extreme, "severe");
+  assert.equal(CAP_IMPACT.Extreme, "severe");
   const odd = structuredClone(nws);
   odd.features[0].properties.severity = "Unknown";
   // Test-class VTEC and a December first message both change what is admitted or identified.

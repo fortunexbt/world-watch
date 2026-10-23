@@ -26,6 +26,8 @@ export const APPROVED_HOSTS = new Set([
   "www.gdacs.org",
   "api.weather.gov",
   "api.weather.gc.ca",
+  "publicalert.pagasa.dost.gov.ph",
+  "apiprevmet3.inmet.gov.br",
   "api.adsb.lol",
   "aviationweather.gov",
   "www.easa.europa.eu",
@@ -83,6 +85,8 @@ export type FetchState = {
   news_files?: string[];
   /** Recent issuer-time-to-ingest samples for new and changed records. */
   issuer_lag?: LagSample[];
+  /** CAP documents an issuer index lists that were read, by URL: the index's stamp for each and the alert it held. */
+  cap_documents?: Record<string, { stamp: string; identifier: string }>;
   /** Issuer geometry reads in the last complete poll; pending records published without geometry and are read again next poll. */
   footprints?: { read: number; pending: string[]; error: string | null };
 };

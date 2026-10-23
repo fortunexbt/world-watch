@@ -74,6 +74,13 @@ const czibText = readFileSync("tests/fixtures/easa-czibs.csv", "utf8");
 const emsc = JSON.parse(
   readFileSync("tests/fixtures/emsc-events.json", "utf8"),
 );
+// PAGASA's and INMET's CAP indexes, each document served at its path on the issuer's host.
+const capFeeds = ["ph-pagasa-warnings", "br-inmet-warnings"].map((id) => ({
+  source: sourceRegistry.find((s) => s.id === id)!,
+  ...JSON.parse(
+    readFileSync(`tests/fixtures/${id.split("-")[1]}-cap.json`, "utf8"),
+  ),
+}));
 const recent = () => {
   const iso = new Date(Date.now() - 3600000).toISOString();
   return [iso.slice(0, 10), iso.slice(11, 13) + iso.slice(14, 16)];
@@ -86,6 +93,17 @@ function upstream(requests: { url: string; method: string }[] = []) {
     if (feeds[url]) return Response.json(feeds[url]);
     if (url === EASA_CZIB_TEXT_URL)
       return new Response(czibText, { headers: { "content-type": "text/csv" } });
+    for (const cap of capFeeds) {
+      if (url === cap.source.url)
+        return new Response(cap.index, {
+          headers: { "content-type": "application/xml" },
+        });
+      const { origin, pathname } = new URL(url);
+      if (origin === new URL(cap.source.url).origin && cap.documents[pathname])
+        return new Response(cap.documents[pathname], {
+          headers: { "content-type": "text/xml" },
+        });
+    }
     if (url.startsWith(EMSC_QUERY_URL + "?")) return Response.json(emsc);
     const sensor = FIRMS_SENSORS.find((s) => s.url === url);
     if (sensor) {
@@ -142,11 +160,13 @@ function upstream(requests: { url: string; method: string }[] = []) {
 // advisory role with EASA but stay out while foreign issuers' terms are unresolved.
 test("public sources are the enabled structured hazard and aviation advisory feeds whose rights permit display", () => {
   assert.deepEqual(PUBLIC_SOURCES.map((s) => s.id).sort(), [
+    "br-inmet-warnings",
     "ca-eccc-warnings",
     "global-easa-conflict-zone-bulletins",
     "global-emsc-earthquakes",
     "global-gdacs-alerts",
     "global-usgs-earthquakes",
+    "ph-pagasa-warnings",
     "us-nws-warnings",
   ]);
   assert(
@@ -200,7 +220,9 @@ test("the snapshot publishes the API's projection, briefs for every window and a
   assert(incidents.every((i) => i.analyzed_at === null));
   // Issuer geometry travels with the views the demo publishes, as display copies.
   const roles = (role: string) => incidents.filter((i) => i.footprint?.role === role);
-  assert.equal(roles("advisory_area").length, incidents.filter((i) => ["us-nws-warnings", "ca-eccc-warnings"].includes(i.reports[0].source_id)).length);
+  assert.equal(roles("advisory_area").length, incidents.filter((i) => ["us-nws-warnings", "ca-eccc-warnings", "ph-pagasa-warnings", "br-inmet-warnings"].includes(i.reports[0].source_id)).length);
+  assert(roles("advisory_area").some((i) => i.reports[0].source_id === "ph-pagasa-warnings"));
+  assert(roles("advisory_area").some((i) => i.reports[0].source_id === "br-inmet-warnings"));
   assert.equal(roles("inferred_affected_area").length, 1);
   assert(incidents.every((i) => !i.footprint || (!i.footprint.detail && i.footprint.display.parts.length > 0)));
   // Linked records fuse: USGS, GDACS and EMSC for Vanuatu, USGS and EMSC for three more quakes,

@@ -56,11 +56,13 @@ function issuer(view: IncidentView): Record<string, any> {
     return {};
   }
 }
-/** NWS and ECCC warning records, recognised by their own fields, are counted per issuer, hazard and country. */
+/** NWS, ECCC and issuer CAP warning records, recognised by their own fields, are counted per issuer, hazard and country. */
 function warningIssuer(record: Record<string, any>) {
   if (typeof record.vtec === "string") return "NWS";
   if (typeof record.alert === "string" && "risk_colour" in record)
     return "ECCC";
+  if (typeof record.cap_identifier === "string" && typeof record.issuer === "string")
+    return record.issuer;
   return null;
 }
 function countries(codes: unknown) {

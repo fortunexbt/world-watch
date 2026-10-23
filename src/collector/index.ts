@@ -6,7 +6,6 @@ import { fetchSource, type FetchOptions, type FetchState } from "./fetch.js";
 import {
   parseFeed,
   parseTfl,
-  parseBbk,
   parseDwd,
   parseSiri,
   parseDpcArticle,
@@ -31,6 +30,7 @@ import {
   parseGdacsGeometry,
 } from "./adapters/gdacs.js";
 import { parseNws } from "./adapters/nws.js";
+import { capIndex, parseBbk, parseCap, readCap } from "./adapters/cap.js";
 import { parseEccc } from "./adapters/eccc.js";
 import { parseAwcSigmets } from "./adapters/awc.js";
 import { EASA_CZIB_TEXT_URL, parseEasaCzibs } from "./adapters/easa.js";
@@ -74,6 +74,8 @@ export type CollectorOptions = FetchOptions & {
 };
 /** Issuer geometry reads per source per poll; a ShakeMap read is two requests. */
 const FOOTPRINT_READS = 4;
+/** CAP documents read at once from one issuer. */
+const CAP_READS = 4;
 export type CollectorResult = {
   source_id: string;
   status: "ok" | "not_modified" | "skipped" | "error";
@@ -237,6 +239,7 @@ export async function collectSources(
           )
         : [];
     let routing: FetchState["routing"];
+    let capDocuments: FetchState["cap_documents"];
     try {
       const requestURL =
         source.config.format === "zwaailicht_incidents"
@@ -357,6 +360,54 @@ export async function collectSources(
             source,
             JSON.parse(response.text),
             bulletins.text,
+          );
+          break;
+        }
+        case "cap_index": {
+          // Each listed document is read once per index stamp; documents the run's budget leaves
+          // unread stay out of the checkpoint and are read on the next poll.
+          const known = before.cap_documents ?? {};
+          capDocuments = {};
+          const unread = [];
+          for (const entry of capIndex(source, response.text))
+            if (known[entry.url]?.stamp === entry.stamp)
+              capDocuments[entry.url] = known[entry.url];
+            else unread.push(entry);
+          for (let i = 0; i < unread.length; i += CAP_READS) {
+            const batch = unread.slice(i, i + CAP_READS);
+            // Room is kept to ingest what was read, three records a request, so a short budget still progresses.
+            if (
+              requests +
+                batch.length +
+                Math.ceil((observations.length + batch.length) / 3) >
+              maxRequests - 8
+            )
+              break;
+            const read = await Promise.all(
+              batch.map(async (entry) => ({
+                entry,
+                alert: readCap(
+                  (
+                    await fetchSource(entry.url, {}, {
+                      ...options,
+                      fetch: fetcher,
+                      maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                    })
+                  ).text,
+                ),
+              })),
+            );
+            for (const { entry, alert } of read) {
+              capDocuments[entry.url] = {
+                stamp: entry.stamp,
+                identifier: alert.identifier,
+              };
+              observations.push(...parseCap(source, alert, entry.url));
+            }
+          }
+          // A cancellation or update must reach the server after the message it references.
+          observations.sort((a, b) =>
+            a.published_at!.localeCompare(b.published_at!),
           );
           break;
         }
@@ -708,7 +759,11 @@ export async function collectSources(
         received += batch.length;
         offset += batch.length;
       }
-      const currentIds = new Set(observations.map((o) => o.native_id));
+      const currentIds = new Set([
+        ...observations.map((o) => o.native_id),
+        // Documents still listed and read before keep their alerts accepted.
+        ...Object.values(capDocuments ?? {}).map((d) => d.identifier),
+      ]);
       for (const id of Object.keys(acceptedItems))
         if (!currentIds.has(id)) delete acceptedItems[id];
       let complete = offset >= missing.length;
@@ -766,6 +821,7 @@ export async function collectSources(
               ...(routing ? { routing } : {}),
               accepted_items: acceptedItems,
               news_files: newsFiles,
+              cap_documents: capDocuments,
               issuer_lag,
               admission,
               ...(footprintURL

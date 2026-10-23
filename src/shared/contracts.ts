@@ -261,7 +261,15 @@ export type SourceRecord = {
   languages: string[];
   categories: string[];
   family:
-    "rss" | "bbk" | "tfl" | "gtfs_rt" | "social" | "gdelt" | "dwd" | "siri";
+    | "rss"
+    | "bbk"
+    | "cap"
+    | "tfl"
+    | "gtfs_rt"
+    | "social"
+    | "gdelt"
+    | "dwd"
+    | "siri";
   status:
     | "enabled"
     | "awaiting_credentials"
