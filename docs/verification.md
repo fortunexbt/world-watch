@@ -205,12 +205,50 @@ Coordinates compress poorly, so gzip grows more than raw bytes. On the synthetic
 
 `npm run perf:client -- --markers=1000 --runs=1 --browser=chromium`, three runs each, alternating the base commit and this branch at a load average of 26 to 44: pan p95 and p99 frames stayed at 16.7 to 16.8 ms with no map source loads; load-to-ready medians were 2,684 ms before and 2,729 ms after; the 100-arrival SSE burst's main-thread script medians were 1,050 and 1,058 ms. The burst sent 161, 141 and 122 GeoJSON loads to the map worker after, against 98, 96 and 69 before, because each arrival with a footprint re-sends the footprint source as well as the incident source. The footprint source now sends the whole set only on its first load and patches it afterwards with MapLibre's `updateData`, keyed by short numeric feature ids. With 1,000 synthetic list views (430 footprints) on screen and 50 SSE arrivals carrying NWS and ECCC footprints, in Chromium: before, 50 footprint loads posted 8,602,583 bytes to the map worker, about 172 kB per arrival; after, 50 patches posted 31,560 bytes. The first load went from 169,816 to 173,560 bytes for the ids. `tests/footprint-map.test.ts` asserts that a pan sends neither source, that selecting an incident patches the footprint source once with its detail copy, and that footprints arriving by SSE are patched in one each and drawn.
 
+### Every thermal detection as vector tiles
+
+The thermal layer no longer samples. The server parses the three FIRMS files as before, sorts every detection once per refresh by its zoom 9 tile (`src/server/thermal-tiles.ts`), and encodes Mapbox Vector Tiles from that order: below zoom 6 one point per occupied cell (64 by 64 cells a tile) at the cell's mean position with its exact count, from zoom 6 to 9 every detection, grouped into one multipoint per sensor, acquisition minute and confidence. MapLibre overzooms zoom 9 tiles, whose 4,096 units resolve about 19 m at the equator, a twentieth of a VIIRS pixel. The owner app reads `/api/thermal/<refresh>/{z}/{x}/{y}`, owner-only, encoded on first request and kept for the refresh; a tile under its own refresh's name is immutable. The public snapshot writes every tile into one PMTiles archive, `data/thermal.pmtiles`, and the public client reads it with range requests through a small reader (`src/client/thermal-tiles.ts`), falling back to the whole file when a server ignores `Range`. A click picks the nearest detection within 12 px from the tile itself, so its sensor, acquisition time and confidence need no other read. `tests/thermal-tiles.test.ts` decodes tiles with MapLibre's own decoder and checks that every zoom's counts sum to the total, the antimeridian, the PMTiles layout, leaf directories and the 24 MiB ceiling; `tests/client-thermal.test.ts` checks layer switching and click provenance on the real map.
+
+Tooling considered: tippecanoe (BSD-2) is a C++ binary outside npm that the Actions runner would have to install, and its defaults drop or merge points at low zooms, which breaks exact counts; `geojson-vt` and `vt-pbf` (ISC, MIT, already under MapLibre) need a GeoJSON copy of every detection; the `pmtiles` package (BSD-3, 4.5.0) only reads archives and adds about 20 kB plus `fflate` to the client. The index and encoder, archive writer and range reader here are about 680 lines with no new dependency. The `pmtiles` 4.5.0 reader, run outside the repository, read all 12,360 tiles of the real archive below, and its tile IDs matched ours for 26,000 random tiles. Bundle growth: owner client +2.1 kB (+0.9 kB gzip), public client +4.9 kB (+2.3 kB gzip, the reader is only in the public build), Worker +3.6 kB minified.
+
+Real day: the FIRMS 24-hour files read at 13:55 UTC on 23 October 2026, limited to the 24 hours before 12:05 UTC, held 218,308 detections. Archive build, three runs at a load average of 28 to 31: index 81 to 119 ms, tiles and archive 753 to 979 ms wall (1.0 to 1.2 s CPU) after a 1.1 to 1.7 s parse. The archive is 4,583,584 bytes with 12,360 tiles; the largest tile is 44 kB before gzip (zoom 6), a world view's zoom 0 tile 9 kB. The synthetic 200,000-detection reference day is scattered more evenly and makes a 16.3 MB archive with 50,832 tiles, still inside the ceiling.
+
+Worker handler CPU from `npm run perf:load` on the synthetic 200,000 detections (Node, in process, five runs, load average 20 to 24, baseline at `1a58114` alternated with this change):
+
+| Request | Before | After |
+| --- | --- | --- |
+| Geospatial world, cold (parses FIRMS) | 833 ms | 630 ms |
+| Geospatial world, warm | 66 ms, 1,662,612 bytes, 2,000 detections | 0.9 ms, 1,713 bytes, counts only |
+| First tile of a refresh (indexes every detection) | | 110 ms (93 to 161) |
+| Any other tile, first request | | median 0.1 to 3.9 ms by zoom, at most 9.2 ms |
+| Same tile again | | at most 1.9 ms |
+
+Client, `--use-angle=metal` headless Chromium on an Apple M4, 1440 by 900, the real day's files re-timed for each run, no incidents, external tiles blocked, three alternating runs per build. Each run turns the layer on at the world view, pans three times, zooms with 17 wheel steps to zoom 6.6 over Botswana and Zambia, pans there and zooms out. Bytes are what the local server sent gzip-compressed. Load averages were 25 to 38 at 1x CPU and 8 to 19 at 4x. One baseline run at 1x lost its page midway and is left out, so that cell has two runs.
+
+| Measure (medians) | Before: 2,000 sampled | After: all 218,308 |
+| --- | --- | --- |
+| Layer on to settled map, 1x CPU | 637 ms, 46.6 kB | 753 ms (641 to 1,047), 12.5 kB |
+| Layer on, main-thread task time, 4x CPU | 215 ms | 180 ms |
+| World pan, bytes | 93 kB (two re-reads of the sample) | 1.4 kB |
+| Zoom to 6.6, bytes and requests | 42 kB, 1 | 186 kB, 55 tiles |
+| Regional pan, bytes | 127 kB | 37 kB |
+| Whole session, bytes sent (raw) | 356 kB (13.3 MB) | 268 kB (0.56 MB) |
+| Frame p95 and p99 in every gesture, 1x and 4x CPU | 16.7 to 16.8 ms | 16.7 to 16.8 ms |
+| Frames over 33 ms, LoAF blocking | 0 to 1, 0 ms | 0, 0 ms |
+| Zoom and regional pan, map worker busy time (traces) | 1,275 ms (884 to 1,322) | 762 ms (631 to 769) |
+| Same, renderer main and GPU main busy time | 2,245 and 1,608 ms | 2,022 and 1,526 ms |
+
+The public build, served with the real archive by a local server that honours `Range` (three identical runs), read 35,708 bytes in 5 range requests to show the world view (the first 16 KiB of the file, one leaf directory and the tiles) and 232,378 bytes in 55 requests for the same zoom to 6.6 over Zambia and the Democratic Republic of the Congo. Tiles inside the archive are already gzip-compressed, so these are transfer sizes.
+
+Frame pacing held at one display frame in both builds at 1x and 4x CPU, so the frames don't separate them; the map worker did less work with tiles, because the sample was re-read and re-tiled on every settled view. The reference client scene (`npm run perf:client`, 1,000 incidents and all 200,000 synthetic detections) panned at p99 16.8 ms with no long animation frames in a single run at load 10. This is desktop Chromium; no claim here covers iPhone smoothness.
+
 ### Remaining costs, largest first
 
 - Snapshot handler CPU. A list-view world snapshot still parses 1,000 full views from D1 (26 to 30 ms of handler CPU), above Workers Free's 10 ms. Trimming in SQL, or storing a list projection beside each view, would cut the parse.
 - Search reads every match before ranking (14,876 rows for "earthquake"), and all-time area views read every row in their cells (10,337 for Fiji).
 - Each three-record ingest still reads about 500 rows, mostly the alert delivery ledger, and the store grows to 4.7 GB at 100,000 incidents, 1.24 million rows of it alert deliveries from 20 rules, which needs checking against D1's per-database size limit.
-- The first geospatial request in an isolate parses about 30 MB of FIRMS text.
+- The first geospatial request in an isolate parses about 30 MB of FIRMS text, and the first thermal tile after it indexes every detection (about 110 ms of CPU).
+- MapLibre requests the same world-view tile once per visible world copy before the browser cache holds it, so a zoom 0 view costs the Worker up to three requests for one tile.
 - No phone was measured. iPhone claims need Safari Web Inspector timelines on a physical device with the same scene.
 
 ## Unproven
