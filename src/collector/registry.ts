@@ -438,6 +438,8 @@ export const sourceRegistry: SourceRecord[] = [
       format: "gdacs_geojson",
       max_bytes: 2 * 1024 * 1024,
       max_pages: 3,
+      // Six reads on 23 October 2026 took 1.6 to 74.9 s (median 33 s), all server time before the first byte.
+      timeout_ms: 90000,
       operational_role: "structured_natural_hazard",
       coverage:
         "Current Orange and Red events for EQ, TC, FL, VO, DR and WF, read in pages of 100 and live while GDACS lists them as current. Green events are excluded: on 22 October 2026 they added over 300 current events, mostly small wildfires, at impact minor. Points are GDACS centroids, not impact footprints; country only when GDACS lists exactly one affected country.",

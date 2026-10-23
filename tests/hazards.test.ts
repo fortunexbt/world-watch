@@ -495,7 +495,13 @@ const gdacsPage = (count: number, first = 0) => ({
 });
 async function collectGdacs(
   pages: Record<string, unknown>,
-  options: { maxRequests?: number; source?: SourceRecord } = {},
+  options: {
+    maxRequests?: number;
+    source?: SourceRecord;
+    /** Milliseconds a URL takes to answer, or until the request is aborted. */
+    delays?: Record<string, number>;
+    timeoutMs?: number;
+  } = {},
 ) {
   const requested: string[] = [];
   const accepted: ObservationInput[] = [];
@@ -522,18 +528,57 @@ async function collectGdacs(
           reconciled.push(JSON.parse(String(init?.body)).active_native_ids);
           return Response.json({ changed: 0, more: false });
         }
+        const delay = options.delays?.[String(url)];
+        if (delay)
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(resolve, delay);
+            init?.signal?.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(init.signal!.reason);
+            });
+          });
         const page = pages[String(url)];
         return page === undefined
           ? new Response(null, { status: 204 })
           : Response.json(page);
       },
       maxRequests: options.maxRequests ?? 40,
+      timeoutMs: options.timeoutMs,
       now: () => Date.parse("2026-10-21T18:00:00Z"),
     },
   );
   return { results, requested, accepted, reconciled, health };
 }
 const page = (n: number) => `${GDACS_EVENTS_URL}&pagenumber=${n}`;
+
+test("GDACS waits for its own measured timeout on every page, and other sources keep the collector's", async () => {
+  // GDACS answered in 1.6 to 74.9 s, so it waits longer than the 15 s fetch default, which stays as it was.
+  assert.equal(gdacsSource.config.timeout_ms, 90000);
+  assert.equal(usgsSource.config.timeout_ms, undefined);
+  const scaled = (ms: number) => ({ ...gdacsSource, config: { ...gdacsSource.config, timeout_ms: ms } });
+  const listed = { [GDACS_EVENTS_URL]: gdacsPage(1) };
+  const slow = { [GDACS_EVENTS_URL]: 150 };
+  assert.deepEqual(
+    (await collectGdacs(listed, { source: scaled(1000), delays: slow, timeoutMs: 30 })).results.map((r) => r.status),
+    ["ok"],
+    "the source's timeout overrides a shorter collector timeout",
+  );
+  const late = await collectGdacs(listed, { source: scaled(30), delays: slow, timeoutMs: 1000 });
+  assert.equal(late.results[0].status, "error");
+  assert.equal(late.accepted.length, 0);
+  const paged = await collectGdacs(
+    { [GDACS_EVENTS_URL]: gdacsPage(100), [page(2)]: gdacsPage(1, 100) },
+    { source: scaled(30), delays: { [page(2)]: 150 }, timeoutMs: 1000 },
+  );
+  assert.equal(paged.results[0].status, "error", "later pages wait no longer than the first");
+  assert.equal(paged.reconciled.length, 0);
+  const { timeout_ms, ...config } = gdacsSource.config;
+  assert.equal(
+    (await collectGdacs(listed, { source: { ...gdacsSource, config }, delays: slow, timeoutMs: 30 })).results[0].status,
+    "error",
+    "without its own value a source keeps the collector's timeout",
+  );
+});
 
 test("GDACS pages past 100 events and publishes and reconciles all 101", async () => {
   const run = await collectGdacs({

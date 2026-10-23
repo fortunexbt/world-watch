@@ -215,6 +215,7 @@ export async function collectSources(
             ? source.config.accept
             : undefined,
         maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+        timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
       });
       if (response.notModified) {
         await health(source.id, {
@@ -265,6 +266,7 @@ export async function collectSources(
                 fetch: fetcher,
                 allowNoContent: true,
                 maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
               },
             );
             if (!page.text) break;
@@ -306,6 +308,7 @@ export async function collectSources(
                 ...options,
                 fetch: fetcher,
                 maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
               },
             );
             const data = JSON.parse(page.text);
