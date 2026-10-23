@@ -226,7 +226,8 @@ try {
     "sahara quiet 168h": "hours=168&bbox=-5,15,30,30",
     "search earthquake 168h": "hours=168&q=earthquake",
   };
-  const snapshotPath = (q: string) => `/api/snapshot?include_incoming=0&${q}`;
+  // The client asks for list views; the detail endpoint serves a selected incident.
+  const snapshotPath = (q: string) => `/api/snapshot?include_incoming=0&view=list&${q}`;
   log("snapshot viewports");
   await call(snapshotPath("hours=168"));
   const viewportSamples: Record<string, Sample[]> = {};

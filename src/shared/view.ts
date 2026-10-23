@@ -56,3 +56,21 @@ export function viewFilter(params: URLSearchParams, bbox?: number[]) {
     (!(hours > 0) || incidentInWindow(i, hours)) &&
     (!bbox || inBbox(i.location, bbox));
 }
+
+/** The excerpt the map reads a quake's magnitude from (client/hazards.ts). */
+export const MAGNITUDE_EXCERPT = "usgs-event";
+/**
+ * The fields the feed, map, filters and situation grouping read. Summaries, other evidence text
+ * and rights wording stay with the detail endpoint, which a selected incident is read from.
+ */
+export function listView(i: IncidentView) {
+  const { summary_en, summary_it, ...rest } = i;
+  return {
+    ...rest,
+    reports: i.reports.map(({ excerpts, rights, ...report }: any) => ({
+      ...report,
+      excerpts: (excerpts ?? []).filter((e: { id?: string }) => e.id === MAGNITUDE_EXCERPT),
+      rights: rights && { access: rights.access, storage: rights.storage, ai: rights.ai, display: rights.display, redistribute: rights.redistribute },
+    })),
+  };
+}

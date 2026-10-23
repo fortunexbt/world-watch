@@ -219,6 +219,7 @@ export default function App() {
     reading = useRef(false),
     current = useRef(snapshot),
     snapshotReads = useRef(new Map<string, Promise<Snapshot>>()),
+    detailed = useRef<IncidentView | null>(null),
     soundRef = useRef(sound);
   current.current = snapshot;
   soundRef.current = sound;
@@ -230,6 +231,7 @@ export default function App() {
           include_incoming: incoming ? "1" : "0",
           q: query,
           hours: windowHours,
+          view: "list",
         });
         if (scope === "Map area" && bbox) params.set("bbox", bbox);
         if (scope.startsWith("watch:")) {
@@ -249,7 +251,17 @@ export default function App() {
             .finally(() => snapshotReads.current.delete(snapshotUrl))
             .catch(() => {});
         }
-        const s = await request;
+        // List views omit summaries and evidence text; keep the detail read for the open incident.
+        const listed = await request,
+          full = detailed.current;
+        const s = full
+          ? {
+              ...listed,
+              incidents: listed.incidents.map((i: IncidentView) =>
+                i.id === full.id && i.version === full.version ? full : i,
+              ),
+            }
+          : listed;
         setAuth(false);
         setError("");
         for (const i of s.incidents as IncidentView[])
@@ -656,13 +668,14 @@ export default function App() {
     let active = true;
     api("/api/incidents/" + selected)
       .then((detail) => {
-        if (active)
-          setSnapshot((s) => ({
-            ...s,
-            incidents: s.incidents.some((i) => i.id === selected)
-              ? s.incidents.map((i) => (i.id === selected ? detail : i))
-              : [detail, ...s.incidents],
-          }));
+        if (!active) return;
+        detailed.current = detail;
+        setSnapshot((s) => ({
+          ...s,
+          incidents: s.incidents.some((i) => i.id === selected)
+            ? s.incidents.map((i) => (i.id === selected ? detail : i))
+            : [detail, ...s.incidents],
+        }));
       })
       .catch((e) => setError(String(e)));
     return () => {

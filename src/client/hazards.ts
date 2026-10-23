@@ -1,4 +1,5 @@
 import type { IncidentView } from "../shared/contracts";
+import { MAGNITUDE_EXCERPT } from "../shared/view";
 
 /** Activities under the Hazards filter, in legend order: natural hazards and aviation emergencies. */
 export const HAZARDS = [
@@ -57,7 +58,7 @@ export const markerIcon = (
 export function magnitude(incident: Pick<IncidentView, "reports">) {
   const record = incident.reports
     .flatMap((r) => r.excerpts ?? [])
-    .find((e: { id?: string }) => e.id === "usgs-event");
+    .find((e: { id?: string }) => e.id === MAGNITUDE_EXCERPT);
   if (typeof record?.text !== "string") return null;
   let value: unknown;
   try {

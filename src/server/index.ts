@@ -26,7 +26,7 @@ import {
   locationRadius,
   windowKey,
 } from "./geo";
-import { textMatch, viewFilter } from "../shared/view";
+import { listView, textMatch, viewFilter } from "../shared/view";
 import {
   alertDecision,
   alertMaterialityProjection,
@@ -1559,6 +1559,7 @@ async function snapshot(e: Env, u: URL) {
   const query = u.searchParams.get("query") ?? u.searchParams.get("q");
   if (query && at) incidents = incidents.filter((i) => textMatch(i, query));
   incidents = incidents.filter(viewFilter(u.searchParams, bbox));
+  if (u.searchParams.get("view") === "list") incidents = incidents.map(listView) as IncidentView[];
   const incoming =
     at || u.searchParams.get("include_incoming") === "0"
       ? []
