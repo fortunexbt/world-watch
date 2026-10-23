@@ -167,6 +167,73 @@ The affected countries, as EASA names them, are matched to the gazetteer's count
 Every bulletin maps to impact significant. EASA issues a CZIB to share information and recommendations about risk to civil aviation from a conflict zone, and most recommend not operating in part of the airspace. It is a risk assessment for air operators, not a report of harm, so it never reaches severe or critical. The structured brief counts bulletins in force and names the countries they cover.
 
 The [EASA copyright notice](https://www.easa.europa.eu/en/copyright-disclaimer) (checked 23 October 2026) says "Reproduction is authorised, provided the source is acknowledged, save where otherwise stated", and the bulletin pages state nothing otherwise. It also says website material is "Not necessarily comprehensive, complete, accurate or up to date". The records keep the text unchanged and carry the acknowledgement, set `redistribute: true` and join the public demo and its feeds.
+## GNSS interference grid
+
+World Watch builds its own daily map of where aircraft lost satellite navigation accuracy, from ADSB.lol's openly licensed flight history. It is a context layer in the private app, like the thermal and Copernicus layers, and never an incident. It is shaded by the share of aircraft reporting degraded GNSS accuracy and integrity. That can indicate jamming or spoofing, and it is also caused by faulty equipment, manoeuvres that block the antenna and gaps in receiver coverage, so a shaded cell does not prove interference.
+
+### The archive
+
+ADSB.lol publishes each UTC day of `/var/globe_history` from its readsb containers as GitHub releases of [`adsblol/globe_history_2026`](https://github.com/adsblol/globe_history_2026), to which the older `adsblol/globe_history` name redirects. On 23 October 2026 the GitHub API reported the repository's licence as `ODbL-1.0`, and its README says the database "is made available under the Open Database License". The release `v2026.10.22-planes-readsb-prod-0`, published at 03:26:51 UTC the next day, is one tar archive split into three parts of 2,000,000,000, 2,000,000,000 and 61,022,208 bytes (4.06 GB). It holds 78,974 gzipped readsb `trace_full` JSON files, one per aircraft address (3.05 GB compressed, 19.73 GB inflated, 112,028,683 position points), 49 replay heatmap files (0.95 GB) that the grid doesn't read, ACAS advisories, and a README stating the day, the release and the ODbL grant. The README also records that feeders waive their rights to their own data under CC0, which doesn't change the ODbL on the database. A `staging` release of the same day exists, and the README says to use whichever of prod or staging isn't much smaller. The `mlatonly` releases carry only multilateration positions, which have no accuracy fields.
+
+The [readsb trace format](https://github.com/wiedehopf/readsb/blob/dev/README-json.md#trace-jsons) stores each point as an array of time offset, latitude, longitude, altitude or `"ground"`, ground speed, track, flags, vertical rate, an optional details object and the position source. About one point in four carries the details object, which holds the aircraft's own NACp, NIC and SIL among its other fields.
+
+### Method
+
+Each aircraft's trace is read once. A details report counts only if the position came from the aircraft's own ADS-B (`adsb_icao`), not multilateration, TIS-B or ADS-R, and the aircraft was airborne at more than 50 knots, the speed readsb's own lost-GPS check uses. Each counted report is classed by three fields:
+
+| Class    | Rule                                     | Meaning                                                                                                                                                                                                                                         |
+| -------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| healthy  | NACp ≥ 8, NIC ≥ 7 and SIL 3              | The minimum [14 CFR 91.227(c)(1)](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-91/subpart-C/section-91.227) requires of ADS-B Out: position accuracy under 0.05 NM, containment radius under 0.2 NM, integrity 1e-7 per hour |
+| degraded | NACp ≤ 1 and NIC ≤ 6                     | Estimated position uncertainty of 4 NM or more, or unknown, with integrity below the rule                                                                                                                                                      |
+| other    | anything else with all three fields      | Places the aircraft in the cell without counting it as degraded                                                                                                                                                                               |
+
+An aircraft counts only if it reported healthy at least once that UTC day, so avionics that never report good accuracy are left out instead of reading as interference. In each cell it then counts once, as degraded if any of its reports there was degraded. Of the day's 59,804 aircraft with classified reports, 2,541 never reported healthy and were left out. Requiring both fields to agree matters: across the day, 8,603 airborne reports had NACp ≤ 1 with NIC ≥ 7, a contradictory pair, while over the Baltic 4,631 of 4,709 reports with NACp ≤ 1 also had NIC 0.
+
+The method follows [GPSJam](https://gpsjam.org/faq), which publishes its formula and bands but not code or data, and reimplements it independently. GPSJam's FAQ gives `percent_bad_aircraft = 100 * (num_bad_aircraft - 1) / (num_good_aircraft + num_bad_aircraft)`, colouring a cell green under 2%, yellow from 2 to 10% and red over 10%. Its author described "good" and "bad" as reporting under 1 nautical mile of uncertainty and then over 4 ([Hacker News, 27 July 2022](https://news.ycombinator.com/item?id=32247823)), and readsb's own check uses the same marks, NACp ≥ 4 and NACp ≤ 2 ([`track.c`](https://github.com/wiedehopf/readsb/blob/dev/track.c)). World Watch keeps GPSJam's discount of one degraded aircraft and its bands, and differs in three ways. The healthy reference is the stricter FAA minimum rather than 1 NM, the degraded class also needs NIC, and the healthy report may come after the degraded one, because a whole day's trace is available at once. GPSJam counts an aircraft as bad only if it reported good accuracy first, which misses a flight that departs inside interference.
+
+Cells are 0.5° of latitude by 0.5° of longitude, aligned on 180°W, so a cell never straddles the antimeridian and 180°E falls in the 180°W column. At 45°N a cell is 55.6 by 39.3 km, 2,185 km², close to the H3 resolution 4 hexagons GPSJam uses (1,770 km² on average) where most receivers are, and a cruising aircraft crosses one in about four minutes, long enough for several accuracy reports. Interference reaches aircraft over hundreds of kilometres, so finer cells would mostly add noise. A fixed grid also lets each worker count into flat typed arrays of 259,200 cells with no hashing. Cells with fewer than 10 counted aircraft are left out, so a blank cell means no data rather than no interference, as on GPSJam.
+
+### The derived grid
+
+`npm run gnss:grid -- --out <dir> <part files...>` reads the parts in order as one stream, or stdin when no file is given, so `curl -sL <part URLs> | npm run gnss:grid -- --out <dir>` builds the grid without the archive touching disk. It never extracts files or holds the archive in memory. The main thread walks the tar headers and copies each aircraft's gzipped trace into 4 MB batches, and worker threads inflate and scan them into their own counters, which are summed at the end. The scanner jumps between details objects with native `indexOf` and reads only those points' fields, without building objects. It reads exactly what `JSON.parse` reads, which a test checks on randomised traces, and on the whole day the scanner and a `JSON.parse` baseline wrote byte-identical grids. The run refuses an archive whose README doesn't name the day and the ODbL.
+
+It writes `gnss-<date>.json`, with one `[south, west, aircraft, degraded]` row per published cell, and `manifest.json` with the date, cell size, thresholds, counts, source release, licence, ODbL notice and the grid's size and SHA-256. For 22 October 2026 the grid held 15,824 of the 22,843 cells any counted aircraft reached, 257,951 bytes (64,012 gzipped). 3,260 cells had at least one degraded aircraft, 631 fell in the middle band and 216 in the top band. The densest top-band cells were over Bahrain and the Persian Gulf (134 of 625 aircraft in one cell), around Ankara, the Romanian and Bulgarian Black Sea coast, Moscow, Gdańsk and eastern Türkiye, where jamming is widely reported, and also over São Paulo and Mexico City, which this data can't explain.
+
+On an Apple M4 shared with other jobs, from local files with a warm page cache, one day took:
+
+| Run                                    | Wall time | CPU time | Peak RSS | Archive read | Position points | Accuracy reports |
+| -------------------------------------- | --------- | -------- | -------- | ------------ | --------------- | ---------------- |
+| `JSON.parse` per trace, one thread     | 77.0 s    | 83.2 s   | 450 MB   | 53 MB/s      | 1.45 M/s        | 0.36 M/s         |
+| byte scanner, one thread               | 66.7 s    | 68.0 s   | 394 MB   | 61 MB/s      | 1.68 M/s        | 0.42 M/s         |
+| `JSON.parse`, eight workers            | 20.0 s    | 132.4 s  | 1,008 MB | 203 MB/s     | 5.6 M/s         | 1.40 M/s         |
+| byte scanner, four workers (default)   | 22.6 s    | 82.5 s   | 394 MB   | 180 MB/s     | 4.96 M/s        | 1.24 M/s         |
+| byte scanner, eight workers            | 13.2 s    | 94.7 s   | 620 MB   | 308 MB/s     | 8.5 M/s         | 2.12 M/s         |
+
+Timings move with the machine's other load: three four-worker runs took 20.6, 22.6 and 32.0 seconds, and two eight-worker runs 13.2 and 14.6. Piping the parts through stdin wrote the same grid, byte for byte, as reading the files.
+
+Inflating the traces costs about a third of the CPU time and is the floor. On the same 3,000 traces the first scanner, which called native `indexOf` for every string, was slower than `JSON.parse` (88 to 105 MB/s of inflated JSON against 124 to 150 MB/s), because each call costs more than a short loop. Plain loops for short searches raised it to between 481 and 493 MB/s against 405 to 420 MB/s over four repeats. Reading tar members straight into the batch buffer, which removed a copy and an allocation per aircraft, and a 64 MB heap ceiling per worker together cut eight workers' peak from 973 MB to 620 MB at the same wall time. Four workers are the default because they keep the peak near a single thread's while running three times as fast; `--workers 8` is the fastest measured.
+
+### Serving it
+
+The private app reads `gnss/manifest.json` and the grid it names from its own build, so a run writes into `dist/gnss` after `npm run build`, which empties `dist`. The Worker serves every non-API path to the owner only. Turning on "GNSS interference from aircraft reports" under Map layers reads both files once, checks that the manifest names the ODbL and matches the grid, and draws the cells under the incident markers with a legend for the three bands. A missing grid shows a notice instead. Selecting a cell shows its aircraft and degraded counts and share. The panel and the map's attribution carry the ODbL notice with links to the release and the licence, and the panel links the grid and manifest for download. The coverage view lists the grid with its build time and marks it stale two days after it was built.
+
+### Rights
+
+The ODbL permits this with conditions, and the grid is a derivative database of ADSB.lol's.
+
+- Showing the map publicly is a produced work that needs a notice "reasonably calculated" to make viewers aware the content came from the database under the ODbL (section 4.3). The map's attribution and the panel carry the licence's own example notice, with hyperlinks.
+- The grid is a derivative database, and a publicly used derivative database, or one behind a publicly used produced work, must be offered under the ODbL only (4.4a and 4.4c). The manifest states the ODbL and the notice, and the grid is never mixed with other sources' records.
+- Whoever receives a publicly used derivative database or produced work must be offered the entire derivative database or the method, free of charge over the internet (4.6). The panel links the grid itself, and this repository holds the method.
+- Use inside an organisation is not public use and doesn't trigger share-alike (4.5c), so the owner-only app meets the licence already; it shows the notice anyway.
+
+The layer is compiled out of the public demo. Before it goes public, the demo would need to publish each day's `gnss-<date>.json` and `manifest.json` as downloadable files under the ODbL beside the map, keep the notice next to the layer and in the attribution, keep the grid out of any combined file under other terms, and say how the files were made, which this section does. ADSB.lol's API documentation asks production users to get in touch first, and its [privacy and licence page](https://www.adsb.lol/docs/privacy-license) asks users to indemnify it against claims from non-conforming use, so the owner should contact ADSB.lol before publishing, as for squawks. The grid holds counts only, with no aircraft address, callsign or track, so LADD and privacy-address aircraft are not identifiable from it, though they are counted.
+
+### Limits
+
+- Coverage is ADSB.lol's volunteer receivers, and only aircraft that fly with ADS-B appear. Conflict zones that civil aviation avoids, most oceans and much of Africa and Asia stay blank.
+- Spoofing that keeps reporting good accuracy is invisible here. A spoofed aircraft only shows when its avionics notice and report degraded accuracy.
+- One run covers one UTC day. Interference for an hour can shade a cell for the whole day, and nothing runs on a schedule while the project is paused.
+- No labelled set of interference events exists to measure how often a shaded cell is real interference. Clusters of shaded cells shouldn't become incidents without one.
 
 ## Internet routing drops
 

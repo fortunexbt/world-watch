@@ -2,6 +2,7 @@ import MediaPanel from "./MediaPanel";
 import RollingBrief from "./RollingBrief";
 import GeospatialPanel from "./GeospatialPanel";
 import { ImageryControl, RecentImagery, type ImageryView } from "./SatelliteImagery";
+import { GnssLegend, GnssPanel, gnssHealth, loadGnss, type Gnss } from "./Gnss";
 import PublicBanner from "./PublicBanner";
 import { CountryCoverage, CoverageChip, CoverageView, freshness, sourceStatus } from "./Coverage";
 import PublicFeeds from "./PublicFeeds";
@@ -66,7 +67,7 @@ type Snapshot = {
   sources: any[];
   limited?: boolean;
 };
-type Surface = "geospatial" | "media" | "news" | "feed" | "health" | "search" | "watches" | "replay" | "country";
+type Surface = "geospatial" | "gnss" | "media" | "news" | "feed" | "health" | "search" | "watches" | "replay" | "country";
 const txt = {
   en: {
     feed: "Observed activity",
@@ -335,6 +336,10 @@ export default function App() {
   // News signals are read only while their filter is on; the server answers from a one-minute memo.
   useEffect(()=>{if(__PUBLIC_DEMO__||!newsActive||!ready)return;let active=true;const load=()=>{if(document.hidden)return;api("/api/news-signals"+(scope==="Map area"&&bbox?"?"+new URLSearchParams({bbox}):"")).then(value=>{if(active){setNews(value);setNewsError("");}}).catch(e=>{if(active)setNewsError(String(e));});};load();const timer=window.setInterval(load,300000);return()=>{active=false;window.clearInterval(timer);};},[newsActive,ready,scope,scope==="Map area"?bbox:""]);
   const geoActive=geoLayers.length>0;
+  const [showGnss,setShowGnss]=useState(false),[gnss,setGnss]=useState<Gnss|null>(null),[gnssCell,setGnssCell]=useState<number|null>(null),[gnssError,setGnssError]=useState("");
+  // A daily product: read once when the layer is first turned on.
+  useEffect(()=>{if(__PUBLIC_DEMO__||!showGnss||gnss)return;const controller=new AbortController();setGnssError("");loadGnss(AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])).then(setGnss).catch(e=>{if(!controller.signal.aborted)setGnssError(e instanceof Error?e.message:String(e));});return()=>controller.abort();},[showGnss,gnss]);
+  const coverageCatalog=useMemo<GeospatialCatalog|null>(()=>gnss?{bbox:geoCatalog?.bbox??[-180,-90,180,90],features:[],thermal_version:geoCatalog?.thermal_version??null,sources:[...(geoCatalog?.sources??[]),gnssHealth(gnss)]}:geoCatalog,[geoCatalog,gnss]);
   // One request per settled viewport: rapid successive moves cancel the pending and in-flight read, and the server answers every bbox from its ten-minute upstream cache.
   useEffect(()=>{if(!geoActive||!ready)return;const controller=new AbortController();const load=()=>{if(document.hidden)return;setGeoLoading(true);(__PUBLIC_DEMO__?publicRequest("/api/geospatial"):fetch("/api/geospatial"+(bbox?"?"+new URLSearchParams({bbox}):""),{credentials:"same-origin",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])}).then(async r=>{if(!r.ok)throw Error("Geospatial context unavailable ("+r.status+")");return r.json();})).then(value=>{setGeoCatalog(value);setGeoError("");setGeoLoading(false);}).catch(e=>{if(controller.signal.aborted)return;setGeoError(String(e));setGeoLoading(false);});};const settle=window.setTimeout(load,400),timer=window.setInterval(load,600000);return()=>{controller.abort();window.clearTimeout(settle);window.clearInterval(timer);};},[geoActive,ready,bbox]);
   useEffect(()=>{if(__PUBLIC_DEMO__||!showCameras||!ready||cameraCatalog)return;let active=true;setMediaLoading(true);setMediaError("");fetch("/api/cameras",{credentials:"same-origin",signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("Public camera catalog unavailable ("+r.status+")");return r.json();}).then(value=>{if(active){setCameraCatalog(value);setMediaLoading(false);}}).catch(e=>{if(active){setMediaError(String(e));setMediaLoading(false);}});return()=>{active=false;};},[showCameras,ready,cameraCatalog]);
@@ -891,6 +896,8 @@ export default function App() {
         geoFeatures={geoFeatures}
         thermalTiles={thermalTiles}
         onGeo={(id,feature)=>{setSelected(null);setSelectedCamera(null);setSelectedGeo(id);setPickedGeo(feature??null);setSurface("geospatial");}}
+        gnss={showGnss?(gnss?.grid??null):null}
+        onGnss={cell=>{setSelected(null);setSelectedCamera(null);setGnssCell(cell);setSurface("gnss");}}
         cameras={cameras}
         density={density}
         selectedCamera={selectedCamera}
@@ -1373,6 +1380,8 @@ export default function App() {
           </section>
         ) : surface === "geospatial" ? (
           <GeospatialPanel language={language} catalog={geoCatalog} selected={selectedGeo} picked={pickedGeo} onSelect={setSelectedGeo} error={geoError} loading={geoLoading}/>
+        ) : !__PUBLIC_DEMO__ && surface === "gnss" ? (
+          <GnssPanel gnss={gnss} cell={gnssCell} error={gnssError} loading={showGnss&&!gnss&&!gnssError} language={language}/>
         ) : !__PUBLIC_DEMO__ && surface === "news" ? (
           <NewsSignalPanel catalog={news} selected={selectedSignal} language={language}/>
         ) : !__PUBLIC_DEMO__ && surface === "media" ? (
@@ -1456,8 +1465,8 @@ export default function App() {
         ) : surface === "search" ? (
           <section className="panel-content">
             <h1>{tr("Explore & focus")}</h1>
-            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}<ImageryControl value={imagery} onChange={setImagery} language={language}/>{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button></>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
-            <CoverageView sources={snapshot.sources} incidents={snapshot.incidents} catalog={geoCatalog} now={clock} language={language} />
+            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}<ImageryControl value={imagery} onChange={setImagery} language={language}/>{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button><label className="check-row"><input type="checkbox" checked={showGnss} onChange={e=>setShowGnss(e.target.checked)}/>{tr("GNSS interference from aircraft reports")}</label>{showGnss&&<button onClick={()=>{setGnssCell(null);setSurface("gnss");}}>{tr("Explore GNSS interference")}</button>}</>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
+            <CoverageView sources={snapshot.sources} incidents={snapshot.incidents} catalog={coverageCatalog} now={clock} language={language} />
 
             <label htmlFor="query">{tr("Search reports and incidents")}</label>
             <input
@@ -2093,6 +2102,7 @@ export default function App() {
             </span>
           )}
         </div>
+        {showGnss && gnss && <GnssLegend language={language} />}
       </div>
       <button
         className="health-pill"

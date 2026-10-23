@@ -707,6 +707,42 @@ Object.assign(italian, {
   "Open this day in the Copernicus Browser": "Apri questo giorno nel Copernicus Browser",
   "Catalogue fields from the Copernicus Data Space Ecosystem, Copernicus Sentinel data {year}. Previews stay in the Copernicus Browser.":
     "Campi del catalogo del Copernicus Data Space Ecosystem, Copernicus Sentinel data {year}. Le anteprime restano nel Copernicus Browser.",
+  "GNSS interference from aircraft reports":
+    "Interferenze GNSS dai dati degli aerei",
+  "Explore GNSS interference": "Esplora le interferenze GNSS",
+  "GNSS interference grid": "Griglia delle interferenze GNSS",
+  "cells worldwide": "celle nel mondo",
+  "Share of aircraft reporting degraded GNSS accuracy and integrity in each half-degree cell over one UTC day. Blank cells had too few aircraft.":
+    "Quota di aerei che segnalano accuratezza e integrità GNSS degradate in ogni cella di mezzo grado in un giorno UTC. Le celle vuote avevano troppo pochi aerei.",
+  "GNSS degraded": "GNSS degradato",
+  "under 2%": "sotto il 2%",
+  "2 to 10%": "dal 2 al 10%",
+  "over 10%": "oltre il 10%",
+  "Context layer": "Livello di contesto",
+  "Share of aircraft reporting degraded GNSS accuracy and integrity. It can indicate jamming or spoofing, and is also caused by faulty equipment, manoeuvres that block the antenna and gaps in receiver coverage. It does not prove interference.":
+    "Quota di aerei che segnalano accuratezza e integrità GNSS degradate. Può indicare disturbo intenzionale (jamming) o falsificazione del segnale (spoofing), ma è causata anche da apparati guasti, manovre che coprono l’antenna e lacune nella copertura dei ricevitori. Non prova un’interferenza.",
+  "Loading the GNSS grid…": "Caricamento della griglia GNSS…",
+  "No GNSS interference grid has been built for this app.":
+    "Per questa app non è stata ancora generata una griglia delle interferenze GNSS.",
+  "The GNSS interference grid failed validation.":
+    "La griglia delle interferenze GNSS non ha superato la convalida.",
+  Cell: "Cella",
+  "{south}° to {north}° latitude, {west}° to {east}° longitude":
+    "latitudine da {south}° a {north}°, longitudine da {west}° a {east}°",
+  Aircraft: "Aerei",
+  "Reported degraded GNSS": "Con GNSS degradato segnalato",
+  "{share}% after discounting one aircraft": "{share}% escludendo un aereo",
+  "UTC day {date}: {cells} half-degree cells with at least {min} aircraft, from {aircraft} aircraft and {reports} classified reports.":
+    "Giorno UTC {date}: {cells} celle di mezzo grado con almeno {min} aerei, da {aircraft} aerei e {reports} rapporti classificati.",
+  "Blank cells had fewer aircraft, or none in range of a receiver, so they mean no data rather than no interference.":
+    "Le celle vuote avevano meno aerei, o nessuno alla portata di un ricevitore: indicano assenza di dati, non assenza di interferenze.",
+  Method: "Metodo",
+  "Each aircraft counts once per cell, and only if at some point that day it reported the accuracy the FAA requires of ADS-B Out (NACp {nacp}, NIC {nic}, SIL {sil}), so avionics that never report it are left out. It counts as degraded in a cell where it reported NACp {low} or less with NIC {lowNic} or less, a position uncertain by 4 nautical miles or more, or unknown. Shading follows GPSJam's published bands after subtracting one degraded aircraft per cell.":
+    "Ogni aereo conta una volta per cella, e solo se in quel giorno ha segnalato almeno una volta l’accuratezza che la FAA richiede all’ADS-B Out (NACp {nacp}, NIC {nic}, SIL {sil}), così l’avionica che non la segnala mai resta esclusa. Conta come degradato in una cella in cui ha segnalato NACp {low} o meno con NIC {lowNic} o meno, cioè una posizione incerta di 4 miglia nautiche o più, o sconosciuta. Le sfumature seguono le fasce pubblicate da GPSJam dopo aver sottratto un aereo degradato per cella.",
+  "Contains information from ADSB.lol globe_history, which is made available here under the Open Database License (ODbL).":
+    "Contiene informazioni da ADSB.lol globe_history, rese disponibili qui con la Open Database License (ODbL).",
+  "Download this grid (ODbL)": "Scarica questa griglia (ODbL)",
+  "Method and counts": "Metodo e conteggi",
 });
 export function translate(language: Language, text: string) {
   return language === "it"

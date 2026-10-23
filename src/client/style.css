@@ -1570,3 +1570,8 @@ summary {
 .scene-list .brief-link {
   font-size: 12px;
 }
+.legend .gnss-swatch {
+  width: 13px;
+  height: 9px;
+  border-radius: 2px;
+}

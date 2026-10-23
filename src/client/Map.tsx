@@ -24,6 +24,8 @@ import type { IncidentView } from "../shared/contracts";
 import { footprintShape } from "../shared/footprint";
 import type { Situation } from "../shared/fusion";
 import type { NewsSignal } from "../shared/news";
+import { gnssLevel, type GnssGrid } from "../shared/gnss";
+import { GNSS_COLORS } from "./Gnss";
 import { NEWS_COLOR, NEWS_GLYPH } from "./NewsSignals";
 import { viewportBounds } from "./bounds";
 import {
@@ -149,6 +151,8 @@ export default function WorldMap({
   selectedSignal = null,
   onSignal = () => {},
   imagery = null,
+  gnss = null,
+  onGnss = () => {},
 }: {
   incidents: IncidentView[];
   selected: string | null;
@@ -169,6 +173,8 @@ export default function WorldMap({
   selectedSignal?: string | null;
   onSignal?: (id: string) => void;
   imagery?: { layer: GibsLayerId; day: string } | null;
+  gnss?: GnssGrid | null;
+  onGnss?: (cell: number) => void;
 }) {
   const host = useRef<HTMLDivElement>(null),
     map = useRef<GLMap | null>(null),
@@ -193,6 +199,10 @@ export default function WorldMap({
   newsSelect.current = onSignal;
   const imageryView = useRef(imagery);
   imageryView.current = imagery;
+  const gnssData = useRef(gnss),
+    gnssSelect = useRef(onGnss);
+  gnssData.current = gnss;
+  gnssSelect.current = onGnss;
   data.current = incidents;
   select.current = onSelect;
   bounds.current = onBounds;
@@ -466,6 +476,41 @@ export default function WorldMap({
     if (url) thermalShown.current = url;
     for (const id of THERMAL_LAYERS)
       m.setLayoutProperty(id, "visibility", url ? "visible" : "none");
+  };
+  // One square per published cell, coloured by GPSJam's bands. Turning the layer off only hides
+  // it, so the grid's thousands of cells go to the map worker once per grid.
+  const gnssSent = useRef<GnssGrid | null>(null);
+  const updateGnss = () => {
+    const m = map.current,
+      grid = gnssData.current,
+      size = grid?.cell_degrees ?? 0;
+    if (!m?.getLayer("gnss-cells")) return;
+    // Hidden without a grid, so its ODbL credit shows only while its data does.
+    m.setLayoutProperty("gnss-cells", "visibility", grid ? "visible" : "none");
+    if (!grid || grid === gnssSent.current) return;
+    gnssSent.current = grid;
+    (m.getSource("gnss-grid") as GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: grid.cells.map(
+        ([south, west, aircraft, degraded], i) => ({
+          type: "Feature",
+          id: i,
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [west, south],
+                [west + size, south],
+                [west + size, south + size],
+                [west, south + size],
+                [west, south],
+              ],
+            ],
+          },
+          properties: { cell: i, level: gnssLevel(aircraft, degraded) },
+        }),
+      ),
+    });
   };
   useEffect(() => {
     if (!host.current) return;
@@ -794,6 +839,37 @@ export default function WorldMap({
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
+      // Private only: the public demo cannot offer the derived grid that the ODbL requires.
+      if (!__PUBLIC_DEMO__) {
+        m.addSource("gnss-grid", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+          attribution:
+            'Contains information from <a href="https://github.com/adsblol/globe_history_2026">ADSB.lol globe_history</a>, made available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL</a>',
+        });
+        m.addLayer(
+          {
+            id: "gnss-cells",
+            type: "fill",
+            source: "gnss-grid",
+            layout: { visibility: "none" },
+            paint: {
+              "fill-color": [
+                "match",
+                ["get", "level"],
+                "high",
+                GNSS_COLORS.high,
+                "medium",
+                GNSS_COLORS.medium,
+                GNSS_COLORS.low,
+              ],
+              "fill-opacity": ["match", ["get", "level"], "low", 0.16, 0.45],
+              "fill-antialias": false,
+            },
+          },
+          "clusters",
+        );
+      }
       m.addSource("geospatial-context", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -986,6 +1062,8 @@ export default function WorldMap({
       updateContext();
       updateImagery();
       updateThermal();
+      gnssSent.current = null;
+      updateGnss();
     };
     m.on("style.load", layers);
     m.on("load", () => {
@@ -1233,6 +1311,12 @@ export default function WorldMap({
         return;
       }
       if (fs.some((f) => f.layer.id === "footprint-fill")) return;
+      // A GNSS cell opens only where no marker, detection, area or footprint was hit.
+      const cell = fs.find((f) => f.layer.id === "gnss-cells")?.properties?.cell;
+      if (typeof cell === "number") {
+        gnssSelect.current(cell);
+        return;
+      }
       const f = fs.find(
         (f) => f.properties?.ADMIN || f.properties?.["name:en"],
       );
@@ -1257,6 +1341,7 @@ export default function WorldMap({
   useEffect(updateContext, [geoFeatures]);
   useEffect(updateImagery, [imagery?.layer, imagery?.day]);
   useEffect(updateThermal, [thermalTiles]);
+  useEffect(updateGnss, [gnss]);
   useEffect(() => {
     if (!follow || !pulse.length || document.hidden) return;
     const i = incidents.find((x) => x.id === pulse[0]);

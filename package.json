@@ -17,6 +17,7 @@
     "demo": "tsx scripts/demo.ts",
     "eval:severity": "tsx scripts/severity-eval/run.ts",
     "snapshot:public": "tsx scripts/public-snapshot.ts",
+    "gnss:grid": "tsx scripts/gnss-grid.ts",
     "test:browser": "tsx tests/browser-verify.ts",
     "perf:load": "tsx scripts/load-harness.ts",
     "perf:client": "tsx scripts/client-perf.ts",

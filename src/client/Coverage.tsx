@@ -11,7 +11,10 @@ import {
   type CoverageStatus,
   type Lag,
 } from "../shared/coverage";
-import type { GeospatialCatalog } from "../shared/geospatial";
+import type {
+  GeospatialCatalog,
+  LayerSourceHealth,
+} from "../shared/geospatial";
 import { SNAPSHOT_CADENCE_SECONDS } from "../shared/public-snapshot";
 import { translate, type Language } from "./locale";
 import { formatAge } from "./time";
@@ -33,6 +36,11 @@ const MEANING: Record<CoverageStatus, string> = {
   ended: "The issuer stopped delivering this data.",
   not_configured: "Not read: disabled or awaiting credentials.",
   access_unresolved: "A licence or permission is not settled yet.",
+};
+const LAYER_LABEL: Record<LayerSourceHealth["id"], string> = {
+  firms: "Satellite thermal detections",
+  copernicus: "Copernicus mapping areas",
+  gnss: "GNSS interference grid",
 };
 /** The public demo reads every source once per snapshot run. */
 const cadence = __PUBLIC_DEMO__ ? SNAPSHOT_CADENCE_SECONDS : undefined;
@@ -226,13 +234,7 @@ export function CoverageView({
                   <div>
                     <CoverageChip status={status} language={language} />
                     <span className="coverage-name">
-                      {sensor
-                        ? sensor.label
-                        : tr(
-                            layer.id === "firms"
-                              ? "Satellite thermal detections"
-                              : "Copernicus mapping areas",
-                          )}
+                      {sensor ? sensor.label : tr(LAYER_LABEL[layer.id])}
                     </span>
                   </div>
                   {sensor?.ended_at ? (
@@ -257,7 +259,12 @@ export function CoverageView({
                       {tr("Checked")}:{" "}
                       {formatAge(layer.checked_at, language, now)}
                       {" · "}
-                      {item.total_available} {tr("in this view")}
+                      {item.total_available}{" "}
+                      {tr(
+                        layer.id === "gnss"
+                          ? "cells worldwide"
+                          : "in this view",
+                      )}
                     </small>
                   )}
                 </li>

@@ -102,7 +102,8 @@ export type ThermalSensorHealth = {
  * A thermal source is "ok" while any sensor is; per-sensor health is in sensors.
  */
 export type LayerSourceHealth = {
-  id: "firms" | "copernicus";
+  /** gnss is the private app's daily ADS-B grid, added beside the catalogue, never in it. */
+  id: "firms" | "copernicus" | "gnss";
   status: "ok" | "error";
   checked_at: string;
   cadence_seconds: number;
