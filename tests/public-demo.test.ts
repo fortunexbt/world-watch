@@ -760,6 +760,22 @@ test(
         await page.getByRole("link", { name: "GeoJSON" }).getAttribute("href"),
         "./data/" + feedPath({ ...DEFAULT_FEED, impact: "severe" }, "geojson"),
       );
+      // A shared link keeps its view here, but a time in it opens the latest snapshot and says so.
+      await page.goto(origin + base + "?hours=0&filter=hazards&map=2.5/10/120&layer=density&at=2026-10-20T06:00:00Z");
+      await page.waitForSelector(".scope-notice");
+      assert.match(
+        await page.locator(".scope-notice").innerText(),
+        /This link asks for .+\. The public demo keeps no history, so it shows the latest snapshot\./,
+      );
+      assert.equal(await page.locator(".time-bar").count(), 0);
+      assert.equal(await page.getByLabel("Earlier time").count(), 0);
+      const shared = new URL(page.url()).searchParams;
+      assert.equal(shared.get("map"), "2.5/10/120");
+      assert.equal(shared.get("filter"), "hazards");
+      assert.equal(shared.get("layer"), "density");
+      assert.equal(shared.has("at"), false);
+      await page.getByLabel("Contextual controls").click();
+      await page.getByText("The public demo keeps no history, so it cannot show an earlier time.", { exact: false }).waitFor();
       const local = requests.filter((r) => r.url.startsWith(origin));
       assert(local.some((r) => r.url.includes("/data/geospatial.json")));
       assert.equal(

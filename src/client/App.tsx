@@ -7,6 +7,8 @@ import PublicBanner from "./PublicBanner";
 import { CountryCoverage, CoverageChip, CoverageView, freshness, sourceStatus } from "./Coverage";
 import PublicFeeds from "./PublicFeeds";
 import Notifications from "./Notifications";
+import TimeBar, { formatKnown } from "./TimeBar";
+import { readView, writeView, type LinkLayer } from "./permalink";
 import { publicRequest } from "./public-data";
 import type {GeoFeature,GeospatialCatalog} from "../shared/geospatial";
 import { thermalTileUrl } from "./thermal-tiles";
@@ -31,6 +33,7 @@ import {
   MapPin,
   Download,
   History,
+  Link,
   ChevronDown,
   Command,
   Check,
@@ -66,8 +69,10 @@ type Snapshot = {
   cursor: string;
   sources: any[];
   limited?: boolean;
+  historical_at?: string | null;
+  history_from?: string | null;
 };
-type Surface = "geospatial" | "gnss" | "media" | "news" | "feed" | "health" | "search" | "watches" | "replay" | "country";
+type Surface = "geospatial" | "gnss" | "media" | "news" | "feed" | "health" | "search" | "watches" | "country";
 const txt = {
   en: {
     feed: "Observed activity",
@@ -147,10 +152,12 @@ async function api(path: string, options: RequestInit = {}) {
   return r.json();
 }
 export default function App() {
-  const [showCameras,setShowCameras]=useState(!__PUBLIC_DEMO__ && (new URLSearchParams(location.search).get("layer")==="cameras" || new URLSearchParams(location.search).has("camera"))),[density,setDensity]=useState(false),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(new URLSearchParams(location.search).get("camera")),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
+  // The view a link opened with; the URL then follows every change to it.
+  const [linked] = useState(() => readView(location.search));
+  const [showCameras,setShowCameras]=useState(!__PUBLIC_DEMO__ && (linked.layers.includes("cameras") || linked.camera !== null)),[density,setDensity]=useState(linked.layers.includes("density")),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(linked.camera),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
   const [news,setNews]=useState<NewsSignalCatalog|null>(null),[newsError,setNewsError]=useState(""),[selectedSignal,setSelectedSignal]=useState<string|null>(null);
-  const [imagery,setImagery]=useState<ImageryView|null>(null);
-  const [geoLayers,setGeoLayers]=useState<string[]>([]),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[pickedGeo,setPickedGeo]=useState<GeoFeature|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
+  const [imagery,setImagery]=useState<ImageryView|null>(linked.imagery);
+  const [geoLayers,setGeoLayers]=useState<string[]>(linked.layers.filter(l=>l==="thermal"||l==="emergency_mapping")),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[pickedGeo,setPickedGeo]=useState<GeoFeature|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
   const [clock, setClock] = useState(Date.now);
   const [legendOpen, setLegendOpen] = useState(false);
   const [language, setLanguage] = useState<Language>(() =>
@@ -163,31 +170,26 @@ export default function App() {
       cursor: "0",
       sources: [],
     }),
-    [surface, setSurface] = useState<Surface>(!__PUBLIC_DEMO__ && new URLSearchParams(location.search).has("camera") ? "media" : "feed"),
-    [selected, setSelected] = useState<string | null>(
-      new URLSearchParams(location.search).get("incident"),
-    ),
+    [surface, setSurface] = useState<Surface>(!__PUBLIC_DEMO__ && linked.camera !== null ? "media" : "feed"),
+    [selected, setSelected] = useState<string | null>(linked.incident),
     [incoming, setIncoming] = useState(false),
-    [query, setQuery] = useState(
-      new URLSearchParams(location.search).get("q") || "",
-    ),
+    [query, setQuery] = useState(linked.q),
     [filter, setFilter] = useState(
-      (__PUBLIC_DEMO__ && new URLSearchParams(location.search).get("filter") === "news" ? "" : new URLSearchParams(location.search).get("filter")) || "all",
+      __PUBLIC_DEMO__ && linked.filter === "news" ? "all" : linked.filter,
     ),
-    [sourceFilter, setSourceFilter] = useState(
-      new URLSearchParams(location.search).get("source") || "",
+    [sourceFilter, setSourceFilter] = useState(linked.source),
+    [languageFilter, setLanguageFilter] = useState(linked.language),
+    [evidenceFilter, setEvidenceFilter] = useState(linked.evidence),
+    [windowHours, setWindowHours] = useState(linked.hours),
+    // A private area lives in one browser; elsewhere its link opens the world.
+    [scope, setScope] = useState(() =>
+      linked.scope.startsWith("watch:") &&
+      !(__PUBLIC_DEMO__ ? [] : readLocal<any[]>("ew-watches", [])).some((w) => "watch:" + w.id === linked.scope)
+        ? "World"
+        : linked.scope,
     ),
-    [languageFilter, setLanguageFilter] = useState(
-      new URLSearchParams(location.search).get("language") || "",
-    ),
-    [evidenceFilter, setEvidenceFilter] = useState(
-      new URLSearchParams(location.search).get("evidence") || "",
-    ),
-    [windowHours, setWindowHours] = useState(
-      new URLSearchParams(location.search).get("hours") || "168",
-    ),
-    [scope, setScope] = useState("World"),
     [bbox, setBbox] = useState(""),
+    [mapView, setMapView] = useState(linked.map),
     [ready, setReady] = useState(false),
     [visible, setVisible] = useState(!document.hidden),
     [connection, setConnection] = useState("Connecting"),
@@ -200,7 +202,11 @@ export default function App() {
     [updates, setUpdates] = useState(0),
     [pulse, setPulse] = useState<string[]>([]),
     [sheet, setSheet] = useState(()=>window.matchMedia("(max-width: 760px)").matches ? "compact" : "half"),
-    [at, setAt] = useState(""),
+    // The replay time as an ISO instant; the public demo keeps no history.
+    [at, setAt] = useState(__PUBLIC_DEMO__ ? "" : (linked.at ?? "")),
+    [timeOpen, setTimeOpen] = useState(!__PUBLIC_DEMO__ && !!linked.at),
+    [unknownAt, setUnknownAt] = useState(false),
+    [copied, setCopied] = useState(""),
     [country, setCountry] = useState(""),
     [watches, setWatches] = useState<any[]>(() =>
       __PUBLIC_DEMO__ ? [] : readLocal<any[]>("ew-watches", []),
@@ -249,7 +255,7 @@ export default function App() {
         if (sourceFilter) params.set("source", sourceFilter);
         if (languageFilter) params.set("language", languageFilter);
         if (evidenceFilter) params.set("evidence", evidenceFilter);
-        if (at) params.set("at", new Date(at).toISOString());
+        if (at) params.set("at", at);
         const snapshotUrl = `/api/snapshot?${params}`;
         let request = snapshotReads.current.get(snapshotUrl);
         if (!request) {
@@ -332,34 +338,44 @@ export default function App() {
   useEffect(()=>{if(surface!=="feed"&&window.matchMedia("(max-width: 760px)").matches)setSheet("half");},[surface]);
   useEffect(()=>{if(__PUBLIC_DEMO__||!ready||!showCameras)return;const controller=new AbortController();const timer=window.setInterval(()=>{if(document.hidden)return;fetch("/api/cameras",{credentials:"same-origin",signal:controller.signal}).then(async r=>{if(!r.ok)throw Error("Context source unavailable ("+r.status+")");return r.json();}).then(v=>{setCameraCatalog(v);setMediaError("");}).catch(e=>{if(!controller.signal.aborted)setMediaError(String(e));});},600000);return()=>{controller.abort();window.clearInterval(timer);};},[ready,showCameras]);
   // GDELT news signals are not in the public snapshot (docs/DEPLOY-DEMO.md).
-  const newsActive=!__PUBLIC_DEMO__&&filter==="news";
+  // News signals keep no history, so a replay leaves them out and says so.
+  const newsActive=!__PUBLIC_DEMO__&&filter==="news"&&!at;
   // News signals are read only while their filter is on; the server answers from a one-minute memo.
   useEffect(()=>{if(__PUBLIC_DEMO__||!newsActive||!ready)return;let active=true;const load=()=>{if(document.hidden)return;api("/api/news-signals"+(scope==="Map area"&&bbox?"?"+new URLSearchParams({bbox}):"")).then(value=>{if(active){setNews(value);setNewsError("");}}).catch(e=>{if(active)setNewsError(String(e));});};load();const timer=window.setInterval(load,300000);return()=>{active=false;window.clearInterval(timer);};},[newsActive,ready,scope,scope==="Map area"?bbox:""]);
-  const geoActive=geoLayers.length>0;
-  const [showGnss,setShowGnss]=useState(false),[gnss,setGnss]=useState<Gnss|null>(null),[gnssCell,setGnssCell]=useState<number|null>(null),[gnssError,setGnssError]=useState("");
+  // Thermal detections and mapping areas are read live, so a replay hides them.
+  const geoActive=geoLayers.length>0&&!at;
+  const [showGnss,setShowGnss]=useState(!__PUBLIC_DEMO__&&linked.layers.includes("gnss")),[gnss,setGnss]=useState<Gnss|null>(null),[gnssCell,setGnssCell]=useState<number|null>(null),[gnssError,setGnssError]=useState("");
   // A daily product: read once when the layer is first turned on.
-  useEffect(()=>{if(__PUBLIC_DEMO__||!showGnss||gnss)return;const controller=new AbortController();setGnssError("");loadGnss(AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])).then(setGnss).catch(e=>{if(!controller.signal.aborted)setGnssError(e instanceof Error?e.message:String(e));});return()=>controller.abort();},[showGnss,gnss]);
+  useEffect(()=>{if(__PUBLIC_DEMO__||!showGnss||gnss||at)return;const controller=new AbortController();setGnssError("");loadGnss(AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])).then(setGnss).catch(e=>{if(!controller.signal.aborted)setGnssError(e instanceof Error?e.message:String(e));});return()=>controller.abort();},[showGnss,gnss,at]);
   const coverageCatalog=useMemo<GeospatialCatalog|null>(()=>gnss?{bbox:geoCatalog?.bbox??[-180,-90,180,90],features:[],thermal_version:geoCatalog?.thermal_version??null,sources:[...(geoCatalog?.sources??[]),gnssHealth(gnss)]}:geoCatalog,[geoCatalog,gnss]);
   // One request per settled viewport: rapid successive moves cancel the pending and in-flight read, and the server answers every bbox from its ten-minute upstream cache.
   useEffect(()=>{if(!geoActive||!ready)return;const controller=new AbortController();const load=()=>{if(document.hidden)return;setGeoLoading(true);(__PUBLIC_DEMO__?publicRequest("/api/geospatial"):fetch("/api/geospatial"+(bbox?"?"+new URLSearchParams({bbox}):""),{credentials:"same-origin",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])}).then(async r=>{if(!r.ok)throw Error("Geospatial context unavailable ("+r.status+")");return r.json();})).then(value=>{setGeoCatalog(value);setGeoError("");setGeoLoading(false);}).catch(e=>{if(controller.signal.aborted)return;setGeoError(String(e));setGeoLoading(false);});};const settle=window.setTimeout(load,400),timer=window.setInterval(load,600000);return()=>{controller.abort();window.clearTimeout(settle);window.clearInterval(timer);};},[geoActive,ready,bbox]);
   useEffect(()=>{if(__PUBLIC_DEMO__||!showCameras||!ready||cameraCatalog)return;let active=true;setMediaLoading(true);setMediaError("");fetch("/api/cameras",{credentials:"same-origin",signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("Public camera catalog unavailable ("+r.status+")");return r.json();}).then(value=>{if(active){setCameraCatalog(value);setMediaLoading(false);}}).catch(e=>{if(active){setMediaError(String(e));setMediaLoading(false);}});return()=>{active=false;};},[showCameras,ready,cameraCatalog]);
   useEffect(() => {
-    const u = new URL(location.href);
-    query ? u.searchParams.set("q", query) : u.searchParams.delete("q");
-    u.searchParams.set("hours", windowHours);
-    for (const [key, value] of Object.entries({
-      filter,
-      source: sourceFilter,
-      language: languageFilter,
-      evidence: evidenceFilter,
-      incident: selected ?? "",
-      layer: showCameras ? "cameras" : "",
-      camera: surface === "media" ? selectedCamera ?? "" : "",
-    })) {
-      if (value) u.searchParams.set(key, value);
-      else u.searchParams.delete(key);
-    }
-    history.replaceState(null, "", u);
+    history.replaceState(
+      null,
+      "",
+      writeView(new URL(location.href), {
+        q: query,
+        hours: windowHours,
+        filter,
+        source: sourceFilter,
+        language: languageFilter,
+        evidence: evidenceFilter,
+        incident: selected,
+        camera: surface === "media" ? selectedCamera : null,
+        at: at || null,
+        scope,
+        map: mapView,
+        layers: [
+          ...geoLayers,
+          ...(showCameras ? ["cameras"] : []),
+          ...(density ? ["density"] : []),
+          ...(showGnss ? ["gnss"] : []),
+        ] as LinkLayer[],
+        imagery,
+      }),
+    );
   }, [
     query,
     windowHours,
@@ -371,6 +387,13 @@ export default function App() {
     showCameras,
     selectedCamera,
     surface,
+    at,
+    scope,
+    mapView,
+    geoLayers,
+    density,
+    showGnss,
+    imagery,
   ]);
   useEffect(() => {
     document.documentElement.lang = language;
@@ -628,10 +651,11 @@ export default function App() {
     visible,
   ]);
   useEffect(() => {
+    // A replayed view does not change by the minute; only the clock moves.
     const timer = setInterval(() => {
       if (!document.hidden) {
         setClock(Date.now());
-        void load(false);
+        if (!at) void load(false);
       }
     }, 60000);
     const visibility = () => {
@@ -652,7 +676,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("map-manual", manual);
     };
-  }, [load]);
+  }, [load, at]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -681,9 +705,11 @@ export default function App() {
     localStorage.setItem("ew-last-seen", new Date().toISOString());
   }, []);
   useEffect(() => {
-    if (!selected || at || document.hidden) return;
+    setUnknownAt(false);
+    if (!selected || document.hidden) return;
     let active = true;
-    api("/api/incidents/" + selected)
+    // A replay reads the revision held then, with only the history known by then.
+    api("/api/incidents/" + selected + (at ? "?" + new URLSearchParams({ at }) : ""))
       .then((detail) => {
         if (!active) return;
         detailed.current = detail;
@@ -694,7 +720,10 @@ export default function App() {
             : [detail, ...s.incidents],
         }));
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => {
+        if (active && at && /^Error: 404:/.test(String(e))) setUnknownAt(true);
+        else if (active) setError(String(e));
+      });
     return () => {
       active = false;
     };
@@ -729,17 +758,25 @@ export default function App() {
     [incidents],
   );
   const geoFeatures = useMemo(
-    () => (geoCatalog?.features ?? []).filter((f) => geoLayers.includes(f.layer)),
-    [geoCatalog, geoLayers],
+    () => (geoActive ? (geoCatalog?.features ?? []).filter((f) => geoLayers.includes(f.layer)) : []),
+    [geoCatalog, geoLayers, geoActive],
   );
   const thermalTiles =
-    geoLayers.includes("thermal") && geoCatalog?.thermal_version
+    geoActive && geoLayers.includes("thermal") && geoCatalog?.thermal_version
       ? thermalTileUrl(geoCatalog.thermal_version)
       : null;
   const cameras = useMemo(
-    () => (showCameras ? (cameraCatalog?.cameras ?? []) : []),
-    [showCameras, cameraCatalog],
+    () => (showCameras && !at ? (cameraCatalog?.cameras ?? []) : []),
+    [showCameras, cameraCatalog, at],
   );
+  // Layers read live, which a replay cannot show as they were.
+  const liveOnly = [
+    filter === "news" && "News signals",
+    geoLayers.includes("thermal") && "Satellite thermal detections",
+    geoLayers.includes("emergency_mapping") && "Copernicus mapping areas",
+    showCameras && "Public cameras",
+    showGnss && "GNSS interference from aircraft reports",
+  ].filter((v): v is string => !!v);
   const newsSignals = useMemo(
     () => (newsActive ? (news?.signals ?? []) : []),
     [newsActive, news],
@@ -833,6 +870,15 @@ export default function App() {
     setSavedViews(next);
     localStorage.setItem("ew-views", JSON.stringify(next));
   };
+  const copyLink = () => {
+    const done = (message: string) => {
+      setCopied(message);
+      setTimeout(() => setCopied(""), 4000);
+    };
+    navigator.clipboard
+      .writeText(location.href)
+      .then(() => done("Link copied"), () => done("Copy this page's address to share the view"));
+  };
   const exportData = async (format: string) => {
     try {
       if (apiQuotaBlocked) throw Error(QUOTA_MESSAGE);
@@ -844,7 +890,7 @@ export default function App() {
       if (sourceFilter) params.set("source", sourceFilter);
       if (languageFilter) params.set("language", languageFilter);
       if (evidenceFilter) params.set("evidence", evidenceFilter);
-      if (at) params.set("at", new Date(at).toISOString());
+      if (at) params.set("at", at);
       if (scope === "Map area" && bbox) params.set("bbox", bbox);
       if (scope.startsWith("watch:")) {
         const area = watches.find((w) => w.id === scope.slice(6));
@@ -868,7 +914,7 @@ export default function App() {
     }
   };
   return (
-    <main className={`app sheet-${sheet}${selected||surface!=="feed" ? " panel-open" : ""}${__PUBLIC_DEMO__ ? " public-demo" : ""}`}>
+    <main className={`app sheet-${sheet}${selected||surface!=="feed" ? " panel-open" : ""}${__PUBLIC_DEMO__ ? " public-demo" : ""}${timeOpen ? " time-open" : ""}${at ? " as-of" : ""}`}>
       <a className="skip-link" href="#activity">
         {tr("Skip to activity")}
       </a>
@@ -885,7 +931,11 @@ export default function App() {
         incidents={incidents}
         selected={incident?.id ?? selected}
         onSelect={select}
-        onBounds={setBbox}
+        onBounds={(b, view) => {
+          setBbox(b);
+          setMapView(view);
+        }}
+        initialView={linked.map}
         onCountry={(n) => {
           setCountry(n);
           setSelected(null);
@@ -896,7 +946,7 @@ export default function App() {
         geoFeatures={geoFeatures}
         thermalTiles={thermalTiles}
         onGeo={(id,feature)=>{setSelected(null);setSelectedCamera(null);setSelectedGeo(id);setPickedGeo(feature??null);setSurface("geospatial");}}
-        gnss={showGnss?(gnss?.grid??null):null}
+        gnss={showGnss&&!at?(gnss?.grid??null):null}
         onGnss={cell=>{setSelected(null);setSelectedCamera(null);setGnssCell(cell);setSurface("gnss");}}
         cameras={cameras}
         density={density}
@@ -973,6 +1023,17 @@ export default function App() {
         </label>
         {!__PUBLIC_DEMO__ && <button
           className="icon-button"
+          aria-label={tr("Earlier time")}
+          aria-pressed={timeOpen}
+          onClick={() => {
+            if (timeOpen) setAt("");
+            setTimeOpen(!timeOpen);
+          }}
+        >
+          <History size={18} />
+        </button>}
+        {!__PUBLIC_DEMO__ && <button
+          className="icon-button"
           aria-label={sound ? t.sound : t.mute}
           aria-pressed={sound}
           onClick={() => {
@@ -996,7 +1057,26 @@ export default function App() {
           <SlidersHorizontal size={18} />
         </button>
       </header>
-      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select} onSignal={selectSignal}/>
+      <RollingBrief ready={ready&&!auth} at={at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select} onSignal={selectSignal}/>
+      {!__PUBLIC_DEMO__ && timeOpen && (
+        <TimeBar
+          at={at}
+          from={snapshot.history_from ?? null}
+          now={clock}
+          loaded={(snapshot.historical_at ?? "") === at}
+          language={language}
+          copied={copied}
+          onChange={(value) => {
+            setAt(value);
+            setPulse([]);
+          }}
+          onCopy={copyLink}
+          onClose={() => {
+            setAt("");
+            setTimeOpen(false);
+          }}
+        />
+      )}
       <aside
         id="activity"
         tabIndex={-1}
@@ -1200,6 +1280,7 @@ export default function App() {
               key={incident.id}
               incident={incident}
               language={language}
+              now={at ? Date.parse(at) : clock}
               onShowDay={(day) => setImagery((v) => ({ layer: v?.layer ?? "viirs-true-colour", day }))}
             />
             <h2>{tr("Claims & evidence")}</h2>
@@ -1465,7 +1546,7 @@ export default function App() {
         ) : surface === "search" ? (
           <section className="panel-content">
             <h1>{tr("Explore & focus")}</h1>
-            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}<ImageryControl value={imagery} onChange={setImagery} language={language}/>{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button><label className="check-row"><input type="checkbox" checked={showGnss} onChange={e=>setShowGnss(e.target.checked)}/>{tr("GNSS interference from aircraft reports")}</label>{showGnss&&<button onClick={()=>{setGnssCell(null);setSurface("gnss");}}>{tr("Explore GNSS interference")}</button>}</>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
+            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}<ImageryControl value={imagery} onChange={setImagery} language={language} now={at ? Date.parse(at) : clock}/>{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button><label className="check-row"><input type="checkbox" checked={showGnss} onChange={e=>setShowGnss(e.target.checked)}/>{tr("GNSS interference from aircraft reports")}</label>{showGnss&&<button onClick={()=>{setGnssCell(null);setSurface("gnss");}}>{tr("Explore GNSS interference")}</button>}</>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
             <CoverageView sources={snapshot.sources} incidents={snapshot.incidents} catalog={coverageCatalog} now={clock} language={language} />
 
             <label htmlFor="query">{tr("Search reports and incidents")}</label>
@@ -1543,7 +1624,12 @@ export default function App() {
                 <MapPin size={16} />
                 {tr("Private areas")}
               </button>
-              <button onClick={() => setSurface("replay")}>
+              <button
+                onClick={() => {
+                  setTimeOpen(true);
+                  setSurface("feed");
+                }}
+              >
                 <History size={16} />
                 {tr("Replay")}
               </button>
@@ -1551,6 +1637,10 @@ export default function App() {
               <button onClick={() => setSurface("health")}>
                 <Activity size={16} />
                 {tr("Source health")}
+              </button>
+              <button onClick={copyLink}>
+                <Link size={16} />
+                {tr("Copy link")}
               </button>
               {!__PUBLIC_DEMO__ && <>
               <button onClick={() => exportData("geojson")}>
@@ -1567,6 +1657,12 @@ export default function App() {
               </button>
               </>}
             </div>
+            {copied && <p className="sound-status" role="status">{tr(copied)}</p>}
+            {__PUBLIC_DEMO__ && (
+              <p className="caution">
+                {tr("The public demo keeps no history, so it cannot show an earlier time. Links to it open on the latest snapshot.")}
+              </p>
+            )}
             <h2>{tr("Changes since your last visit")}</h2>
             <p>
               {lastSeen
@@ -1733,54 +1829,6 @@ export default function App() {
             </p>
             <Notifications language={language} />
           </section>
-        ) : !__PUBLIC_DEMO__ && surface === "replay" ? (
-          <section className="panel-content">
-            <h1>{tr("Replay observed history")}</h1>
-            <p>
-              {tr(
-                "View what the system knew at a chosen time. Later revisions are excluded. Replay never emits live alerts.",
-              )}
-            </p>
-            <label htmlFor="replay-at">
-              {tr("Historical time (local browser time)")}
-            </label>
-            <input
-              id="replay-at"
-              type="datetime-local"
-              value={at}
-              onChange={(e) => {
-                setAt(e.target.value);
-                setPulse([]);
-              }}
-            />
-            <button
-              className="primary"
-              onClick={() => {
-                setAt("");
-                setPulse([]);
-                setSurface("feed");
-                void load(true);
-              }}
-            >
-              {tr("Return to live")}
-            </button>
-            {at && (
-              <div className="historical">
-                {tr("Historical view")} · {when(at)}
-              </div>
-            )}
-            <div className="results">
-              {incidents.map((i) => (
-                <button
-                  className="saved-view"
-                  key={i.id}
-                  onClick={() => select(i.id)}
-                >
-                  {i.headline}
-                </button>
-              ))}
-            </div>
-          </section>
         ) : surface === "country" ? (
           <section className="panel-content">
             <h1>
@@ -1821,7 +1869,7 @@ export default function App() {
           <>
             <div className="feed-heading">
               <div>
-                <h1>{incoming ? t.reports : newsActive ? tr("News signals") : tr("Live reports")}<small className="feed-peek-count">{incoming ? snapshot.incoming.length : newsActive ? news?.signals.length ?? 0 : incidents.length}</small></h1>
+                <h1>{incoming ? t.reports : newsActive ? tr("News signals") : tr(at ? "Reports as known then" : "Live reports")}<small className="feed-peek-count">{incoming ? snapshot.incoming.length : newsActive ? news?.signals.length ?? 0 : incidents.length}</small></h1>
               </div>
               {!__PUBLIC_DEMO__ && <button
                 className="icon-button"
@@ -1876,10 +1924,25 @@ export default function App() {
               </p>
             )}
             {at && (
-              <div className="historical">
-                {tr("Historical")} · {when(at)}
-                <button onClick={() => setAt("")}>{tr("Live")}</button>
+              <div className="historical" role="status">
+                <p>
+                  <strong>
+                    {tr("As known at")} {formatKnown(Date.parse(at), language)}
+                  </strong>
+                  <button onClick={() => setAt("")}>{tr("Return to live")}</button>
+                </p>
+                <p>
+                  {tr("Incidents appear as World Watch held them then. Event times can be earlier or later.")}{" "}
+                  {liveOnly.length > 0 && `${tr("Not kept as history, so hidden")}: ${liveOnly.map(tr).join(", ")}. `}
+                  {tr("Source health shows the present.")}
+                </p>
+                {unknownAt && <p>{tr("The selected incident was not yet known at this time.")}</p>}
               </div>
+            )}
+            {__PUBLIC_DEMO__ && linked.at && (
+              <p className="scope-notice">
+                {tr("This link asks for {time}. The public demo keeps no history, so it shows the latest snapshot.").replace("{time}", formatKnown(Date.parse(linked.at), language))}
+              </p>
             )}
             {updates > 0 && (
               <button className="new-updates" onClick={accept}>
@@ -2102,7 +2165,7 @@ export default function App() {
             </span>
           )}
         </div>
-        {showGnss && gnss && <GnssLegend language={language} />}
+        {showGnss && gnss && !at && <GnssLegend language={language} />}
       </div>
       <button
         className="health-pill"

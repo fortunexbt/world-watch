@@ -134,7 +134,7 @@ The first stops new runs at once. The second unpublishes the site. To remove the
 
 ## Limitations
 
-- Each run starts from an empty database, so the demo shows what the sources list now, plus up to an hour of a failed source's last records. It has no history, replay or revision trail, and the 7- and 30-day windows show nearly the same records as the day window.
+- Each run starts from an empty database, so the demo shows what the sources list now, plus up to an hour of a failed source's last records. It has no history, replay or revision trail, and the 7- and 30-day windows show nearly the same records as the day window. Links keep their window, filters, search, map position, scope and layers; a link carrying a time from the owner app opens the latest snapshot and says so.
 - Thermal tiles are rebuilt with the catalogue, about hourly, and the panel counts detections worldwide rather than in the view.
 - Cameras, exports, watch areas, alerts, Web Push, notes, corrections, record linking, news signals and the analysis worker are not in the demo.
 - A feed entry's ID and update time come from the previous snapshot. A run that can't read it, such as the first deployment, dates every entry to that run, so readers see each entry once more. An entry whose keyed record leaves the snapshot while its fused partner stays continues under the partner's ID, as a new entry.

@@ -137,6 +137,7 @@ export default function WorldMap({
   selected,
   onSelect,
   onBounds,
+  initialView = null,
   onCountry,
   follow,
   pulse,
@@ -157,7 +158,9 @@ export default function WorldMap({
   incidents: IncidentView[];
   selected: string | null;
   onSelect: (id: string) => void;
-  onBounds: (b: string) => void;
+  onBounds: (b: string, view: { zoom: number; lat: number; lon: number }) => void;
+  /** The camera a link opened the map at; otherwise the world frame. */
+  initialView?: { zoom: number; lat: number; lon: number } | null;
   onCountry: (name: string) => void;
   follow: boolean;
   pulse: string[];
@@ -181,6 +184,7 @@ export default function WorldMap({
     data = useRef(incidents),
     select = useRef(onSelect),
     bounds = useRef(onBounds),
+    opening = useRef(initialView),
     country = useRef(onCountry),
     cameraData = useRef(cameras),
     cameraSelect = useRef(onCamera),
@@ -1068,7 +1072,9 @@ export default function WorldMap({
     m.on("style.load", layers);
     m.on("load", () => {
       if (host.current) host.current.dataset.mapReady = "true";
-      initialFrame();
+      const view = opening.current;
+      if (view) m.jumpTo({ center: [view.lon, view.lat], zoom: view.zoom });
+      else initialFrame();
       layers();
       fetch(import.meta.env.BASE_URL + "countries.geojson", {
         credentials: "same-origin",
@@ -1180,7 +1186,8 @@ export default function WorldMap({
         host.current.dataset.mapZoom = String(m.getZoom());
         host.current.dataset.mapBounds = view;
       }
-      bounds.current(view);
+      const center = m.getCenter().wrap();
+      bounds.current(view, { zoom: m.getZoom(), lat: center.lat, lon: center.lng });
     });
     m.on("click", "points", (e) => {
       const id = e.features?.[0]?.properties?.id;

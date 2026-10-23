@@ -139,15 +139,38 @@ export const italian: Record<string, string> = {
   "This device will no longer be notified.": "Questo dispositivo non riceverà più gli avvisi.",
   "No server watch rules yet. Create one through the alert rules API.":
     "Nessuna regola di monitoraggio sul server. Creane una tramite l’API delle regole di avviso.",
-  "Replay observed history": "Rivedi la cronologia osservata",
-  "View what the system knew at a chosen time. Later revisions are excluded. Replay never emits live alerts.":
-    "Consulta ciò che il sistema conosceva al momento scelto. Le revisioni successive sono escluse. La cronologia non emette avvisi in diretta.",
-  "Historical time (local browser time)":
-    "Ora storica (ora locale del browser)",
   "Return to live": "Torna alla diretta",
-  "Historical view": "Vista storica",
-  Historical: "Storico",
   Live: "Diretta",
+  Time: "Tempo",
+  "Earlier time": "Un momento precedente",
+  "Showing what World Watch knew by this time, not when events happened. Later updates, corrections and links are left out.":
+    "Mostra ciò che World Watch sapeva a quest’ora, non quando sono accaduti gli eventi. Aggiornamenti, correzioni e collegamenti successivi sono esclusi.",
+  "Move back to see what World Watch knew at an earlier time.":
+    "Torna indietro per vedere ciò che World Watch sapeva in un momento precedente.",
+  Play: "Riproduci",
+  Pause: "Pausa",
+  "History from": "Cronologia dal",
+  "Known by": "Noto entro",
+  Step: "Passo",
+  "1 hour": "1 ora",
+  "6 hours": "6 ore",
+  "1 day": "1 giorno",
+  "Copy link": "Copia il link",
+  Close: "Chiudi",
+  "Link copied": "Link copiato",
+  "Copy this page's address to share the view": "Copia l’indirizzo di questa pagina per condividere la vista",
+  "As known at": "Come noto alle",
+  "Reports as known then": "Segnalazioni come note allora",
+  "Incidents appear as World Watch held them then. Event times can be earlier or later.":
+    "Gli eventi appaiono come li conosceva World Watch in quel momento. L’ora degli eventi può essere precedente o successiva.",
+  "Not kept as history, so hidden": "Senza cronologia, quindi nascosti",
+  "Source health shows the present.": "Lo stato delle fonti è quello attuale.",
+  "The selected incident was not yet known at this time.":
+    "L’evento selezionato non era ancora noto in quel momento.",
+  "The public demo keeps no history, so it cannot show an earlier time. Links to it open on the latest snapshot.":
+    "La demo pubblica non conserva la cronologia, quindi non può mostrare un momento precedente. I link si aprono sull’ultima istantanea.",
+  "This link asks for {time}. The public demo keeps no history, so it shows the latest snapshot.":
+    "Questo link chiede la vista delle {time}. La demo pubblica non conserva la cronologia, quindi mostra l’ultima istantanea.",
   "Observed activity and source coverage":
     "Attività osservate e copertura delle fonti",
   Coverage: "Copertura",

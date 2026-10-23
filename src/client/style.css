@@ -760,6 +760,117 @@ small {
   margin-left: 10px;
   font-size: 10px;
 }
+.historical p {
+  margin: 0 0 6px;
+  color: inherit;
+  line-height: 1.5;
+}
+.historical p:last-child {
+  margin-bottom: 0;
+}
+/* The time bar sits under the map's middle; while it is open the legend and zoom controls clear it. */
+.time-bar {
+  position: absolute;
+  z-index: 3;
+  left: 410px;
+  bottom: 22px;
+  width: min(660px, calc(100vw - 432px));
+  background: #111c24f5;
+  border: 1px solid #354650;
+  border-radius: 11px;
+  box-shadow: 0 8px 35px #0004;
+  overflow: hidden;
+}
+.time-bar-note {
+  margin: 0;
+  padding: 7px 14px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #a6b5be;
+  border-bottom: 1px solid #2c3c46;
+}
+.app.as-of .time-bar-note {
+  background: #483b23;
+  color: #eed8ab;
+  border-bottom-color: #5c4a2a;
+}
+.time-bar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 4px;
+}
+.time-bar-track {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: inherit;
+}
+.time-bar-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.time-bar-label strong {
+  font-weight: 550;
+  color: #e7edf1;
+  white-space: nowrap;
+}
+.time-bar-label small {
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.time-bar input[type="range"] {
+  display: block;
+  min-height: 28px;
+  border: 0;
+  background: none;
+  accent-color: #9acde9;
+}
+.time-bar select {
+  width: auto;
+  min-height: 36px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.time-bar-copied {
+  margin: 0;
+  padding: 0 14px 7px;
+  font-size: 10px;
+}
+.app.time-open .legend {
+  bottom: 124px;
+}
+.app.time-open .maplibregl-ctrl-bottom-right {
+  bottom: 168px !important;
+}
+@media (min-width: 761px) and (max-width: 1000px) {
+  .time-bar {
+    left: 386px;
+    width: calc(100vw - 404px);
+  }
+}
+@media (max-width: 760px) {
+  .time-bar {
+    top: 76px;
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    border-radius: 9px;
+  }
+  .time-bar-label small {
+    display: none;
+  }
+  .app.time-open .rolling-brief {
+    display: none;
+  }
+}
 .error {
   padding: 12px 18px;
   background: #462b2d;

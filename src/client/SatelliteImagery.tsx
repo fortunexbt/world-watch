@@ -48,15 +48,17 @@ const utc = (value: string, language: Language) =>
     minute: "2-digit",
   }) + " UTC";
 
-/** The map's NASA daily imagery: a layer, a day defaulting to the newest finished one, and what the picture is. */
+/** The map's NASA daily imagery: a layer, a day defaulting to the newest finished one by `now`, and what the picture is. */
 export function ImageryControl({
   value,
   onChange,
   language,
+  now,
 }: {
   value: ImageryView | null;
   onChange: (value: ImageryView | null) => void;
   language: Language;
+  now: number;
 }) {
   const tr = (text: string) => translate(language, text);
   const [domain, setDomain] = useState<{
@@ -66,7 +68,7 @@ export function ImageryControl({
   } | null>(null);
   const [error, setError] = useState("");
   const layer = value && GIBS_LAYERS[value.layer],
-    today = utcDay(Date.now()),
+    today = utcDay(now),
     known = domain && value && domain.layer === value.layer ? domain : null;
   useEffect(() => {
     if (!value || (known && (!value.day || known.from <= value.day))) return;
@@ -128,7 +130,7 @@ export function ImageryControl({
             id="imagery-day"
             type="date"
             min={layer.first}
-            max={known?.days.at(-1)?.[1] ?? today}
+            max={[known?.days.at(-1)?.[1] ?? today, today].sort()[0]}
             value={value.day ?? ""}
             onChange={(e) =>
               e.target.value &&
@@ -199,10 +201,13 @@ const LABEL: Record<Scene["collection"], string> = {
 export function RecentImagery({
   incident,
   language,
+  now,
   onShowDay,
 }: {
   incident: IncidentView;
   language: Language;
+  /** Scenes after this are left out, so a replay lists only what had been acquired by then. */
+  now: number;
   onShowDay: (day: string) => void;
 }) {
   const tr = (text: string) => translate(language, text);
@@ -213,7 +218,7 @@ export function RecentImagery({
       incident.event_start ?? incident.published_at ?? incident.ingested_at,
     eventMs = Date.parse(event);
   if (!place || !Number.isFinite(eventMs)) return null;
-  const span = sceneWindow(eventMs, Date.now());
+  const span = sceneWindow(eventMs, now);
   const search = () => {
     setLoading(true);
     Promise.allSettled(
