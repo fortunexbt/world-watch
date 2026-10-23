@@ -475,6 +475,27 @@ Object.assign(italian, {
     "{shown} su {total} rilevamenti in questa vista",
   "Sensor unavailable": "Sensore non disponibile",
 });
+Object.assign(italian, {
+  sources: "fonti",
+  records: "record",
+  "one origin": "un’unica origine",
+  "independent origins": "origini indipendenti",
+  "origin unknown": "origine sconosciuta",
+  "One event from linked records": "Un unico evento da record collegati",
+  "These records republish one upstream measurement. They are one origin, not independent corroboration.":
+    "Questi record ripubblicano un’unica misura a monte. Sono un’unica origine, non una conferma indipendente.",
+  "These records come from independent origins and corroborate each other.":
+    "Questi record provengono da origini indipendenti e si confermano a vicenda.",
+  "A record states no upstream origin, so independence is unknown.":
+    "Un record non indica l’origine a monte, quindi l’indipendenza è sconosciuta.",
+  "Separated by an operator from": "Separato da un operatore da",
+  "Possibly the same event as": "Forse lo stesso evento di",
+  "a record outside this view": "un record fuori da questa vista",
+  "Separate these records": "Separa questi record",
+  "Let the rule decide again": "Lascia decidere di nuovo la regola",
+  "Separate with audit reason": "Separa con motivazione",
+  "Restore the rule decision": "Ripristina la decisione della regola",
+});
 export function translate(language: Language, text: string) {
   return language === "it"
     ? (italian[text] ?? text.replaceAll("_", " "))

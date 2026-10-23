@@ -4,6 +4,7 @@ import GeospatialPanel from "./GeospatialPanel";
 import type {GeospatialCatalog} from "../shared/geospatial";
 import type {PublicCameraCatalog} from "../shared/media";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
+import { independence, memberLinks, situations, type Situation } from "../shared/fusion";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
@@ -650,7 +651,8 @@ export default function App() {
       active = false;
     };
   }, [selected, at, visible]);
-  const incidents = snapshot.incidents.filter((i) =>
+  const fused = situations(snapshot.incidents);
+  const incidents = fused.filter((i) =>
     filter === "all" || filter === "demonstrations"
       ? filter === "all" ||
         i.activity.includes("demonstration") ||
@@ -661,7 +663,9 @@ export default function App() {
           ? isHazard(i.activity)
           : ["severe", "critical"].includes(i.impact),
   );
-  const incident = snapshot.incidents.find((i) => i.id === selected);
+  const incident = fused.find(
+    (i) => i.id === selected || i.members?.some((m) => m.id === selected),
+  );
   const countryCode =
     countryRegistry.find(
       (c) =>
@@ -777,7 +781,7 @@ export default function App() {
       </a>
       <WorldMap
         incidents={incidents}
-        selected={selected}
+        selected={incident?.id ?? selected}
         onSelect={select}
         onBounds={setBbox}
         onCountry={(n) => {
@@ -977,6 +981,7 @@ export default function App() {
                 {symbols[incident.impact]} {tr(incident.impact)}
               </span>
               <span>{tr(incident.evidence_status)}</span>
+              {incident.members && <span>{sourceCount(incident, tr)}</span>}
             </div>
             <h1 tabIndex={-1}>{incident.headline}</h1>
             {incident.analyzed_at === null && (
@@ -1068,6 +1073,14 @@ export default function App() {
                 <p key={note}>{note}</p>
               ))}
             </div>
+            <LinkedRecords
+              situation={incident}
+              situations={fused}
+              language={language}
+              readOnly={!!at}
+              onSelect={select}
+              onSaved={() => load(true)}
+            />
             <h2>{tr("Claims & evidence")}</h2>
             {incident.claims.map((c) => (
               <article className="claim" key={c.id}>
@@ -1629,7 +1642,7 @@ export default function App() {
                 : country}
             </h1>
             <p>{tr("Observed activity and source coverage")}</p>
-            {snapshot.incidents
+            {fused
               .filter(
                 (i) =>
                   i.location?.country === countryCode ||
@@ -1816,7 +1829,7 @@ export default function App() {
                           className="feed-item"
                           data-incident-id={i.id}
                           onClick={() => select(i.id)}
-                          aria-label={`${i.headline}, ${isHazard(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}`}
+                          aria-label={`${i.headline}, ${isHazard(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}${i.members ? ", " + sourceCount(i, tr) : ""}`}
                         >
                           <div
                             className="incident-symbol"
@@ -1860,6 +1873,11 @@ export default function App() {
                                     )
                                   : ""}
                               </span>
+                              {i.members && (
+                                <span className="evidence-state">
+                                  {sourceCount(i, tr)}
+                                </span>
+                              )}
                             </span>
                           </div>
                         </button>
@@ -2282,6 +2300,165 @@ function ReconstructionEditor({
         {message}
       </p>
     </>
+  );
+}
+/** How many records a situation fuses, and whether they corroborate each other or share one origin. */
+function sourceCount(situation: Situation, tr: (v: string) => string) {
+  const members = situation.members ?? [situation],
+    sources = new Set(members.map((m) => m.reports[0]?.source_id)).size,
+    origin = independence(situation);
+  return `${members.length} ${tr(sources === members.length ? "sources" : "records")} · ${tr(
+    origin === "same_origin"
+      ? "one origin"
+      : origin === "independent"
+        ? "independent origins"
+        : "origin unknown",
+  )}`;
+}
+function LinkedRecords({
+  situation,
+  situations,
+  language,
+  readOnly,
+  onSelect,
+  onSaved,
+}: {
+  situation: Situation;
+  situations: Situation[];
+  language: Language;
+  readOnly: boolean;
+  onSelect: (id: string) => void;
+  onSaved: () => Promise<unknown>;
+}) {
+  const tr = (v: string) => translate(language, v);
+  const members = situation.members ?? [situation],
+    ids = new Set(members.map((m) => m.id));
+  const source = (v: IncidentView) =>
+    v.reports[0]?.source_name ?? v.reports[0]?.source_id ?? v.headline;
+  const outside = [
+    ...new Map(
+      members.flatMap((m) =>
+        (m.links ?? [])
+          .filter((l) => l.type !== "same_event" && !ids.has(l.incident_id))
+          .map((l) => [l.type + l.incident_id, { from: m, link: l }] as const),
+      ),
+    ).values(),
+  ];
+  if (members.length < 2 && !outside.length) return null;
+  const origin = independence(situation);
+  return (
+    <div className="linked-records">
+      {members.length > 1 && (
+        <>
+          <h2>{tr("One event from linked records")}</h2>
+          <p>
+            {tr(
+              origin === "same_origin"
+                ? "These records republish one upstream measurement. They are one origin, not independent corroboration."
+                : origin === "independent"
+                  ? "These records come from independent origins and corroborate each other."
+                  : "A record states no upstream origin, so independence is unknown.",
+            )}
+          </p>
+          {memberLinks(situation).map(({ from, link }) => {
+            const to = members.find((m) => m.id === link.incident_id)!;
+            return (
+              <div key={from.id + to.id}>
+                <p>
+                  <strong>
+                    {source(from)} · {source(to)}
+                  </strong>{" "}
+                  {link.reason}
+                </p>
+                {!readOnly && (
+                  <LinkForm ids={[from.id, to.id]} linked={false} language={language} onSaved={onSaved} />
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+      {outside.map(({ from, link }) => {
+        const other = situations.find(
+          (s) => s.id === link.incident_id || s.members?.some((m) => m.id === link.incident_id),
+        );
+        return (
+          <div key={link.type + link.incident_id}>
+            <p>
+              {tr(
+                link.type === "split_from"
+                  ? "Separated by an operator from"
+                  : "Possibly the same event as",
+              )}{" "}
+              {other ? (
+                <button className="saved-view" onClick={() => onSelect(link.incident_id)}>
+                  {other.headline}
+                </button>
+              ) : (
+                tr("a record outside this view")
+              )}
+              : {link.reason}
+            </p>
+            {link.type === "split_from" && !readOnly && (
+              <LinkForm ids={[from.id, link.incident_id]} linked language={language} onSaved={onSaved} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+/** Separates two linked records, or hands a separated pair back to the same-event rule. */
+function LinkForm({
+  ids,
+  linked,
+  language,
+  onSaved,
+}: {
+  ids: string[];
+  linked: boolean;
+  language: Language;
+  onSaved: () => Promise<unknown>;
+}) {
+  const tr = (v: string) => translate(language, v);
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  const field = "link-reason-" + ids.join("-");
+  return (
+    <details>
+      <summary>{tr(linked ? "Let the rule decide again" : "Separate these records")}</summary>
+      <form
+        className="context-form"
+        action="/api/incidents/link"
+        method="post"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const reason = String(new FormData(e.currentTarget).get("reason") ?? "").trim();
+          setBusy(true);
+          setMessage("");
+          try {
+            await api("/api/incidents/link", {
+              method: "POST",
+              body: JSON.stringify({ ids, linked, reason }),
+            });
+            await onSaved();
+          } catch {
+            setMessage(tr("Request failed. Please retry."));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label htmlFor={field}>{tr("Audit reason and source URL")}</label>
+        <textarea id={field} name="reason" required minLength={5} maxLength={1000} />
+        <button type="submit" disabled={busy}>
+          {tr(busy ? "Saving…" : linked ? "Restore the rule decision" : "Separate with audit reason")}
+        </button>
+        <p role="status" aria-live="polite">
+          {message}
+        </p>
+      </form>
+    </details>
   );
 }
 function RetryReport({

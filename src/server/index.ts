@@ -2,6 +2,7 @@ import {claimBrief,renewBrief,completeBrief,failBrief,currentBrief,pruneBrief} f
 import { structuredBrief } from "./structured-brief";
 import { sourceEligibility } from "../collector/index";
 import { stableBundlePayload } from "./bundling";
+import { FUSION_RULE, fusionCandidates, relink, sameEvent, withLinks } from "./fusion";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
 import {
   CONTRACT_VERSION,
@@ -546,7 +547,7 @@ export async function ingest(e: Env, items: ObservationInput[]) {
         ).first<any>(),
         version = (previous?.version ?? 0) + 1,
         g = item.source_geo;
-      const view: IncidentView = {
+      let view: IncidentView = {
         id: iid,
         version,
         headline: item.title,
@@ -598,6 +599,53 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           ? { current_listing: true }
           : {}),
       };
+      const candidates = fusionCandidates(view),
+        prior =
+          (previous?.view ? (parse(previous.view) as IncidentView).links : null) ?? [];
+      const others = [
+        ...(candidates ? await rows(e, candidates.sql, ...candidates.params) : []),
+        ...(prior.length
+          ? await rows(
+              e,
+              `SELECT view FROM incidents WHERE deleted_at IS NULL AND id IN(${prior.map(() => "?").join(",")})`,
+              ...prior.map((l) => l.incident_id),
+            )
+          : []),
+      ].map((v) => parse(v.view) as IncidentView);
+      const fused = relink(
+        view,
+        prior,
+        [...new Map(others.map((v) => [v.id, v])).values()],
+      );
+      view = withLinks(view, fused.links);
+      for (const other of fused.changed) {
+        const revised = { ...other, version: other.version + 1, updated_at: time };
+        statements.push(
+          stmt(
+            e,
+            "UPDATE incidents SET view=?,version=?,updated_at=? WHERE id=?",
+            JSON.stringify(revised),
+            revised.version,
+            time,
+            revised.id,
+          ),
+          stmt(
+            e,
+            "INSERT INTO incident_revisions(incident_id,version,view,known_at,reason) VALUES(?,?,?,?,?)",
+            revised.id,
+            revised.version,
+            JSON.stringify(revised),
+            time,
+            `same-event links revised by ${FUSION_RULE} after incident ${iid} changed`,
+          ),
+          stmt(
+            e,
+            "INSERT INTO outbox(event_type,entity_id,payload) VALUES('incident.updated',?,?)",
+            revised.id,
+            JSON.stringify({ incident: revised, catchup: true }),
+          ),
+        );
+      }
       statements.push(
         stmt(
           e,
@@ -2308,7 +2356,9 @@ async function routes(r: Request, e: Env) {
       })),
     });
   if (
-    (p === "/api/incidents/merge" || p === "/api/incidents/split") &&
+    (p === "/api/incidents/merge" ||
+      p === "/api/incidents/split" ||
+      p === "/api/incidents/link") &&
     r.method === "POST"
   ) {
     const b = (await r.json()) as any;
@@ -2360,6 +2410,42 @@ async function routes(r: Request, e: Env) {
             superseded_by: target.id,
           },
           reason: `merged into ${target.id}: ${b.reason}`,
+        });
+    } else if (p.endsWith("/link")) {
+      // Separating two records, or handing the pair back to the rule; neither record changes otherwise.
+      if (
+        !Array.isArray(b.ids) ||
+        b.ids.length !== 2 ||
+        b.ids[0] === b.ids[1] ||
+        typeof b.linked !== "boolean"
+      )
+        throw Error("invalid_link");
+      const pair: IncidentView[] = [];
+      for (const id of b.ids) {
+        const saved = await stmt(
+          e,
+          "SELECT view FROM incidents WHERE id=? AND deleted_at IS NULL",
+          id,
+        ).first<any>();
+        if (!saved) throw Error("incident_not_found");
+        pair.push(parse(saved.view));
+      }
+      const verdict = b.linked
+        ? sameEvent(pair[0], pair[1])
+        : { type: "split_from" as const, basis: "operator", reason: b.reason.trim() };
+      for (const [view, other] of [pair, [...pair].reverse()])
+        changes.push({
+          view: {
+            ...withLinks(view, [
+              ...(view.links ?? []).filter((l) => l.incident_id !== other.id),
+              ...(verdict ? [{ ...verdict, incident_id: other.id }] : []),
+            ]),
+            version: view.version + 1,
+            updated_at: time,
+          },
+          reason: b.linked
+            ? `same-event rule restored for ${other.id}: ${b.reason}`
+            : `separated from ${other.id}: ${b.reason}`,
         });
     } else {
       const saved = await stmt(

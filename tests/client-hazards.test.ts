@@ -160,6 +160,36 @@ test(
         ],
       });
       const cyclone = record("cyclone", "tropical_cyclone", -45);
+      // A USGS quake and the GDACS alert republishing it, linked on both incidents.
+      const link = (id: string) => ({
+        incident_id: id,
+        type: "same_event",
+        independence: "same_origin",
+        basis: "fusion-1",
+        reason: "origin times 0 s apart; both measurements come from NEIC",
+      });
+      const usgsQuake = {
+        ...quake("nagqu", 7, 32),
+        impact: "unknown",
+        location: { ...record("x", "earthquake", 32).location, lon: 93.7 },
+        links: [link("china")],
+      };
+      const gdacsAlert = {
+        ...record("china", "earthquake", 32),
+        impact: "significant",
+        location: { ...usgsQuake.location, accuracy: "area" },
+        reports: [
+          {
+            report_id: "report-china",
+            source_id: "global-gdacs-alerts",
+            source_name: "GDACS",
+            title: "GDACS alert",
+            rights: { ai: false },
+            excerpts: [{ id: "gdacs-event", text: JSON.stringify({ alert_level: "Orange" }) }],
+          },
+        ],
+        links: [link("nagqu")],
+      };
       const incidents = [
         quake("small", 4.5, 45),
         quake("large", 8, -25),
@@ -168,6 +198,8 @@ test(
           impact: "significant",
           location: { ...cyclone.location, lon: 100, accuracy: "area" },
         },
+        gdacsAlert,
+        usgsQuake,
       ];
       const open = async (
         viewport: { width: number; height: number },
@@ -194,6 +226,8 @@ test(
             });
           if (u.pathname === "/api/brief")
             return route.fulfill({ json: { current: null, pending: false } });
+          const detail = incidents.find((i) => u.pathname === "/api/incidents/" + i.id);
+          if (detail) return route.fulfill({ json: detail });
           if (u.pathname.startsWith("/api/"))
             return route.fulfill({ json: {} });
           return route.continue();
@@ -268,7 +302,27 @@ test(
       await toggle.click();
       assert.equal(await toggle.getAttribute("aria-expanded"), "true");
       assert.equal(await drought.isVisible(), true);
-      assert.deepEqual([...errors, ...phone.errors], []);
+      // A fresh page, since the pixel count above hid the interface.
+      const linked = await open({ width: 1440, height: 900 }, "en");
+      const fused = linked.page.locator('[data-incident-id="nagqu"]');
+      assert.equal(
+        await fused.getAttribute("aria-label"),
+        "Fixture nagqu, earthquake, significant, official advisory, 2 sources · one origin",
+        "one feed row for the pair, led by the USGS point",
+      );
+      assert.equal(await linked.page.locator('[data-incident-id="china"]').count(), 0);
+      await fused.click();
+      const detail = linked.page.locator(".detail");
+      await detail.getByRole("heading", { name: "One event from linked records" }).waitFor();
+      assert.ok(
+        await detail
+          .getByText("These records republish one upstream measurement. They are one origin, not independent corroboration.")
+          .isVisible(),
+      );
+      assert.equal(await detail.locator("article.evidence").count(), 2, "both records in the detail panel");
+      assert.ok(await detail.getByText("Separate these records").isVisible());
+
+      assert.deepEqual([...errors, ...phone.errors, ...linked.errors], []);
     } finally {
       if (browser) await browser.close();
       server.kill("SIGTERM");

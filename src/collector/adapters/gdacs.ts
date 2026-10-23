@@ -101,6 +101,11 @@ export function parseGdacs(
               episode_id: episodeId,
               episode_alert_level: text(p.episodealertlevel) || null,
               severity: text(p.severitydata?.severitytext) || null,
+              // Magnitude for earthquakes, wind speed for cyclones, burnt area for fires, as the unit says.
+              severity_value: Number.isFinite(p.severitydata?.severity)
+                ? p.severitydata.severity
+                : null,
+              severity_unit: text(p.severitydata?.severityunit) || null,
               from,
               to,
               source_updated_at: modified,

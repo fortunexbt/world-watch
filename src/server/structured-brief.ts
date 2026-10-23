@@ -1,4 +1,5 @@
 import type { IncidentView } from "../shared/contracts";
+import { situations, type Situation } from "../shared/fusion";
 
 /** The headline budget of the model brief contract. */
 const WORDS = 30;
@@ -63,32 +64,44 @@ function countries(codes: unknown) {
 
 /**
  * A model-free headline from issuer fields alone: one statement per issuer alert, one per
- * activity for the rest, each citing the incidents it counts. Statements follow their most
- * important incident and stop at the first that would exceed the word budget.
+ * activity for the rest, each citing the incidents it counts. A fused situation counts once and
+ * cites every record in it. Statements follow their most important incident and stop at the
+ * first that would exceed the word budget.
  */
 export function structuredBrief(
   views: IncidentView[],
   hours: number,
   clock = Date.now(),
 ) {
-  const live = views
-    .filter(
+  const live = situations(
+    views.filter(
       (v) =>
         !v.analyzed_at &&
         v.evidence_status === "official_advisory" &&
         !v.cancelled &&
         !v.superseded_by &&
         !(v.expires_at && Date.parse(v.expires_at) <= clock),
-    )
-    .sort(order);
+    ),
+  ).sort(order);
   if (!live.length) return null;
-  const statements: { text: string; incidents: IncidentView[] }[] = [],
-    groups = new Map<string, IncidentView[]>();
+  const statements: { text: string; incidents: Situation[] }[] = [],
+    groups = new Map<string, Situation[]>();
   for (const v of live) {
-    const record = issuer(v),
+    const records = (v.members ?? [v]).map(issuer),
+      record =
+        records.find((r) => typeof r.alert_level === "string") ?? records[0],
       hazard = v.activity.replaceAll("_", " ");
     if (typeof record.alert_level === "string") {
-      const name = typeof record.event_name === "string" ? record.event_name : "",
+      // A fused earthquake alert names the magnitude its measuring record states.
+      const magnitude = records
+          .map((r) => r.magnitude)
+          .find((m) => Number.isFinite(m)),
+        name =
+          typeof record.event_name === "string" && record.event_name
+            ? record.event_name
+            : v.activity === "earthquake" && magnitude !== undefined
+              ? `M${magnitude.toFixed(1)}`
+              : "",
         affected = countries(record.affected_countries),
         area = typeof record.countries === "string" ? record.countries : "";
       statements.push({
@@ -143,16 +156,17 @@ export function structuredBrief(
     if (words([...cited, s].map((c) => c.text).join(" ")) > WORDS) break;
     cited.push(s);
   }
-  const incidents = cited.flatMap((s) => s.incidents);
+  const incidents = cited.flatMap((s) => s.incidents),
+    records = (list: Situation[]) => list.flatMap((v) => v.members ?? [v]);
   return {
     kind: "structured" as const,
     id: "structured:" + iso(clock),
     headline: cited.map((s) => s.text).join(" "),
     statements: cited.map((s) => ({
       text: s.text,
-      incident_ids: s.incidents.map((v) => v.id),
+      incident_ids: records(s.incidents).map((v) => v.id),
     })),
-    references: incidents.map((v) => ({
+    references: records(incidents).map((v) => ({
       incident_id: v.id,
       headline: v.headline,
       version: v.version,

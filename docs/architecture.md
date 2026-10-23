@@ -24,10 +24,11 @@ flowchart LR
 | `src/collector/index.ts`         | Bounded acquisition, admission and checkpoints                 | Source mix and achieved polling latency need evaluation              |
 | `src/collector/remote.ts`        | Pausable hosted dispatcher                                     | Empty schedules by default; requires operator configuration          |
 | `src/server/index.ts`            | HTTP API, authorization, persistence and publication           | Large coupled module; D1-specific SQL                                |
-| `src/server/bundling.ts`         | Conservative evidence grouping                                 | Similarity and cross-source event identity are incomplete            |
+| `src/server/bundling.ts`         | Conservative evidence grouping                                 | Exact content only; narrative cross-source identity is not matched   |
+| `src/server/fusion.ts`           | Deterministic same-event links between structured records      | Earthquakes and named cyclones only; tolerances not yet evaluated    |
 | `src/server/geo.ts`              | Gazetteer-backed place resolution                              | Place centroids and uncertainty, not street-level verification       |
 | `src/server/brief.ts`            | Brief window claims and completion                             | Obsolete bootstrap-window scheduling bug remains                     |
-| `src/server/structured-brief.ts` | Model-free headline from issuer fields until a worker connects | English only; one event reported by two issuers appears twice        |
+| `src/server/structured-brief.ts` | Model-free headline from issuer fields until a worker connects | English only                                                         |
 | `src/worker/worker.ts`           | Claims, renewals, analysis and result submission               | Runs only when its host, auth and quota are available                |
 | `src/worker/adapter.ts`          | Local supported Codex transport and isolation checks           | Exact requested model is known; effective model/tier is not attested |
 | `src/client/App.tsx`             | Feed, selection and contextual tools                           | Large component; workflow and relevance need redesign                |
@@ -42,6 +43,8 @@ The backend uses D1. PostgreSQL/PostGIS, a separate Redis queue and an always-on
 A source-native report ID and substantive revision identify ingestion work. Jobs use leases, attempt IDs and fences; result submission checks that the claim is still valid. Completed local results are spooled durably before submission and removed after acceptance. Delivery is at least once: a crash before durable spooling can repeat an inference call.
 
 Claims, incident revisions and outbox records support replay and publication. Publication time, source-update time, ingestion time and asserted event time have different meanings. Missing event times and locations must stay unresolved. Multiple reports from the same upstream origin do not establish independent corroboration.
+
+Structured records of one occurrence from different issuers stay separate incidents. When a record publishes, `fusion.ts` reads candidates through the latitude index and an origin-time window (earthquakes) or the search index by storm name and season (cyclones), and writes the verdict into the optional `links` field of both incidents as a new revision. `same_event` joins them into one marker, feed row and brief statement with every record in the detail panel. Its `independence` is `same_origin` when one record republishes the other's measurement (GDACS naming NEIC for a USGS quake) and `independent` only when both name different origins. Evidence short of the rule's tolerances stays `possible_same_event` and never fuses. An operator `split_from` decision separates a pair and no rule overrides it; `POST /api/incidents/link` records it or hands the pair back to the rule, leaving both records otherwise unchanged. These map to the plan's `same_origin`, `supports`, `possible_same_event` and `split_from` relationships. A view without `links` reads as before.
 
 Owner, collector and worker application credentials have separate scopes. Optional private Sites service access is an additional credential boundary. Codex authentication stays on its inference host. Source content is untrusted input and must not choose commands, credentials, tools or fetch destinations.
 

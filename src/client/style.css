@@ -1272,18 +1272,21 @@ summary {
 .impact-label {
   font-weight: 650;
 }
-.impact-assessment {
+.impact-assessment,
+.linked-records {
   padding: 14px;
   border: 1px solid #3b505d;
   border-radius: 8px;
   margin: 20px 0;
   background: #1b2a34;
 }
-.impact-assessment h2 {
+.impact-assessment h2,
+.linked-records h2 {
   margin: 0 0 10px;
   font-size: 12px;
 }
-.impact-assessment p {
+.impact-assessment p,
+.linked-records p {
   color: #afc2cd;
   font-size: 12px;
   line-height: 1.5;

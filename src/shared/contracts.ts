@@ -215,6 +215,23 @@ export type IncidentView = {
   cancelled: boolean;
   /** Live while its issuer lists it as current; false once the issuer stops listing it. */
   current_listing?: boolean;
+  /** Same-event assessments against other incidents, mirrored on both. Absent means none. */
+  links?: IncidentLink[];
+};
+/**
+ * same_event joins two records of one occurrence into one situation without changing either.
+ * possible_same_event points at a compatible record whose evidence does not settle identity.
+ * split_from is an operator decision that the two differ, which no rule overrides.
+ * independence says whether a same_event pair shares one upstream origin (republication) or
+ * comes from independent origins (corroboration); unknown when a record states no origin.
+ */
+export type IncidentLink = {
+  incident_id: string;
+  type: "same_event" | "possible_same_event" | "split_from";
+  independence?: "same_origin" | "independent" | "unknown";
+  /** The rule and its version, or "operator". */
+  basis: string;
+  reason: string;
 };
 export type SourceRecord = {
   id: string;
