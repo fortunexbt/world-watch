@@ -29,6 +29,8 @@ Open the controls (the sliders icon, top right), tick **Satellite thermal detect
 
 Thermal dots spread across the continents. Tell the audience how many there were in the last 24 hours (the panel shows it), and that the map shows a geographically balanced 2,000 of them so one busy region can't crowd out the rest. Zoom into a cluster and the count rises toward complete coverage for that area. Point out that each dot is a heat measurement, which may or may not be a fire.
 
+Under **Satellite imagery**, pick **True colour, VIIRS**. Yesterday's NASA mosaic replaces the dark basemap, with the sensor, overpass time and resolution listed under the date. Then open a typhoon or earthquake and press **Find recent Sentinel scenes** to list the Sentinel-2 and Sentinel-1 passes over it, each opening in the Copernicus Browser.
+
 ## 1:50 News signals
 
 Click **News signals** in the top bar. The feed and map switch to places where GDELT's machine-geocoded news coverage of protests, conflict, displacement, curfews or disasters is concentrated in the last six hours, each drawn as a broadcast mark rather than an impact shape. Open one and show the article links, the distinct headline count and the caution at the top: this is coverage, not a verified event. For the first 12 hours of a fresh demo there is no baseline yet, so nothing is marked as rising.

@@ -649,6 +649,67 @@ Object.assign(italian, {
     "Fonti lette con successo nei tempi previsti",
   "sources fresh": "fonti aggiornate",
 });
+Object.assign(italian, {
+  "Satellite imagery": "Immagini satellitari",
+  Off: "Disattivate",
+  "True colour, VIIRS": "Colori reali, VIIRS",
+  "True colour, MODIS": "Colori reali, MODIS",
+  "Night lights, VIIRS": "Luci notturne, VIIRS",
+  "Day (UTC)": "Giorno (UTC)",
+  "NASA's list of imagery days is unavailable. Pick a day to load it anyway.":
+    "L’elenco NASA dei giorni con immagini non è disponibile. Scegli un giorno per caricarle comunque.",
+  "NASA lists no imagery for this day.": "La NASA non elenca immagini per questo giorno.",
+  Acquired: "Acquisizione",
+  "Daily mosaic of passes on": "Mosaico giornaliero dei passaggi del",
+  "still filling in pass by pass": "ancora in completamento, passaggio dopo passaggio",
+  "NOAA-20 VIIRS, bands I1, M4, M3": "NOAA-20 VIIRS, bande I1, M4, M3",
+  "Terra MODIS, bands 1, 4, 3": "Terra MODIS, bande 1, 4, 3",
+  "NOAA-20 VIIRS Day/Night Band, at-sensor radiance":
+    "NOAA-20 VIIRS Day/Night Band, radianza al sensore",
+  "Daytime passes, about 13:30 local solar time":
+    "Passaggi diurni, verso le 13:30 ora solare locale",
+  "Daytime passes, about 10:30 local solar time":
+    "Passaggi diurni, verso le 10:30 ora solare locale",
+  "Night passes, about 01:30 local solar time":
+    "Passaggi notturni, verso l’01:30 ora solare locale",
+  Resolution: "Risoluzione",
+  "250 m imagery from 375 m and 750 m bands": "Immagini a 250 m da bande a 375 m e 750 m",
+  "250 m imagery from 250 m and 500 m bands": "Immagini a 250 m da bande a 250 m e 500 m",
+  "500 m imagery from a 750 m band": "Immagini a 500 m da una banda a 750 m",
+  "Cloud cover": "Copertura nuvolosa",
+  "Not measured. Cloud hides lights and moonlight brightens cloud and snow.":
+    "Non misurata. Le nuvole nascondono le luci e la luna rischiara nuvole e neve.",
+  "Not measured for a daily mosaic. Clouds appear as imaged.":
+    "Non misurata per un mosaico giornaliero. Le nuvole appaiono come riprese.",
+  "Data saver is on, so tiles load at half detail.":
+    "Il risparmio dati è attivo, quindi le tessere si caricano a metà dettaglio.",
+  "Find recent Sentinel scenes": "Trova scene Sentinel recenti",
+  "Search the catalogue again": "Cerca di nuovo nel catalogo",
+  "Show the event day on the map": "Mostra il giorno dell’evento sulla mappa",
+  "Sentinel-2 and Sentinel-1 scenes covering the mapped point from {from} to {to}, listed by the Copernicus Data Space Ecosystem catalogue.":
+    "Scene Sentinel-2 e Sentinel-1 che coprono il punto sulla mappa dal {from} al {to}, elencate dal catalogo del Copernicus Data Space Ecosystem.",
+  "The mapped point is approximate, so a scene may miss part of the affected area.":
+    "Il punto sulla mappa è approssimativo, quindi una scena può non coprire parte dell’area interessata.",
+  "Searching the Copernicus catalogue…": "Ricerca nel catalogo Copernicus…",
+  "{collection} search unavailable": "Ricerca {collection} non disponibile",
+  "Sentinel-2 L2A optical": "Sentinel-2 L2A ottico",
+  "Sentinel-1 GRD radar": "Sentinel-1 GRD radar",
+  "No scenes in this window.": "Nessuna scena in questo intervallo.",
+  "{n} h before the event": "{n} h prima dell’evento",
+  "{n} h after the event": "{n} h dopo l’evento",
+  "{n} days before the event": "{n} giorni prima dell’evento",
+  "{n} days after the event": "{n} giorni dopo l’evento",
+  "Cloud cover not reported": "Copertura nuvolosa non indicata",
+  "Cloud over {n}% of its 110 km tile, not measured at this point":
+    "Nuvole sul {n}% del suo riquadro di 110 km, non misurate in questo punto",
+  ascending: "orbita ascendente",
+  descending: "orbita discendente",
+  "radar sees through cloud": "il radar vede attraverso le nuvole",
+  Catalogued: "Catalogata il",
+  "Open this day in the Copernicus Browser": "Apri questo giorno nel Copernicus Browser",
+  "Catalogue fields from the Copernicus Data Space Ecosystem, Copernicus Sentinel data {year}. Previews stay in the Copernicus Browser.":
+    "Campi del catalogo del Copernicus Data Space Ecosystem, Copernicus Sentinel data {year}. Le anteprime restano nel Copernicus Browser.",
+});
 export function translate(language: Language, text: string) {
   return language === "it"
     ? (italian[text] ?? text.replaceAll("_", " "))

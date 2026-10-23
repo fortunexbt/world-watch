@@ -17,6 +17,13 @@ import type { NewsSignal } from "../shared/news";
 import { NEWS_COLOR, NEWS_GLYPH } from "./NewsSignals";
 import { viewportBounds } from "./bounds";
 import {
+  GIBS_LAYERS,
+  GIBS_TERMS,
+  gibsTiles,
+  reducedData,
+  type GibsLayerId,
+} from "./imagery";
+import {
   glyphs,
   GLYPH_ACTIVITIES,
   magnitude,
@@ -128,6 +135,7 @@ export default function WorldMap({
   newsSignals = [],
   selectedSignal = null,
   onSignal = () => {},
+  imagery = null,
 }: {
   incidents: IncidentView[];
   selected: string | null;
@@ -145,6 +153,7 @@ export default function WorldMap({
   newsSignals?: NewsSignal[];
   selectedSignal?: string | null;
   onSignal?: (id: string) => void;
+  imagery?: { layer: GibsLayerId; day: string } | null;
 }) {
   const host = useRef<HTMLDivElement>(null),
     map = useRef<GLMap | null>(null),
@@ -164,6 +173,8 @@ export default function WorldMap({
     newsSelect = useRef(onSignal);
   newsData.current = newsSignals;
   newsSelect.current = onSignal;
+  const imageryView = useRef(imagery);
+  imageryView.current = imagery;
   data.current = incidents;
   select.current = onSelect;
   bounds.current = onBounds;
@@ -345,6 +356,36 @@ export default function WorldMap({
         properties: { id: f.id, kind: f.properties.kind, name: f.name },
       })),
     });
+  };
+  // The raster source exists only while a day is chosen, so an unused layer requests no tiles.
+  const updateImagery = () => {
+    const m = map.current;
+    if (!m?.getSource("events")) return;
+    const want = imageryView.current,
+      tiles = want && gibsTiles(want.layer, want.day),
+      current = m.getSource("imagery") as maplibregl.RasterTileSource | undefined;
+    if (current?.tiles?.[0] === tiles) return;
+    if (m.getLayer("imagery")) m.removeLayer("imagery");
+    if (current) m.removeSource("imagery");
+    if (!want || !tiles) return;
+    const layer = GIBS_LAYERS[want.layer];
+    m.addSource("imagery", {
+      type: "raster",
+      tiles: [tiles],
+      // With Save-Data, 256 px tiles drawn at 512 px need a quarter of the requests at half the detail.
+      tileSize: reducedData() ? 512 : 256,
+      maxzoom: layer.maxzoom,
+      attribution: `<a href="${GIBS_TERMS}">NASA GIBS</a>, ${layer.sensor}, ${want.day}`,
+    });
+    // Imagery replaces the basemap's area fills and stays under its roads, borders and labels.
+    const own = ["events", "report-density", "geospatial-context", "news-signals", "public-cameras"],
+      style = m.getStyle().layers,
+      lastFill = style.findLastIndex(
+        (l) =>
+          (l.type === "fill" || l.type === "background") &&
+          !own.includes((l as { source?: string }).source ?? ""),
+      );
+    m.addLayer({ id: "imagery", type: "raster", source: "imagery" }, style[lastFill + 1]?.id);
   };
   useEffect(() => {
     if (!host.current) return;
@@ -881,6 +922,7 @@ export default function WorldMap({
       updateCameras();
       updateNews();
       updateContext();
+      updateImagery();
     };
     m.on("style.load", layers);
     m.on("load", () => {
@@ -978,6 +1020,8 @@ export default function WorldMap({
       m.addImage(e.id, ctx.getImageData(0, 0, 12, 12), { pixelRatio: 2 });
     });
     m.on("error", (e) => {
+      // A day GIBS has no tile for is reported beside the date, not as missing map detail.
+      if ((e as { sourceId?: string }).sourceId === "imagery") return;
       if (host.current)
         host.current.dataset.mapError = e.error?.message || "Unknown map error";
       if (/tile|fetch|load|ajax/i.test(e.error?.message || ""))
@@ -1108,6 +1152,7 @@ export default function WorldMap({
   useEffect(updateCameras, [cameras, selectedCamera]);
   useEffect(updateNews, [newsSignals, selectedSignal]);
   useEffect(updateContext, [geoFeatures]);
+  useEffect(updateImagery, [imagery?.layer, imagery?.day]);
   useEffect(() => {
     if (!follow || !pulse.length || document.hidden) return;
     const i = incidents.find((x) => x.id === pulse[0]);

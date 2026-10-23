@@ -1,6 +1,7 @@
 import MediaPanel from "./MediaPanel";
 import RollingBrief from "./RollingBrief";
 import GeospatialPanel from "./GeospatialPanel";
+import { ImageryControl, RecentImagery, type ImageryView } from "./SatelliteImagery";
 import PublicBanner from "./PublicBanner";
 import { CountryCoverage, CoverageChip, CoverageView, freshness, sourceStatus } from "./Coverage";
 import PublicFeeds from "./PublicFeeds";
@@ -146,6 +147,7 @@ async function api(path: string, options: RequestInit = {}) {
 export default function App() {
   const [showCameras,setShowCameras]=useState(!__PUBLIC_DEMO__ && (new URLSearchParams(location.search).get("layer")==="cameras" || new URLSearchParams(location.search).has("camera"))),[density,setDensity]=useState(false),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(new URLSearchParams(location.search).get("camera")),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
   const [news,setNews]=useState<NewsSignalCatalog|null>(null),[newsError,setNewsError]=useState(""),[selectedSignal,setSelectedSignal]=useState<string|null>(null);
+  const [imagery,setImagery]=useState<ImageryView|null>(null);
   const [geoLayers,setGeoLayers]=useState<string[]>([]),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
   const [clock, setClock] = useState(Date.now);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -890,6 +892,7 @@ export default function App() {
         newsSignals={newsSignals}
         selectedSignal={selectedSignal}
         onSignal={selectSignal}
+        imagery={imagery?.day ? { layer: imagery.layer, day: imagery.day } : null}
       />
       <header className="topbar">
         <a className="brand" href={import.meta.env.BASE_URL} aria-label={tr("World Watch home")}>
@@ -1180,6 +1183,12 @@ export default function App() {
               onSelect={select}
               onSaved={() => load(true)}
             />
+            <RecentImagery
+              key={incident.id}
+              incident={incident}
+              language={language}
+              onShowDay={(day) => setImagery((v) => ({ layer: v?.layer ?? "viirs-true-colour", day }))}
+            />
             <h2>{tr("Claims & evidence")}</h2>
             {incident.claims.map((c) => (
               <article className="claim" key={c.id}>
@@ -1441,7 +1450,7 @@ export default function App() {
         ) : surface === "search" ? (
           <section className="panel-content">
             <h1>{tr("Explore & focus")}</h1>
-            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button></>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
+            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}<ImageryControl value={imagery} onChange={setImagery} language={language}/>{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button></>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
             <CoverageView sources={snapshot.sources} incidents={snapshot.incidents} catalog={geoCatalog} now={clock} language={language} />
 
             <label htmlFor="query">{tr("Search reports and incidents")}</label>
