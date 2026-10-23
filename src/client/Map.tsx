@@ -12,7 +12,13 @@ import type { PublicCamera } from "../shared/media";
 import type { GeoFeature } from "../shared/geospatial";
 import type { IncidentView } from "../shared/contracts";
 import { viewportBounds } from "./bounds";
-import { glyphs, HAZARDS, magnitude, markerIcon, markerScale } from "./hazards";
+import {
+  glyphs,
+  GLYPH_ACTIVITIES,
+  magnitude,
+  markerIcon,
+  markerScale,
+} from "./hazards";
 export const colors: Record<string, string> = {
   informational: "#73B6E6",
   minor: "#E4D06C",
@@ -351,12 +357,12 @@ export default function WorldMap({
             }),
             { pixelRatio: 2 },
           );
-        // Hazard glyph on an impact-coloured disc, with the impact shape as a
+        // Activity glyph on an impact-coloured disc, with the impact shape as a
         // corner badge so impact never rests on colour alone. Unknown stays hollow.
-        for (const hazard of HAZARDS)
-          if (!m.hasImage(`hazard-${hazard}-${impact}`))
+        for (const activity of GLYPH_ACTIVITIES)
+          if (!m.hasImage(`hazard-${activity}-${impact}`))
             m.addImage(
-              `hazard-${hazard}-${impact}`,
+              `hazard-${activity}-${impact}`,
               canvasImage(64, (ctx) => {
                 const hollow = impact === "unknown";
                 ctx.beginPath();
@@ -372,7 +378,7 @@ export default function WorldMap({
                 ctx.lineWidth = 2.3;
                 ctx.lineCap = ctx.lineJoin = "round";
                 ctx.strokeStyle = hollow ? color : "#0D151C";
-                ctx.stroke(new Path2D(glyphs[hazard]));
+                ctx.stroke(new Path2D(glyphs[activity]));
                 ctx.restore();
                 if (hollow) return;
                 ctx.translate(20, -20);

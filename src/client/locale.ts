@@ -199,6 +199,7 @@ export const italian: Record<string, string> = {
   drought: "siccità",
   severe_weather: "maltempo intenso",
   aviation_emergency: "codice di emergenza aereo",
+  connectivity_disruption: "calo della connettività Internet",
   worldwide: "tutto il mondo",
   unverified: "non verificato",
   corroborated: "con riscontri",

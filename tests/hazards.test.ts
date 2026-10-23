@@ -28,6 +28,15 @@ import {
   ADSBLOL_SQUAWK_URL,
 } from "../src/collector/adapters/adsblol.js";
 import { polygonArea } from "../src/collector/adapters/area.js";
+import {
+  parseRipestatRouting,
+  RIPESTAT_ROUTING_URL,
+  ROUTING_COUNTRIES,
+  routingImpact,
+  routingURL,
+} from "../src/collector/adapters/ripestat.js";
+import { checkedURL } from "../src/collector/fetch.js";
+import { countryAt } from "../src/shared/borders.js";
 import { collectSources } from "../src/collector/index.js";
 import {
   configuredRegistry,
@@ -1463,6 +1472,390 @@ test("emergency squawks publish unverified without analysis, revise as the aircr
     assert.equal(exported.incidents.length, 3);
     assert.equal(exported.excluded_for_rights, 0);
     assert(exported.incidents.every((i: IncidentView) => /ODbL/.test(i.reports[0].rights.attribution)));
+  } finally {
+    s.db.close();
+  }
+});
+
+// Trimmed from stat.ripe.net on 2026-10-23: hourly country-resource-stats for Syria's shutdown of
+// 29 November 2012, Iran's of 16 November 2019 and Syria's last 14 days. Drops and recoveries the
+// recent window lacks are written into clones of it hour by hour, never into the fixture file.
+const routing = JSON.parse(
+  readFileSync("tests/fixtures/ripestat-routing.json", "utf8"),
+);
+const routingSource = sourceRegistry.find(
+  (s) => s.id === "global-ripestat-routing",
+)!;
+const HOUR = 3600000;
+const hourISO = (ms: number) => new Date(ms).toISOString().slice(0, 19);
+/** The real recent response as one row per hour, ending at `end`, each hour's counts open to edit. */
+function routingHours(
+  country: string,
+  end: number,
+  edit: (row: any, index: number, count: number) => void = () => {},
+) {
+  const real = structuredClone(routing["sy-now"]);
+  const rows = real.data.stats
+    .flatMap((row: any) =>
+      row.timeline.flatMap((t: any) => {
+        const out = [];
+        for (
+          let at = Date.parse(t.starttime + "Z");
+          at <= Date.parse(t.endtime + "Z");
+          at += HOUR
+        )
+          out.push({ ...row, at });
+        return out;
+      }),
+    )
+    .sort((a: any, b: any) => a.at - b.at)
+    .map(({ at, ...row }: any, i: number, all: any[]) => ({
+      ...row,
+      timeline: [
+        {
+          starttime: hourISO(end - (all.length - 1 - i) * HOUR),
+          endtime: hourISO(end - (all.length - 1 - i) * HOUR),
+        },
+      ],
+    }));
+  rows.forEach((row: any, i: number) => edit(row, i, rows.length));
+  return {
+    ...real,
+    data: { ...real.data, resource: country.toLowerCase(), stats: rows },
+  };
+}
+const shutdown =
+  (from: number, to = 0) =>
+  (row: any, i: number, n: number) => {
+    if (i >= n - from && i < n - to) {
+      row.v4_prefixes_ris = 0;
+      row.asns_ris = 0;
+    }
+  };
+const routingEnd = Date.parse("2026-10-22T21:00:00Z");
+
+test("a real national shutdown becomes one routing drop with native hour identity, a country area and an end at the measured recovery", () => {
+  const sy = parseRipestatRouting(
+    routingSource,
+    "SY",
+    routing["sy-2012"],
+    Date.parse("2012-12-01T17:30:00Z"),
+  )!;
+  assert.equal(sy.length, 1);
+  const [drop] = sy;
+  assert.equal(drop.native_id, "SY-2012-11-29T10");
+  assert.equal(drop.source_event_id, drop.native_id);
+  assert.equal(drop.title, "Internet routing visibility drop, Syria");
+  assert.equal(drop.official?.activity, "connectivity_disruption");
+  assert.equal(drop.official?.impact, "severe");
+  assert.equal(drop.official?.effective_at, "2012-11-29T10:00:00.000Z");
+  assert.equal(drop.official?.expires_at, "2012-12-01T15:00:00.000Z");
+  assert.equal(drop.official?.current_listing, undefined);
+  assert.equal(drop.published_at, null);
+  // The area comes from the map's own Syria polygon, not a guessed point.
+  const geo = drop.source_geo!;
+  assert.deepEqual(
+    [geo.name, geo.accuracy, geo.country, countryAt(geo.lon, geo.lat)],
+    ["Syria", "area", "SY", "SY"],
+  );
+  assert(geo.radius_km! > 300 && geo.radius_km! < 500);
+  const r = record(drop);
+  assert.equal(r.baseline_ipv4_prefixes, 73);
+  assert.equal(r.lowest_ipv4_prefixes, 0);
+  assert.equal(r.largest_drop_percent, 100);
+  assert.equal(r.drop_started, "2012-11-29T10:00:00.000Z");
+  assert.equal(r.low_until, "2012-12-01T14:00:00.000Z");
+  assert.equal(r.recovered_at, "2012-12-01T15:00:00.000Z");
+  assert.match(r.notice, /not a confirmed shutdown and states no cause/);
+  assert.equal(
+    drop.canonical_url,
+    `${RIPESTAT_ROUTING_URL}?resource=sy&starttime=2012-11-26T10%3A00&endtime=2012-12-01T16%3A00&resolution=1h`,
+  );
+  // Iran lost about half its prefixes and a third of its networks: significant, from the native counts.
+  const [ir] = parseRipestatRouting(
+    routingSource,
+    "IR",
+    routing["ir-2019"],
+    Date.parse("2019-11-21T14:00:00Z"),
+  )!;
+  assert.equal(ir.native_id, "IR-2019-11-16T20");
+  assert.equal(ir.official?.impact, "significant");
+  assert.equal(ir.official?.expires_at, "2019-11-21T11:00:00.000Z");
+  assert.deepEqual(
+    [record(ir).baseline_ipv4_prefixes, record(ir).baseline_asns, record(ir).largest_drop_percent],
+    [6098, 441, 53],
+  );
+  // Syria's last fourteen days hold no drop.
+  assert.deepEqual(
+    parseRipestatRouting(routingSource, "SY", routing["sy-now"], routingEnd + HOUR),
+    [],
+  );
+  for (const drop of [0.25, 0.49, 0.5, 0.89, 0.9, 1])
+    assert.notEqual(routingImpact(drop), "critical");
+  assert.deepEqual(
+    [0.25, 0.5, 0.9, 1].map(routingImpact),
+    ["minor", "significant", "severe", "severe"],
+  );
+});
+
+test("a routing drop needs two low hours, lost networks unless half the prefixes go, a country of 50 prefixes and current data", () => {
+  const parse = (payload: unknown, now = routingEnd + HOUR) =>
+    parseRipestatRouting(routingSource, "SY", payload, now);
+  // A synthetic shutdown three hours old is open: live as current, no expiry.
+  const [open] = parse(routingHours("SY", routingEnd, shutdown(3)))!;
+  assert.equal(open.native_id, `SY-${hourISO(routingEnd - 2 * HOUR).slice(0, 13)}`);
+  assert.equal(open.official?.current_listing, true);
+  assert.equal(open.official?.expires_at, null);
+  assert.equal(open.official?.impact, "severe");
+  assert.equal(record(open).recovered_at, null);
+  assert.equal(record(open).low_until, new Date(routingEnd).toISOString());
+  // One low hour is not a drop.
+  assert.deepEqual(parse(routingHours("SY", routingEnd, shutdown(1))), []);
+  // Two recovered hours end it at the first of them; one recovered hour does not.
+  const [ended] = parse(routingHours("SY", routingEnd, shutdown(5, 2)))!;
+  assert.equal(ended.native_id, open.native_id.replace(/T\d\d$/, "T" + hourISO(routingEnd - 4 * HOUR).slice(11, 13)));
+  assert.equal(ended.official?.expires_at, new Date(routingEnd - HOUR).toISOString());
+  assert.equal(ended.official?.current_listing, undefined);
+  const [blip] = parse(routingHours("SY", routingEnd, (row, i, n) => {
+    if (i >= n - 5 && i !== n - 2) row.v4_prefixes_ris = row.asns_ris = 0;
+  }))!;
+  assert.equal(blip.official?.current_listing, true);
+  // A third of the prefixes gone with every network still routed reads as aggregation, not a drop;
+  // losing one of eight networks as well makes it a minor drop.
+  const partial = (asns: number) =>
+    routingHours("SY", routingEnd, (row, i, n) => {
+      if (i >= n - 3) {
+        row.v4_prefixes_ris = 340;
+        row.asns_ris = asns;
+      }
+    });
+  assert.deepEqual(parse(partial(8)), []);
+  assert.equal(parse(partial(7))![0].official?.impact, "minor");
+  // Half the prefixes are a drop on their own.
+  const half = routingHours("SY", routingEnd, (row, i, n) => {
+    if (i >= n - 3) row.v4_prefixes_ris = 250;
+  });
+  assert.equal(parse(half)![0].official?.impact, "significant");
+  // A country routing fewer than 50 prefixes is never evaluated.
+  const small = routingHours("SY", routingEnd, (row, i, n) => {
+    row.v4_prefixes_ris = i >= n - 3 ? 0 : 40;
+  });
+  assert.deepEqual(parse(small), []);
+  // Missing hours are skipped, never read as low.
+  const gap = routingHours("SY", routingEnd);
+  gap.data.stats.splice(-6, 4);
+  assert.deepEqual(parse(gap), []);
+  // Data more than six hours old can neither open nor end a drop.
+  assert.equal(parse(routingHours("SY", routingEnd, shutdown(3)), routingEnd + 7 * HOUR), null);
+  assert.equal(parse({ ...routing["sy-now"], data: { ...routing["sy-now"].data, stats: [] } }), null);
+  // A response for another country, at another resolution or not ok fails visibly.
+  assert.throws(() => parseRipestatRouting(routingSource, "IR", routing["sy-now"], routingEnd), /invalid_ripestat_response/);
+  for (const broken of [
+    { ...routing["sy-now"], status: "error" },
+    { ...routing["sy-now"], data: { ...routing["sy-now"].data, resolution: "5m" } },
+    { ...routing["sy-now"], data: { ...routing["sy-now"].data, stats: null } },
+  ])
+    assert.throws(() => parse(broken), /invalid_ripestat_response/);
+});
+
+test("a long routing drop stays one record against the baseline before it, and leaves tracking after seven days", () => {
+  const parse = (payload: unknown) =>
+    parseRipestatRouting(routingSource, "SY", payload, routingEnd + HOUR)!;
+  // Five days low: the low hours never become their own baseline, so it is still one open drop.
+  const long = parse(routingHours("SY", routingEnd, shutdown(5 * 24)));
+  assert.equal(long.length, 1);
+  assert.equal(long[0].official?.current_listing, true);
+  assert.equal(record(long[0]).baseline_ipv4_prefixes, 521);
+  // A drop that started more than seven days before the latest hour is no longer reported.
+  const old = parse(routingHours("SY", routingEnd, shutdown(8 * 24, 7 * 24 + 10)));
+  assert.deepEqual(old, []);
+});
+
+test("the routing source asks RIPEstat for three countries a poll in turn, keeps other countries' open drops listed and reconciles only when one goes", async () => {
+  assert.deepEqual(routingSource.countries, ["*"]);
+  assert.equal(routingSource.rights.ai, false);
+  assert.equal(routingSource.rights.display, true);
+  assert.equal(routingSource.rights.redistribute, false);
+  assert.match(routingSource.rights.attribution, /https:\/\/www\.ripe\.net\/ris/);
+  assert.match(routingSource.rights.attribution, /The RIPE Routing Information Service \(RIS\) is a RIPE NCC service\./);
+  assert.equal(checkedURL(routingURL("IR", routingEnd)).hostname, "stat.ripe.net");
+  assert.equal(
+    routingURL("IR", Date.parse("2026-10-23T00:01:57Z")),
+    `${RIPESTAT_ROUTING_URL}?resource=ir&starttime=2026-10-09T00%3A00&resolution=1h&sourceapp=world-watch`,
+  );
+  assert.equal(ROUTING_COUNTRIES.length, 175);
+  const [a, b, c, d] = ROUTING_COUNTRIES;
+  const now = routingEnd + HOUR;
+  const run = async (
+    checkpoint: any,
+    payloads: Record<string, unknown>,
+  ) => {
+    const requested: string[] = [];
+    const accepted: ObservationInput[] = [];
+    const reconciled: string[][] = [];
+    let saved: any;
+    const results = await collectSources(
+      { EW_API_URL: "https://isolated.invalid", EW_COLLECTOR_TOKEN: "isolated-fixture" },
+      {
+        sources: [routingSource],
+        register: async () => {},
+        checkpoint: async () => checkpoint,
+        recordHealth: async (_, h) => {
+          saved = h.checkpoint;
+        },
+        ingest: async (rows) => {
+          accepted.push(...rows);
+        },
+        fetch: async (url, init) => {
+          requested.push(String(url));
+          if (String(url).endsWith("/reconcile")) {
+            reconciled.push(JSON.parse(String(init?.body)).active_native_ids);
+            return Response.json({ changed: 1, more: false });
+          }
+          const country = new URL(String(url)).searchParams.get("resource")!.toUpperCase();
+          return Response.json(payloads[country] ?? routingHours(country, routingEnd));
+        },
+        maxRequests: 40,
+        now: () => now,
+      },
+    );
+    return { results, requested, accepted, reconciled, saved };
+  };
+  const first = await run({}, { [b]: routingHours(b, routingEnd, shutdown(3)) });
+  assert.deepEqual(first.requested, [a, b, c].map((x) => routingURL(x, now)));
+  assert.deepEqual(first.results.map((r) => [r.status, r.received]), [["ok", 1]]);
+  assert.equal(first.accepted[0].eligibility?.reason, "structured_measurement_record");
+  const opened = first.accepted[0].native_id;
+  assert.deepEqual(first.saved.routing, { next: 3, ongoing: [opened] });
+  assert.deepEqual(first.reconciled, []);
+  // The next poll reads the next three countries and keeps the drop it did not re-read listed.
+  const next = await run(
+    { ...first.saved, last_success_at: undefined },
+    {},
+  );
+  assert.deepEqual(next.requested, ROUTING_COUNTRIES.slice(3, 6).map((x) => routingURL(x, now)));
+  assert.deepEqual(next.saved.routing, { next: 6, ongoing: [opened] });
+  assert.deepEqual(next.reconciled, []);
+  // Back at the drop's country, a recovered record ends it and the open set empties.
+  const recovered = await run(
+    { routing: { next: 0, ongoing: [opened] } },
+    { [b]: routingHours(b, routingEnd, shutdown(5, 2)) },
+  );
+  assert.equal(recovered.accepted.length, 1);
+  assert.equal(recovered.accepted[0].native_id, opened.replace(/T\d\d$/, "T" + hourISO(routingEnd - 4 * HOUR).slice(11, 13)));
+  assert.deepEqual(recovered.saved.routing.ongoing, []);
+  assert.deepEqual(recovered.reconciled, [[]]);
+  // A drop that is simply no longer found is ended by reconciliation, while other countries' drops stay listed.
+  const elsewhere = `${d}-2026-10-22T18`;
+  const vanished = await run({ routing: { next: 0, ongoing: [opened, elsewhere] } }, {});
+  assert.equal(vanished.accepted.length, 0);
+  assert.deepEqual(vanished.reconciled, [[elsewhere]]);
+  // Lagging data leaves the country's open drop exactly as it was.
+  const stale = await run(
+    { routing: { next: 0, ongoing: [opened] } },
+    { [b]: routingHours(b, routingEnd - 8 * HOUR) },
+  );
+  assert.deepEqual(stale.saved.routing, { next: 3, ongoing: [opened] });
+  assert.deepEqual(stale.reconciled, []);
+  // Rotation wraps after the last country.
+  const wrap = await run({ routing: { next: 174, ongoing: [] } }, {});
+  assert.deepEqual(wrap.requested, [ROUTING_COUNTRIES[174], a, b].map((x) => routingURL(x, now)));
+  assert.equal(wrap.saved.routing.next, 2);
+  // A failed request publishes nothing and keeps the rotation where it was.
+  const failed = await run({ routing: { next: 0, ongoing: [opened] } }, { [c]: { status: "error" } });
+  assert.equal(failed.results[0].status, "error");
+  assert.equal(failed.accepted.length, 0);
+  assert.deepEqual(failed.saved.routing, { next: 0, ongoing: [opened] });
+});
+
+test("a routing drop publishes live without analysis, ends at the measured recovery, and one no longer found is ended by reconciliation", async () => {
+  const s = fixtureServer();
+  try {
+    // The server judges liveness by its own clock, so the hours end before now.
+    const end = Math.floor(Date.now() / HOUR) * HOUR - 14 * HOUR;
+    const [, country] = ROUTING_COUNTRIES;
+    let checkpoint: any = {};
+    const run = (latest: number, edit?: (row: any, i: number, n: number) => void) =>
+      collectSources(
+        { EW_API_URL: "https://isolated.invalid", EW_COLLECTOR_TOKEN: "isolated-fixture" },
+        {
+          sources: [routingSource],
+          register: (sources) => s.api("/api/sources", { sources }, "fixture-collector"),
+          // Each poll starts back at the drop's country.
+          checkpoint: async () => ({ routing: { next: 0, ongoing: [] }, ...checkpoint, last_success_at: undefined }),
+          recordHealth: async (_, h) => {
+            checkpoint = { ...h.checkpoint, routing: { ...h.checkpoint.routing!, next: 0 } };
+          },
+          request: async (path, body) => {
+            const r = await s.api(path, body, "fixture-collector");
+            if (r.status !== 200) throw Error(`fixture_api_${r.status}`);
+            return r.body;
+          },
+          fetch: async (url) => {
+            const c = new URL(String(url)).searchParams.get("resource")!.toUpperCase();
+            return Response.json(routingHours(c, latest, c === country ? edit : undefined));
+          },
+          now: () => latest + HOUR,
+        },
+      );
+    const snapshot = async () =>
+      (await s.api("/api/snapshot?hours=24&include_incoming=0")).body
+        .incidents as IncidentView[];
+    await s.api("/api/alert-rules", { id: "severe", rule: { impacts: ["severe"] } });
+
+    assert.equal((await run(end, shutdown(3)))[0].received, 1);
+    let [drop] = await snapshot();
+    assert.equal(drop.activity, "connectivity_disruption");
+    assert.equal(drop.impact, "severe");
+    assert.equal(drop.current_listing, true);
+    assert.equal(drop.expires_at, null);
+    assert.equal(drop.analyzed_at, null);
+    assert.equal(drop.location?.country, country);
+    assert.equal(drop.location?.accuracy, "area");
+    assert.equal(drop.event_start, new Date(end - 2 * HOUR).toISOString());
+    assert.equal(drop.reports[0].rights.redistribute, false);
+    assert.deepEqual(
+      s.db.prepare("SELECT DISTINCT state,error_kind FROM analysis_jobs").all().map((r) => ({ ...r })),
+      [{ state: "blocked", error_kind: "rights" }],
+    );
+
+    // Five hours on, the country has recovered: the same incident ends at the first recovered hour.
+    await run(end + 5 * HOUR, shutdown(8, 3));
+    [drop] = await snapshot();
+    assert.equal(drop.version, 2);
+    assert.equal(drop.current_listing, undefined);
+    assert.equal(drop.expires_at, new Date(end + 3 * HOUR).toISOString());
+    assert.equal(drop.cancelled, false);
+    // The rule that was alerted to the open severe drop hears that it ended; no new urgent alert fires.
+    assert.deepEqual(
+      s.db
+        .prepare("SELECT incident_version,state,reason FROM alert_deliveries WHERE incident_id=? ORDER BY incident_version")
+        .all(drop.id)
+        .map((r) => ({ ...r })),
+      [
+        { incident_version: 1, state: "eligible_ui", reason: "broad_area_notice; location uncertainty overlaps watch area" },
+        {
+          incident_version: 2,
+          state: "eligible_ui",
+          reason: "correction_or_retraction; notify prior eligible recipient (current eligibility changed: expired)",
+        },
+      ],
+    );
+
+    // A drop that leaves the measurement without a recovered record is ended by reconciliation.
+    await run(end + 10 * HOUR, shutdown(3));
+    const reopened = (await snapshot()).find((i) => i.current_listing)!;
+    assert.notEqual(reopened.id, drop.id);
+    assert.deepEqual(checkpoint.routing.ongoing, [`${country}-${hourISO(end + 8 * HOUR).slice(0, 13)}`]);
+    await run(end + 12 * HOUR);
+    const gone = (await snapshot()).find((i) => i.id === reopened.id)!;
+    assert.equal(gone.current_listing, false);
+    assert.ok(Date.parse(gone.expires_at!) <= Date.now());
+    assert.deepEqual(
+      { ...s.db.prepare("SELECT reason FROM incident_revisions WHERE incident_id=? ORDER BY version DESC").get(gone.id) },
+      { reason: "measured drop no longer found open" },
+    );
+    assert.deepEqual(checkpoint.routing.ongoing, []);
   } finally {
     s.db.close();
   }

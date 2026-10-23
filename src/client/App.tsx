@@ -39,7 +39,13 @@ import {
 } from "./time";
 import { validBounds } from "./bounds";
 import WorldMap, { colors } from "./Map";
-import { glyphs, HAZARDS, isHazard, type Hazard } from "./hazards";
+import {
+  glyphs,
+  GLYPH_ACTIVITIES,
+  hasGlyph,
+  isHazard,
+  type GlyphActivity,
+} from "./hazards";
 import countryRegistry from "../shared/countries.json";
 import type { IncidentView, JobInput } from "../shared/contracts";
 type Snapshot = {
@@ -658,7 +664,9 @@ export default function App() {
         i.activity.includes("demonstration") ||
         i.activity === "gathering"
       : filter === "disruptions"
-        ? ["disruption", "strike"].includes(i.activity)
+        ? ["disruption", "strike", "connectivity_disruption"].includes(
+            i.activity,
+          )
         : filter === "hazards"
           ? isHazard(i.activity)
           : ["severe", "critical"].includes(i.impact),
@@ -1829,14 +1837,14 @@ export default function App() {
                           className="feed-item"
                           data-incident-id={i.id}
                           onClick={() => select(i.id)}
-                          aria-label={`${i.headline}, ${isHazard(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}${i.members ? ", " + sourceCount(i, tr) : ""}`}
+                          aria-label={`${i.headline}, ${hasGlyph(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}${i.members ? ", " + sourceCount(i, tr) : ""}`}
                         >
                           <div
                             className="incident-symbol"
                             style={{ color: colors[i.impact] }}
                           >
-                            {isHazard(i.activity) ? (
-                              <HazardGlyph hazard={i.activity} size={16} />
+                            {hasGlyph(i.activity) ? (
+                              <ActivityGlyph activity={i.activity} size={16} />
                             ) : (
                               symbols[i.impact]
                             )}
@@ -1954,10 +1962,10 @@ export default function App() {
           ))}
         </div>
         <div className="legend-row">
-          {HAZARDS.map((h) => (
-            <span key={h}>
-              <HazardGlyph hazard={h} />
-              {tr(h)}
+          {GLYPH_ACTIVITIES.map((a) => (
+            <span key={a}>
+              <ActivityGlyph activity={a} />
+              {tr(a)}
             </span>
           ))}
           <span>
@@ -2543,7 +2551,13 @@ function QueueReports({
   );
 }
 
-function HazardGlyph({ hazard, size = 13 }: { hazard: Hazard; size?: number }) {
+function ActivityGlyph({
+  activity,
+  size = 13,
+}: {
+  activity: GlyphActivity;
+  size?: number;
+}) {
   return (
     <svg
       width={size}
@@ -2556,7 +2570,7 @@ function HazardGlyph({ hazard, size = 13 }: { hazard: Hazard; size?: number }) {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d={glyphs[hazard]} />
+      <path d={glyphs[activity]} />
     </svg>
   );
 }

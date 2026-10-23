@@ -142,6 +142,15 @@ export function structuredBrief(
       });
       continue;
     }
+    // World Watch's own routing drop detections, named by the countries they cover.
+    if (key === "connectivity_disruption") {
+      const where = countries(incidents.map((v) => v.location?.country));
+      statements.push({
+        text: `Internet connectivity ${incidents.length === 1 ? "drop" : "drops"} measured${where ? " in " + where : ""}.`,
+        incidents,
+      });
+      continue;
+    }
     if (key !== "magnitude") {
       const n = incidents.length;
       statements.push({

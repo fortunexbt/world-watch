@@ -28,6 +28,7 @@ export const Activity = z.enum([
   "drought",
   "severe_weather",
   "aviation_emergency",
+  "connectivity_disruption",
   "other_unknown",
 ]);
 export const Evidence = z.object({ id: z.string(), text: z.string() }).strict();

@@ -5,7 +5,9 @@ import { readFileSync } from "node:fs";
 import { chromium } from "@playwright/test";
 import {
   glyphs,
+  GLYPH_ACTIVITIES,
   HAZARDS,
+  hasGlyph,
   isHazard,
   magnitude,
   markerIcon,
@@ -17,6 +19,7 @@ import { parseGdacs } from "../src/collector/adapters/gdacs.js";
 import { parseNws } from "../src/collector/adapters/nws.js";
 import { parseEccc } from "../src/collector/adapters/eccc.js";
 import { parseAdsbLol } from "../src/collector/adapters/adsblol.js";
+import { parseRipestatRouting } from "../src/collector/adapters/ripestat.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import { Impact } from "../src/shared/contracts.js";
 
@@ -77,17 +80,33 @@ test("magnitude comes from the USGS record and nothing else", () => {
   assert.equal(magnitude({ reports: [{}] }), null);
 });
 
-test("every hazard the structured adapters publish has a glyph, a map image per impact and both interface languages", () => {
-  assert.deepEqual(Object.keys(glyphs), [...HAZARDS]);
+const drops = parseRipestatRouting(
+  source("global-ripestat-routing"),
+  "SY",
+  JSON.parse(readFileSync("tests/fixtures/ripestat-routing.json", "utf8"))[
+    "sy-2012"
+  ],
+  Date.parse("2012-12-01T17:00:00Z"),
+)!;
+
+test("every activity the structured adapters publish has a glyph, a map image per impact and both interface languages", () => {
+  assert.deepEqual(Object.keys(glyphs), [...GLYPH_ACTIVITIES]);
+  assert.deepEqual(GLYPH_ACTIVITIES.slice(0, HAZARDS.length), [...HAZARDS]);
   for (const row of [...usgs, ...gdacs, ...warnings, ...aircraft])
     assert.ok(isHazard(row.official?.activity ?? ""), row.native_id);
-  for (const hazard of HAZARDS) {
-    assert.match(glyphs[hazard], /^M[\d\s.,a-zA-Z-]+$/);
-    assert.notEqual(translate("it", hazard), hazard.replaceAll("_", " "));
+  // A routing drop has a glyph but is not a natural hazard; it sits with disruptions.
+  assert.equal(drops.length, 1);
+  for (const row of drops) {
+    assert.ok(hasGlyph(row.official?.activity ?? ""), row.native_id);
+    assert.equal(isHazard(row.official?.activity ?? ""), false);
+  }
+  for (const activity of GLYPH_ACTIVITIES) {
+    assert.match(glyphs[activity], /^M[\d\s.,a-zA-Z-]+$/);
+    assert.notEqual(translate("it", activity), activity.replaceAll("_", " "));
     for (const impact of Impact.options)
       assert.equal(
-        markerIcon({ activity: hazard, impact }),
-        `hazard-${hazard}-${impact}`,
+        markerIcon({ activity, impact }),
+        `hazard-${activity}-${impact}`,
       );
   }
   assert.equal(
@@ -199,6 +218,7 @@ test(
         ],
         links: [link("nagqu")],
       };
+      const outage = record("outage", "connectivity_disruption", 10);
       const incidents = [
         quake("small", 4.5, 45),
         quake("large", 8, -25),
@@ -209,6 +229,11 @@ test(
         },
         gdacsAlert,
         usgsQuake,
+        {
+          ...outage,
+          impact: "minor",
+          location: { ...outage.location, lon: -60, accuracy: "area" },
+        },
       ];
       const open = async (
         viewport: { width: number; height: number },
@@ -252,8 +277,29 @@ test(
       await row.waitFor();
       assert.equal(await row.locator(".incident-symbol svg").count(), 1);
       const legend = page.getByRole("group", { name: "Map legend" });
-      for (const label of ["volcanic eruption", "drought", "approximate area"])
+      for (const label of [
+        "volcanic eruption",
+        "drought",
+        "connectivity disruption",
+        "approximate area",
+      ])
         assert.ok(await legend.getByText(label, { exact: true }).isVisible());
+      // A connectivity drop carries its glyph and sits under Disruption, not Hazards.
+      const outageRow = page.getByRole("button", {
+        name: "Fixture outage, connectivity disruption, minor, official advisory",
+        exact: true,
+      });
+      assert.equal(await outageRow.locator(".incident-symbol svg").count(), 1);
+      await page.getByRole("button", { name: "Hazards", exact: true }).click();
+      assert.equal(await outageRow.count(), 0);
+      await page
+        .getByRole("button", { name: "Disruption", exact: true })
+        .click();
+      assert.equal(await page.locator(".feed-item").count(), 1);
+      assert.equal(await outageRow.count(), 1);
+      await page
+        .getByRole("button", { name: "All activity", exact: true })
+        .click();
 
       // Severe-coloured pixels north and south of the equator, with the interface
       // hidden so only the two quakes (and their world copies) are counted.
@@ -319,16 +365,27 @@ test(
         "Fixture nagqu, earthquake, significant, official advisory, 2 sources · one origin",
         "one feed row for the pair, led by the USGS point",
       );
-      assert.equal(await linked.page.locator('[data-incident-id="china"]').count(), 0);
+      assert.equal(
+        await linked.page.locator('[data-incident-id="china"]').count(),
+        0,
+      );
       await fused.click();
       const detail = linked.page.locator(".detail");
-      await detail.getByRole("heading", { name: "One event from linked records" }).waitFor();
+      await detail
+        .getByRole("heading", { name: "One event from linked records" })
+        .waitFor();
       assert.ok(
         await detail
-          .getByText("These records republish one upstream measurement. They are one origin, not independent corroboration.")
+          .getByText(
+            "These records republish one upstream measurement. They are one origin, not independent corroboration.",
+          )
           .isVisible(),
       );
-      assert.equal(await detail.locator("article.evidence").count(), 2, "both records in the detail panel");
+      assert.equal(
+        await detail.locator("article.evidence").count(),
+        2,
+        "both records in the detail panel",
+      );
       assert.ok(await detail.getByText("Separate these records").isVisible());
 
       assert.deepEqual([...errors, ...phone.errors, ...linked.errors], []);

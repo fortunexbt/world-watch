@@ -8,6 +8,7 @@ import { parseGdacs } from "../src/collector/adapters/gdacs.js";
 import { parseNws } from "../src/collector/adapters/nws.js";
 import { parseEccc } from "../src/collector/adapters/eccc.js";
 import { parseAdsbLol } from "../src/collector/adapters/adsblol.js";
+import { parseRipestatRouting } from "../src/collector/adapters/ripestat.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import server, { type Env } from "../src/server/index.js";
 import type { IncidentView } from "../src/shared/contracts.js";
@@ -223,6 +224,45 @@ test("ADSB.lol aircraft are counted per squawk code as unverified reports, the m
   assert.deepEqual(b.pins.map((p) => [p.impact, p.evidence_status]), [["significant", "unverified"]]);
   // An analysed unverified record is model output, never a structured one.
   assert.equal(structuredBrief(aircraft.map((v) => ({ ...v, analyzed_at: "2026-10-22T11:00:00Z" })), 168, clock), null);
+});
+
+test("routing drops are briefed as measured connectivity drops in their countries, and recovered ones drop out", () => {
+  const source = sourceRegistry.find((s) => s.id === "global-ripestat-routing")!;
+  const fixture = JSON.parse(
+    readFileSync("tests/fixtures/ripestat-routing.json", "utf8"),
+  );
+  const published = (
+    country: string,
+    payload: unknown,
+    at: number,
+    extra: Partial<IncidentView> = {},
+  ) =>
+    parseRipestatRouting(source, country, payload, at)!.map((row) =>
+      view(JSON.parse(row.excerpts[0].text), {
+        activity: row.official!.activity!,
+        impact: row.official!.impact!,
+        event_start: row.official!.effective_at,
+        expires_at: row.official!.expires_at,
+        location: { ...row.source_geo!, country: row.source_geo!.country ?? null, radius_km: row.source_geo!.radius_km! },
+        ...extra,
+      }),
+    );
+  // Both real shutdowns, published as still open, then Syria's as recovered.
+  const [iran] = published("IR", fixture["ir-2019"], Date.parse("2019-11-21T14:00:00Z"), { expires_at: null, current_listing: true });
+  const [syria] = published("SY", fixture["sy-2012"], Date.parse("2012-12-01T17:00:00Z"), { expires_at: null, current_listing: true });
+  const at = Date.parse("2019-11-21T15:00:00Z");
+  assert.deepEqual(
+    structuredBrief([iran], 24, at)!.statements.map((s) => s.text),
+    ["Internet connectivity drop measured in Iran."],
+  );
+  const both = structuredBrief([iran, syria], 24, at)!;
+  assert.deepEqual(both.statements.map((s) => s.text), [
+    "Internet connectivity drops measured in Syria and Iran.",
+  ]);
+  assert.deepEqual(both.statements[0].incident_ids, [syria.id, iran.id]);
+  assert.deepEqual(both.pins.map((p) => p.incident_id), [syria.id, iran.id]);
+  const [ended] = published("SY", fixture["sy-2012"], Date.parse("2012-12-01T17:00:00Z"));
+  assert.equal(structuredBrief([ended], 24, Date.parse("2012-12-01T17:00:00Z")), null);
 });
 
 test("affected countries are named with articles, deduplicated and capped, with the issuer text as fallback", () => {

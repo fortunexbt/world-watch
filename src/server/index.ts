@@ -2019,8 +2019,13 @@ async function routes(r: Request, e: Env) {
       sourceId,
     ).first<any>();
     const source = sourceRow && parse(sourceRow.record);
-    // BBK withdraws warnings from its complete active feed; GDACS and ADSB.lol end what they stop listing as current.
-    const listing = ["gdacs_geojson", "adsblol_squawks"].includes(
+    // BBK withdraws warnings from its complete active feed; GDACS and ADSB.lol end what they stop listing as current,
+    // and the routing detector ends drops it no longer finds open in any country.
+    const listing = [
+      "gdacs_geojson",
+      "adsblol_squawks",
+      "ripestat_country_routing",
+    ].includes(
       source?.config?.format,
     );
     if (
@@ -2098,9 +2103,11 @@ async function routes(r: Request, e: Env) {
           view.version,
           JSON.stringify(view),
           view.updated_at,
-          listing
-            ? "issuer no longer lists the event as current"
-            : "complete issuer feed withdrawal",
+          !listing
+            ? "complete issuer feed withdrawal"
+            : source.config.format === "ripestat_country_routing"
+              ? "measured drop no longer found open"
+              : "issuer no longer lists the event as current",
         ),
         stmt(
           e,

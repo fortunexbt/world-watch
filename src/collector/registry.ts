@@ -12,6 +12,7 @@ import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "./adapters/nws.js";
 import { ECCC_ALERTS_URL } from "./adapters/eccc.js";
 import { ADSBLOL_SQUAWK_URL } from "./adapters/adsblol.js";
+import { RIPESTAT_ROUTING_URL } from "./adapters/ripestat.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
 const rights = (
   basis: string,
@@ -521,6 +522,35 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "self_reported_aviation_signal",
       coverage:
         "Aircraft that volunteer receivers hear squawking 7500, 7600 or 7700, one record per aircraft and code while ADSB.lol lists it. Receiver coverage is dense over Europe and North America and thin or absent over oceans, polar routes and much of Africa and Asia. Aircraft without a received position are kept for continuity but not mapped.",
+    },
+  },
+  {
+    ...base,
+    id: "global-ripestat-routing",
+    name: "RIPEstat: national Internet routing visibility drops",
+    owner: "RIPE NCC (RIPEstat and the RIPE Routing Information Service)",
+    url: RIPESTAT_ROUTING_URL,
+    docs: "https://stat.ripe.net/docs/data-api/api-endpoints/country-resource-stats/",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["internet_connectivity"],
+    family: "rss",
+    verified_at: "2026-10-23T01:30:00Z",
+    rights: {
+      ...rights(
+        "RIPEstat Service Terms and Conditions: provided for network analysis, monitoring, debugging and research (3.1); RIPEstat Data may not be re-packaged, compiled or re-distributed (3.3); data-specific terms prevail (4.3). https://www.ripe.net/about-us/legal/ripestat-service-terms-and-conditions/ . RIS Commercial Use Terms and Conditions: revocable default permission to provide reports or other derivatives based on RIS data to third parties, crediting the RIPE NCC and RIS with the RIPE NCC logo, a link to https://www.ripe.net/ris and the RIS boilerplate. https://www.ripe.net/analyse/internet-measurements/routing-information-service-ris/commercial-use/ . The RIPE NCC asks to be contacted at comms@ripe.net before its logo is used on a website, so the logo is not shown yet. World Watch publishes its own drop detections with their baseline and lowest counts, never the series, and does not redistribute them in exports. Data API rules: register the sourceapp with stat@ripe.net above 1,000 requests a day; at most 8 concurrent requests. https://stat.ripe.net/docs/data-api/ripestat-data-api/ . Deterministic structured publication; no model analysis.",
+        "Drop detected by World Watch from RIPE NCC RIPEstat country routing statistics, based on RIPE RIS data: https://www.ripe.net/ris . The RIPE Routing Information Service (RIS) is a RIPE NCC service. With the help of network operators all over the world, RIS employs a globally distributed set of Remote Route Collectors (RRCs), typically located at Internet Exchange Points, to collect and store Internet routing data. Volunteers peer with the RRCs using the BGP protocol and RIS stores the update and withdraw messages. RIS data can be accessed via: RIPEstat, the “one-stop shop” for all available information about Internet number resources. RIPEstat uses individual widgets to display routing and other information; RIS Live, a real time BGP streaming API allowing server-side filtering of BGP messages by prefix or autonomous system; RIS Raw Data, available for each route collector, with state dumps and batches of updates made available periodically; RISwhois, that searches the latest RIS data for details of an IP address using a plaintext “whois”-style interface. It is useful when querying RIS data using scripts.",
+        false,
+      ),
+      redistribute: false,
+    },
+    config: {
+      format: "ripestat_country_routing",
+      countries_per_poll: 3,
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_measurement",
+      coverage:
+        "Every country on the map, three per five-minute poll, so each is read about every five hours and stays under RIPEstat's 1,000 unregistered requests a day. Each read takes 14 days of hourly IPv4 prefix and origin network counts and reports drops against the median of the preceding seven days. Countries below 50 visible prefixes are not evaluated. The circle is the whole country.",
     },
   },
   {

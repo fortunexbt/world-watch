@@ -24,6 +24,7 @@ export const APPROVED_HOSTS = new Set([
   "api.weather.gov",
   "api.weather.gc.ca",
   "api.adsb.lol",
+  "stat.ripe.net",
 ]);
 function idmcFilestore(u: URL) {
   return (
@@ -70,6 +71,8 @@ export type FetchState = {
   pending_hash?: string;
   pending_offset?: number;
   accepted_items?: Record<string, string>;
+  /** Rotation through RIPEstat's one-country-per-request routing statistics: the next country's index and every drop still open in any country. */
+  routing?: { next: number; ongoing: string[] };
 };
 export type FetchOptions = {
   fetch?: typeof fetch;

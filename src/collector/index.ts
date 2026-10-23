@@ -22,6 +22,11 @@ import { parseNws } from "./adapters/nws.js";
 import { parseEccc } from "./adapters/eccc.js";
 import { parseAdsbLol } from "./adapters/adsblol.js";
 import {
+  parseRipestatRouting,
+  ROUTING_COUNTRIES,
+  routingURL,
+} from "./adapters/ripestat.js";
+import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
   zwaailichtQueryURL,
@@ -202,11 +207,23 @@ export async function collectSources(
       continue;
     }
     let received = 0;
+    // RIPEstat answers one country per request, so each poll reads the next few in turn.
+    const first = before.routing?.next ?? 0;
+    const countries =
+      source.config.format === "ripestat_country_routing"
+        ? Array.from(
+            { length: Number(source.config.countries_per_poll) || 1 },
+            (_, i) => ROUTING_COUNTRIES[(first + i) % ROUTING_COUNTRIES.length],
+          )
+        : [];
+    let routing: FetchState["routing"];
     try {
       const requestURL =
         source.config.format === "zwaailicht_incidents"
           ? zwaailichtQueryURL(now())
-          : source.url;
+          : countries.length
+            ? routingURL(countries[0], now())
+            : source.url;
       const response = await fetchSource(requestURL, before, {
         ...options,
         fetch: fetcher,
@@ -296,6 +313,40 @@ export async function collectSources(
             Object.keys(before.accepted_items ?? {}),
           );
           break;
+        case "ripestat_country_routing": {
+          const ongoing = new Set(before.routing?.ongoing ?? []);
+          for (const [i, country] of countries.entries()) {
+            const page = i
+              ? await fetchSource(
+                  routingURL(country, now()),
+                  {},
+                  {
+                    ...options,
+                    fetch: fetcher,
+                    maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                  },
+                )
+              : response;
+            const drops = parseRipestatRouting(
+              source,
+              country,
+              JSON.parse(page.text),
+              now(),
+            );
+            // Lagging data leaves the country's open drops exactly as they were.
+            if (!drops) continue;
+            for (const id of ongoing)
+              if (id.startsWith(country + "-")) ongoing.delete(id);
+            for (const drop of drops)
+              if (drop.official?.current_listing) ongoing.add(drop.native_id);
+            observations.push(...drops);
+          }
+          routing = {
+            next: (first + countries.length) % ROUTING_COUNTRIES.length,
+            ongoing: [...ongoing].sort(),
+          };
+          break;
+        }
         case "paris_json": {
           const first = JSON.parse(response.text);
           let all = Array.isArray(first.results) ? first.results : [];
@@ -520,9 +571,11 @@ export async function collectSources(
       let complete = offset >= missing.length;
       if (
         complete &&
-        ["bbk", "gdacs_geojson", "adsblol_squawks"].includes(
+        (["bbk", "gdacs_geojson", "adsblol_squawks"].includes(
           String(source.config.format),
-        )
+        ) ||
+          // A drop that left the open set without a recovered record has nothing else to end it.
+          before.routing?.ongoing.some((id) => !routing?.ongoing.includes(id)))
       ) {
         let more = true;
         while (more && requests < maxRequests - 3) {
@@ -530,7 +583,9 @@ export async function collectSources(
             "/api/sources/" + encodeURIComponent(source.id) + "/reconcile",
             {
               complete: true,
-              active_native_ids: observations.map((o) => o.native_id),
+              // Drops still open in countries this poll did not read stay listed.
+              active_native_ids:
+                routing?.ongoing ?? observations.map((o) => o.native_id),
             },
           );
           more = result.more === true;
@@ -547,6 +602,7 @@ export async function collectSources(
         checkpoint: complete
           ? {
               ...response.state,
+              ...(routing ? { routing } : {}),
               accepted_items: acceptedItems,
               admission,
               pending_hash: undefined,
@@ -647,6 +703,10 @@ export function sourceEligibility(
     return observation.source_event_id
       ? keep("self_reported_transponder_emergency_code")
       : exclude("missing_aircraft_episode_identity");
+  if (source.config.operational_role === "structured_measurement")
+    return observation.source_event_id
+      ? keep("structured_measurement_record")
+      : exclude("missing_measurement_native_identity");
   if (source.id === "fr-paris-public-events") {
     const crowd =
       /\b(?:manifestant\w*|manifestation\w*|rassembl\w*|cortege\w*|foule\w*|greve\w*|emeute\w*|evacuat\w*|incendie\w*|explosion\w*|mouvement social|perimetre de securite)\b/u;
