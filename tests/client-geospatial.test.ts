@@ -13,19 +13,21 @@ test("viewport bounds are plain decimals the geospatial API accepts", () => {
   assert.ok(parseBbox(viewportBounds(1e-14, -10, 20.123456789, 10)));
   assert.ok(parseBbox(viewportBounds(160, -30, 200, 10)));
 });
-test("truncation and sensor copy is translated with its placeholders intact", () => {
+test("count and sensor copy is translated with its placeholders intact", () => {
   for (const text of [
-    "Showing {shown} of {total} in this view. Zoom in for complete coverage.",
     "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.",
-    "{shown} of {total} detections in this view",
+    "All {total} detections in this view are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.",
+    "All {total} detections worldwide are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.",
+    "{total} detections in this view",
+    "{total} detections worldwide",
   ]) {
     const italian = translate("it", text);
     assert.notEqual(italian, text);
-    assert.match(italian, /\{shown\}.*\{total\}/);
+    for (const key of text.match(/\{\w+\}/g)!) assert(italian.includes(key));
   }
 });
 test(
-  "geospatial context follows settled viewports with one bounded read and reports truncation per source and sensor",
+  "geospatial context follows settled viewports with one bounded read and reports counts per source and sensor",
   { timeout: 60000 },
   async () => {
     const server = spawn(
@@ -113,13 +115,13 @@ test(
                 {
                   ...base,
                   id: "firms",
-                  features_count: 2000,
+                  features_count: 5400,
                   total_available: 5400,
-                  truncated: true,
+                  truncated: false,
                   error: "source_unavailable",
                   sensors: [
-                    sensor("noaa-20-viirs", "NOAA-20 VIIRS", 1000, 3000),
-                    sensor("noaa-21-viirs", "NOAA-21 VIIRS", 1000, 2400),
+                    sensor("noaa-20-viirs", "NOAA-20 VIIRS", 3000, 3000),
+                    sensor("noaa-21-viirs", "NOAA-21 VIIRS", 2400, 2400),
                     {
                       ...sensor("snpp-viirs", "Suomi NPP VIIRS", 0, 0),
                       status: "error",
@@ -176,7 +178,7 @@ test(
         .click();
       await page
         .getByText(
-          "Showing 2,000 of 5,400 in this view. Zoom in for complete coverage.",
+          "All 5,400 detections in this view are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.",
           { exact: true },
         )
         .waitFor();
@@ -187,7 +189,7 @@ test(
         )
         .waitFor();
       await page
-        .getByText("NOAA-20 VIIRS · 1,000 of 3,000 detections in this view", {
+        .getByText("NOAA-20 VIIRS · 3,000 detections in this view", {
           exact: true,
         })
         .waitFor();

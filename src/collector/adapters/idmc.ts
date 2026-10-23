@@ -3,58 +3,12 @@ import {
   type ObservationInput,
   type SourceRecord,
 } from "../../shared/contracts.js";
+import { csv } from "../csv.js";
 export const IDMC_UKRAINE_URL =
   "https://data.humdata.org/dataset/52880c3a-715d-4e01-b75a-1fc3f64babf6/resource/ee65f9fe-f1c7-4466-9f83-620b50eccdc6/download/ukr_idmc_idu_events.csv";
 export const IDMC_UKRAINE_PAGE =
   "https://data.humdata.org/dataset/ukr-idmc-idu-events";
 export const IDMC_LICENSE = "https://creativecommons.org/licenses/by/3.0/igo/";
-/** Bounded RFC4180 reader, including quoted commas/newlines and escaped quotes. Never evaluates formulae. */
-function csv(text: string): string[][] {
-  if (text.length > 2 * 1024 * 1024) throw Error("idmc_size_limit");
-  const rows: string[][] = [];
-  let row: string[] = [],
-    field = "",
-    quoted = false,
-    closed = false;
-  text = text.replace(/^\uFEFF/, "");
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          quoted = false;
-          closed = true;
-        }
-      } else field += c;
-    } else if (c === '"') {
-      if (field || closed) throw Error("invalid_idmc_csv_quote");
-      quoted = true;
-    } else if (c === "," || c === "\n" || c === "\r") {
-      row.push(field);
-      field = "";
-      closed = false;
-      if (c !== ",") {
-        if (c === "\r" && text[i + 1] === "\n") i++;
-        if (row.some((v) => v !== "")) rows.push(row);
-        row = [];
-      }
-    } else {
-      if (closed) throw Error("invalid_idmc_csv_quote");
-      field += c;
-    }
-    if (rows.length > 5000 || field.length > 50000 || row.length > 60)
-      throw Error("idmc_csv_budget");
-  }
-  if (quoted) throw Error("invalid_idmc_csv_quote");
-  if (field || row.length) {
-    row.push(field);
-    if (row.some((v) => v !== "")) rows.push(row);
-  }
-  return rows;
-}
 const text = (v: unknown, max = 200) =>
   typeof v === "string" ? v.trim().slice(0, max) : "";
 const date = (v: unknown) =>

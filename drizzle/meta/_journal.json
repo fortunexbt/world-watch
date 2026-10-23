@@ -36,6 +36,48 @@
       "when": 1792606828775,
       "tag": "0004_incident_geography",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792713364549,
+      "tag": "0005_news_signals",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792751864577,
+      "tag": "0006_incident_cells",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1792751949240,
+      "tag": "0007_search_by_incident",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792752009240,
+      "tag": "0008_out_of_app_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1792752069240,
+      "tag": "0009_search_without_footprints",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792752129240,
+      "tag": "0010_indexed_replay",
+      "breakpoints": true
     }
   ]
 }

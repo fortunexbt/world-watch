@@ -35,7 +35,7 @@ export const italian: Record<string, string> = {
   "Search events, places and sources": "Cerca eventi, luoghi e fonti",
   "All activity": "Tutte le attività",
   Gatherings: "Raduni",
-  Hazards: "Rischi naturali",
+  Hazards: "Rischi",
   "structured source": "fonte strutturata",
   "Structured source record, published without model analysis.":
     "Record di fonte strutturata, pubblicato senza analisi del modello.",
@@ -123,24 +123,59 @@ export const italian: Record<string, string> = {
   "Supported reported danger": "Pericolo segnalato supportato da prove",
   "Save private area": "Salva area privata",
   "Remove area": "Rimuovi area",
-  "Local watch areas do not enable remote push or email. Configure a permitted notification channel before remote delivery.":
-    "Le aree locali non attivano notifiche push o email. Per l’invio remoto occorre configurare un canale autorizzato.",
-  "Replay observed history": "Rivedi la cronologia osservata",
-  "View what the system knew at a chosen time. Later revisions are excluded. Replay never emits live alerts.":
-    "Consulta ciò che il sistema conosceva al momento scelto. Le revisioni successive sono escluse. La cronologia non emette avvisi in diretta.",
-  "Historical time (local browser time)":
-    "Ora storica (ora locale del browser)",
+  "Areas saved in this browser only cue this page. Delivery outside the app follows the server's watch rules below.":
+    "Le aree salvate in questo browser avvisano solo in questa pagina. L’invio fuori dall’app segue le regole di monitoraggio del server qui sotto.",
+  "Server watch rules": "Regole di monitoraggio del server",
+  "Notices from the server's watch rules reach this device by Web Push, one per situation, with corrections for notices it received. Each rule also has private Atom and GeoJSON feeds; anyone with a feed link can read it.":
+    "Gli avvisi delle regole di monitoraggio del server arrivano su questo dispositivo tramite Web Push, uno per situazione, con le rettifiche degli avvisi ricevuti. Ogni regola ha anche feed Atom e GeoJSON privati; chiunque abbia il collegamento a un feed può leggerlo.",
+  "This browser doesn't support Web Push.": "Questo browser non supporta Web Push.",
+  "Web Push isn't configured on this server. It needs VAPID keys in its environment.":
+    "Web Push non è configurato su questo server. Servono chiavi VAPID nel suo ambiente.",
+  "Notify this device": "Avvisa questo dispositivo",
+  "Stop notifying this device": "Non avvisare più questo dispositivo",
+  "Notifications are blocked for this site in the browser settings.":
+    "Le notifiche per questo sito sono bloccate nelle impostazioni del browser.",
+  "This device will be notified.": "Questo dispositivo riceverà gli avvisi.",
+  "This device will no longer be notified.": "Questo dispositivo non riceverà più gli avvisi.",
+  "No server watch rules yet. Create one through the alert rules API.":
+    "Nessuna regola di monitoraggio sul server. Creane una tramite l’API delle regole di avviso.",
   "Return to live": "Torna alla diretta",
-  "Historical view": "Vista storica",
-  Historical: "Storico",
   Live: "Diretta",
+  Time: "Tempo",
+  "Earlier time": "Un momento precedente",
+  "Showing what World Watch knew by this time, not when events happened. Later updates, corrections and links are left out.":
+    "Mostra ciò che World Watch sapeva a quest’ora, non quando sono accaduti gli eventi. Aggiornamenti, correzioni e collegamenti successivi sono esclusi.",
+  "Move back to see what World Watch knew at an earlier time.":
+    "Torna indietro per vedere ciò che World Watch sapeva in un momento precedente.",
+  Play: "Riproduci",
+  Pause: "Pausa",
+  "History from": "Cronologia dal",
+  "Known by": "Noto entro",
+  Step: "Passo",
+  "1 hour": "1 ora",
+  "6 hours": "6 ore",
+  "1 day": "1 giorno",
+  "Copy link": "Copia il link",
+  Close: "Chiudi",
+  "Link copied": "Link copiato",
+  "Copy this page's address to share the view": "Copia l’indirizzo di questa pagina per condividere la vista",
+  "As known at": "Come noto alle",
+  "Reports as known then": "Segnalazioni come note allora",
+  "Incidents appear as World Watch held them then. Event times can be earlier or later.":
+    "Gli eventi appaiono come li conosceva World Watch in quel momento. L’ora degli eventi può essere precedente o successiva.",
+  "Not kept as history, so hidden": "Senza cronologia, quindi nascosti",
+  "Source health shows the present.": "Lo stato delle fonti è quello attuale.",
+  "The selected incident was not yet known at this time.":
+    "L’evento selezionato non era ancora noto in quel momento.",
+  "The public demo keeps no history, so it cannot show an earlier time. Links to it open on the latest snapshot.":
+    "La demo pubblica non conserva la cronologia, quindi non può mostrare un momento precedente. I link si aprono sull’ultima istantanea.",
+  "This link asks for {time}. The public demo keeps no history, so it shows the latest snapshot.":
+    "Questo link chiede la vista delle {time}. La demo pubblica non conserva la cronologia, quindi mostra l’ultima istantanea.",
   "Observed activity and source coverage":
     "Attività osservate e copertura delle fonti",
   Coverage: "Copertura",
-  "monitored endpoints have a verified successful retrieval for this destination.":
-    "endpoint monitorati hanno un recupero riuscito verificato per questa destinazione.",
-  "Source scope does not establish complete local coverage. Open source health for monitored endpoints and current gaps.":
-    "L’ambito della fonte non dimostra una copertura locale completa. Consulta lo stato delle fonti per endpoint monitorati e lacune attuali.",
+  "Source scope does not establish complete local coverage. Open the coverage view for every source's status and what silence means.":
+    "L’ambito di una fonte non dimostra una copertura locale completa. Apri la vista della copertura per lo stato di ogni fonte e il significato dell’assenza di segnalazioni.",
   "Inspect coverage": "Esamina la copertura",
   "Public event awareness": "Informazioni sugli eventi pubblici",
   "Switch incoming reports and incidents":
@@ -165,6 +200,15 @@ export const italian: Record<string, string> = {
   "Map legend": "Legenda della mappa",
   Legend: "Legenda",
   "approximate area": "area approssimativa",
+  "issuer warning area": "area dell'avviso dell'ente",
+  "The area an NWS, ECCC or SIGMET warning applies to, as the issuer drew it, simplified for the map":
+    "L'area a cui si applica un avviso NWS, ECCC o SIGMET, come l'ha tracciata l'ente, semplificata per la mappa",
+  "modelled wind area": "area di vento modellata",
+  "GDACS models where a cyclone's winds reach 60, 90 and 120 km/h along its past and forecast track":
+    "GDACS modella dove i venti di un ciclone raggiungono 60, 90 e 120 km/h lungo la traiettoria passata e prevista",
+  "estimated shaking (MMI)": "scuotimento stimato (MMI)",
+  "USGS ShakeMap estimated shaking intensity (MMI) contours, not observed damage":
+    "Isolinee dell'intensità di scuotimento stimata (MMI) da USGS ShakeMap, non danni osservati",
   "reported impact": "impatto segnalato",
   pending: "in attesa",
   Connecting: "Connessione in corso",
@@ -198,6 +242,10 @@ export const italian: Record<string, string> = {
   volcanic_eruption: "eruzione vulcanica",
   drought: "siccità",
   severe_weather: "maltempo intenso",
+  aviation_emergency: "codice di emergenza aereo",
+  volcanic_ash: "cenere vulcanica",
+  conflict_zone_advisory: "avviso di zona di conflitto",
+  connectivity_disruption: "calo della connettività Internet",
   worldwide: "tutto il mondo",
   unverified: "non verificato",
   corroborated: "con riscontri",
@@ -439,10 +487,8 @@ Object.assign(italian, {
     "Questo elemento è fuori dall’intervallo attuale della fonte o non è disponibile.",
   "thermal detections": "rilevamenti termici",
   "mapping areas": "aree di mappatura",
-  "Find mapping area or sensor": "Trova un’area di mappatura o un sensore",
-  "Place, activation code or sensor":
-    "Località, codice di attivazione o sensore",
-  "Thermal detection": "Rilevamento termico",
+  "Find mapping area": "Trova un’area di mappatura",
+  "Place or activation code": "Località o codice di attivazione",
   "Mapping area": "Area di mappatura",
   "Showing the first 30 results. Select a map marker or narrow the search.":
     "Sono mostrati i primi 30 risultati. Seleziona un punto sulla mappa o affina la ricerca.",
@@ -467,13 +513,259 @@ Object.assign(italian, {
   "Satellite thermal detections": "Rilevamenti termici satellitari",
   "Copernicus mapping areas": "Aree di mappatura Copernicus",
   "Explore geospatial context": "Esplora il contesto geospaziale",
-  "Showing {shown} of {total} in this view. Zoom in for complete coverage.":
-    "Mostrati {shown} su {total} in questa vista. Ingrandisci la mappa per una copertura completa.",
+  "All {total} detections in this view are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.":
+    "Tutti i {total} rilevamenti in questa vista sono sulla mappa. A scala ridotta ogni punto conta i rilevamenti vicini; ingrandisci per aprire i singoli rilevamenti.",
   "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.":
     "Mostrati {shown} su almeno {total} in questa vista. Alcuni dati della fonte non sono stati acquisiti in questo aggiornamento.",
-  "{shown} of {total} detections in this view":
-    "{shown} su {total} rilevamenti in questa vista",
+  "{total} detections in this view": "{total} rilevamenti in questa vista",
   "Sensor unavailable": "Sensore non disponibile",
+});
+Object.assign(italian, {
+  sources: "fonti",
+  records: "record",
+  "one origin": "un’unica origine",
+  "independent origins": "origini indipendenti",
+  "origin unknown": "origine sconosciuta",
+  "One event from linked records": "Un unico evento da record collegati",
+  "These records republish one upstream measurement. They are one origin, not independent corroboration.":
+    "Questi record ripubblicano un’unica misura a monte. Sono un’unica origine, non una conferma indipendente.",
+  "These records come from independent origins and corroborate each other.":
+    "Questi record provengono da origini indipendenti e si confermano a vicenda.",
+  "A record states no upstream origin, so independence is unknown.":
+    "Un record non indica l’origine a monte, quindi l’indipendenza è sconosciuta.",
+  "Separated by an operator from": "Separato da un operatore da",
+  "Possibly the same event as": "Forse lo stesso evento di",
+  "a record outside this view": "un record fuori da questa vista",
+  "Separate these records": "Separa questi record",
+  "Let the rule decide again": "Lascia decidere di nuovo la regola",
+  "Separate with audit reason": "Separa con motivazione",
+  "Restore the rule decision": "Ripristina la decisione della regola",
+  "News signals": "Segnali dalla stampa",
+  "news signals": "segnali dalla stampa",
+  "News signal": "Segnale dalla stampa",
+  "Rising news signal": "Segnale dalla stampa in aumento",
+  "Open news signal": "Apri il segnale dalla stampa",
+  "Last 6 hours": "Ultime 6 ore",
+  Protests: "Proteste",
+  Strikes: "Scioperi",
+  "Armed conflict": "Conflitto armato",
+  "Attacks and explosions": "Attacchi ed esplosioni",
+  "Coup plotting": "Tentativi di colpo di Stato",
+  Displacement: "Sfollamenti",
+  Evacuations: "Evacuazioni",
+  "Curfews and emergency measures": "Coprifuoco e misure di emergenza",
+  Disasters: "Disastri",
+  "No baseline yet": "Ancora nessun livello di riferimento",
+  "{ratio}× its usual coverage": "{ratio}× la copertura abituale",
+  "{articles} articles from {sources} sources": "{articles} articoli da {sources} fonti",
+  "{articles} articles from at least {sources} sources":
+    "{articles} articoli da almeno {sources} fonti",
+  "News signals count GDELT's machine-geocoded news mentions by place. They show where coverage is unusual, not verified events.":
+    "I segnali dalla stampa contano per luogo le menzioni giornalistiche geolocalizzate automaticamente da GDELT. Indicano dove la copertura è insolita, non eventi verificati.",
+  "Baseline building: changes are stated once each GDELT stream has 12 hours of files.":
+    "Livello di riferimento in costruzione: le variazioni vengono indicate quando ogni flusso GDELT ha 12 ore di file.",
+  "Baseline from {files} earlier GDELT files.":
+    "Livello di riferimento da {files} file GDELT precedenti.",
+  "This news signal is no longer in the six-hour window or is unavailable.":
+    "Questo segnale dalla stampa non rientra più nella finestra di sei ore o non è disponibile.",
+  "Machine-geocoded mentions in news coverage from GDELT, not a verified event. GDELT's place, theme and translation tagging is automatic and is often wrong, and syndicated copies of one story count once per outlet.":
+    "Menzioni giornalistiche geolocalizzate automaticamente da GDELT, non un evento verificato. Luoghi, temi e traduzioni di GDELT sono automatici e spesso errati, e le copie dello stesso articolo ripreso da più testate contano una volta per testata.",
+  Window: "Finestra",
+  Change: "Variazione",
+  Themes: "Temi",
+  "Average tone": "Tono medio",
+  Place: "Luogo",
+  "Top sources": "Fonti principali",
+  Articles: "Articoli",
+  "{stories} distinct headlines": "{stories} titoli distinti",
+  "about {expected} headlines expected from {files} earlier GDELT files":
+    "circa {expected} titoli attesi in base a {files} file GDELT precedenti",
+  "GDELT document tone, negative to positive":
+    "Tono del documento secondo GDELT, da negativo a positivo",
+  "City-level point from GDELT's geocoder, not the location of an event":
+    "Punto a livello di città dal geocodificatore di GDELT, non il luogo di un evento",
+  "Not queued for analysis. World Watch keeps only links, headlines and GDELT metadata, and publisher rights for model use of these articles are not established.":
+    "Non messo in coda per l’analisi. World Watch conserva solo collegamenti, titoli e metadati GDELT, e i diritti degli editori per l’uso di questi articoli da parte di un modello non sono accertati.",
+  "No news signals in the last six hours": "Nessun segnale dalla stampa nelle ultime sei ore",
+  "GDELT coverage is counted as the collector reads each 15-minute file.":
+    "La copertura GDELT viene contata man mano che il raccoglitore legge ogni file di 15 minuti.",
+  "news coverage, not an event": "copertura giornalistica, non un evento",
+  "Built from issuer fields and GDELT news coverage counts, no model":
+    "Composta dai campi degli enti emittenti e dai conteggi di copertura GDELT, senza modello",
+  "Public demo. Live public sources. Some layers and analysis disabled.":
+    "Demo pubblica. Fonti pubbliche in diretta. Alcuni livelli e l’analisi sono disattivati.",
+  "Sources and credits": "Fonti e crediti",
+  Feeds: "Feed",
+  "Follow an area in a feed reader or a map tool. Each feed holds up to 100 records, updated with the snapshot. Records from sources that don't permit redistribution are left out.":
+    "Segui un’area in un lettore di feed o in uno strumento cartografico. Ogni feed contiene fino a 100 record, aggiornati con l’istantanea. Sono esclusi i record di fonti che non ne consentono la ridistribuzione.",
+  Area: "Area",
+  Hazard: "Rischio",
+  Impact: "Impatto",
+  "All hazards": "Tutti i rischi",
+  "Any impact": "Qualsiasi impatto",
+  "Significant or higher": "Significativo o superiore",
+  "Severe or higher": "Grave o superiore",
+  "North America": "America settentrionale",
+  "Central America and the Caribbean": "America centrale e Caraibi",
+  "South America": "America meridionale",
+  Europe: "Europa",
+  Africa: "Africa",
+  "Middle East": "Medio Oriente",
+  "South Asia": "Asia meridionale",
+  "East Asia": "Asia orientale",
+  "Southeast Asia": "Sud-est asiatico",
+  "Oceania and the Pacific": "Oceania e Pacifico",
+  "Public snapshot": "Istantanea pubblica",
+  Updated: "Aggiornata",
+  "Snapshot generated": "Istantanea generata",
+  "All {total} detections worldwide are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.":
+    "Tutti i {total} rilevamenti nel mondo sono sulla mappa. A scala ridotta ogni punto conta i rilevamenti vicini; ingrandisci per aprire i singoli rilevamenti.",
+  "{total} detections worldwide": "{total} rilevamenti nel mondo",
+  "This public snapshot is rebuilt from the sources below about every ten minutes. No model analysis runs in it.":
+    "Questa istantanea pubblica viene ricostruita dalle fonti qui sotto circa ogni dieci minuti. Non contiene analisi di modelli.",
+});
+Object.assign(italian, {
+  Observed: "Osservata",
+  Quiet: "Silenziosa",
+  Stale: "Non aggiornata",
+  Failing: "In errore",
+  Ended: "Cessata",
+  "Not configured": "Non configurata",
+  "Access unresolved": "Accesso non definito",
+  "Read on schedule and listing records.":
+    "Letta nei tempi previsti, con record presenti.",
+  "Read on schedule and listing nothing.":
+    "Letta nei tempi previsti, senza record.",
+  "No successful read within two expected intervals.":
+    "Nessuna lettura riuscita entro due intervalli previsti.",
+  "The latest read failed.": "L’ultima lettura non è riuscita.",
+  "The issuer stopped delivering this data.":
+    "L’ente emittente ha smesso di fornire questi dati.",
+  "Not read: disabled or awaiting credentials.":
+    "Non letta: disattivata o in attesa di credenziali.",
+  "A licence or permission is not settled yet.":
+    "Una licenza o un’autorizzazione non è ancora definita.",
+  "No reports": "Nessuna segnalazione",
+  "A source that covers the place read it on schedule and listed nothing there.":
+    "Una fonte che copre il luogo lo ha letto nei tempi previsti e non vi ha trovato nulla.",
+  "Not covered": "Non coperto",
+  "No source being read covers the place or layer, so an empty map there says nothing.":
+    "Nessuna fonte letta copre il luogo o il livello, quindi una mappa vuota lì non dice nulla.",
+  never: "mai",
+  "expected every": "prevista ogni",
+  "Issuer to ingest": "Dall’ente all’acquisizione",
+  "Ingest to publication": "Dall’acquisizione alla pubblicazione",
+  "no samples yet": "ancora nessun campione",
+  Latency: "Latenza",
+  median: "mediana",
+  "Delivery ended": "Fornitura cessata il",
+  "Issuer notice": "Avviso dell’ente",
+  "in this view": "in questa vista",
+  "Satellite sensors and mapping areas are checked while their layer is on.":
+    "Sensori satellitari e aree di mappatura vengono verificati mentre il loro livello è attivo.",
+  "Not read": "Non lette",
+  "No source being read covers this country, so no reports here means not covered.":
+    "Nessuna fonte letta copre questo paese, quindi l’assenza di segnalazioni qui significa assenza di copertura.",
+  "Sources read successfully on schedule":
+    "Fonti lette con successo nei tempi previsti",
+  "sources fresh": "fonti aggiornate",
+});
+Object.assign(italian, {
+  "Satellite imagery": "Immagini satellitari",
+  Off: "Disattivate",
+  "True colour, VIIRS": "Colori reali, VIIRS",
+  "True colour, MODIS": "Colori reali, MODIS",
+  "Night lights, VIIRS": "Luci notturne, VIIRS",
+  "Day (UTC)": "Giorno (UTC)",
+  "NASA's list of imagery days is unavailable. Pick a day to load it anyway.":
+    "L’elenco NASA dei giorni con immagini non è disponibile. Scegli un giorno per caricarle comunque.",
+  "NASA lists no imagery for this day.": "La NASA non elenca immagini per questo giorno.",
+  Acquired: "Acquisizione",
+  "Daily mosaic of passes on": "Mosaico giornaliero dei passaggi del",
+  "still filling in pass by pass": "ancora in completamento, passaggio dopo passaggio",
+  "NOAA-20 VIIRS, bands I1, M4, M3": "NOAA-20 VIIRS, bande I1, M4, M3",
+  "Terra MODIS, bands 1, 4, 3": "Terra MODIS, bande 1, 4, 3",
+  "NOAA-20 VIIRS Day/Night Band, at-sensor radiance":
+    "NOAA-20 VIIRS Day/Night Band, radianza al sensore",
+  "Daytime passes, about 13:30 local solar time":
+    "Passaggi diurni, verso le 13:30 ora solare locale",
+  "Daytime passes, about 10:30 local solar time":
+    "Passaggi diurni, verso le 10:30 ora solare locale",
+  "Night passes, about 01:30 local solar time":
+    "Passaggi notturni, verso l’01:30 ora solare locale",
+  Resolution: "Risoluzione",
+  "250 m imagery from 375 m and 750 m bands": "Immagini a 250 m da bande a 375 m e 750 m",
+  "250 m imagery from 250 m and 500 m bands": "Immagini a 250 m da bande a 250 m e 500 m",
+  "500 m imagery from a 750 m band": "Immagini a 500 m da una banda a 750 m",
+  "Cloud cover": "Copertura nuvolosa",
+  "Not measured. Cloud hides lights and moonlight brightens cloud and snow.":
+    "Non misurata. Le nuvole nascondono le luci e la luna rischiara nuvole e neve.",
+  "Not measured for a daily mosaic. Clouds appear as imaged.":
+    "Non misurata per un mosaico giornaliero. Le nuvole appaiono come riprese.",
+  "Data saver is on, so tiles load at half detail.":
+    "Il risparmio dati è attivo, quindi le tessere si caricano a metà dettaglio.",
+  "Find recent Sentinel scenes": "Trova scene Sentinel recenti",
+  "Search the catalogue again": "Cerca di nuovo nel catalogo",
+  "Show the event day on the map": "Mostra il giorno dell’evento sulla mappa",
+  "Sentinel-2 and Sentinel-1 scenes covering the mapped point from {from} to {to}, listed by the Copernicus Data Space Ecosystem catalogue.":
+    "Scene Sentinel-2 e Sentinel-1 che coprono il punto sulla mappa dal {from} al {to}, elencate dal catalogo del Copernicus Data Space Ecosystem.",
+  "The mapped point is approximate, so a scene may miss part of the affected area.":
+    "Il punto sulla mappa è approssimativo, quindi una scena può non coprire parte dell’area interessata.",
+  "Searching the Copernicus catalogue…": "Ricerca nel catalogo Copernicus…",
+  "{collection} search unavailable": "Ricerca {collection} non disponibile",
+  "Sentinel-2 L2A optical": "Sentinel-2 L2A ottico",
+  "Sentinel-1 GRD radar": "Sentinel-1 GRD radar",
+  "No scenes in this window.": "Nessuna scena in questo intervallo.",
+  "{n} h before the event": "{n} h prima dell’evento",
+  "{n} h after the event": "{n} h dopo l’evento",
+  "{n} days before the event": "{n} giorni prima dell’evento",
+  "{n} days after the event": "{n} giorni dopo l’evento",
+  "Cloud cover not reported": "Copertura nuvolosa non indicata",
+  "Cloud over {n}% of its 110 km tile, not measured at this point":
+    "Nuvole sul {n}% del suo riquadro di 110 km, non misurate in questo punto",
+  ascending: "orbita ascendente",
+  descending: "orbita discendente",
+  "radar sees through cloud": "il radar vede attraverso le nuvole",
+  Catalogued: "Catalogata il",
+  "Open this day in the Copernicus Browser": "Apri questo giorno nel Copernicus Browser",
+  "Catalogue fields from the Copernicus Data Space Ecosystem, Copernicus Sentinel data {year}. Previews stay in the Copernicus Browser.":
+    "Campi del catalogo del Copernicus Data Space Ecosystem, Copernicus Sentinel data {year}. Le anteprime restano nel Copernicus Browser.",
+  "GNSS interference from aircraft reports":
+    "Interferenze GNSS dai dati degli aerei",
+  "Explore GNSS interference": "Esplora le interferenze GNSS",
+  "GNSS interference grid": "Griglia delle interferenze GNSS",
+  "cells worldwide": "celle nel mondo",
+  "Share of aircraft reporting degraded GNSS accuracy and integrity in each half-degree cell over one UTC day. Blank cells had too few aircraft.":
+    "Quota di aerei che segnalano accuratezza e integrità GNSS degradate in ogni cella di mezzo grado in un giorno UTC. Le celle vuote avevano troppo pochi aerei.",
+  "GNSS degraded": "GNSS degradato",
+  "under 2%": "sotto il 2%",
+  "2 to 10%": "dal 2 al 10%",
+  "over 10%": "oltre il 10%",
+  "Context layer": "Livello di contesto",
+  "Share of aircraft reporting degraded GNSS accuracy and integrity. It can indicate jamming or spoofing, and is also caused by faulty equipment, manoeuvres that block the antenna and gaps in receiver coverage. It does not prove interference.":
+    "Quota di aerei che segnalano accuratezza e integrità GNSS degradate. Può indicare disturbo intenzionale (jamming) o falsificazione del segnale (spoofing), ma è causata anche da apparati guasti, manovre che coprono l’antenna e lacune nella copertura dei ricevitori. Non prova un’interferenza.",
+  "Loading the GNSS grid…": "Caricamento della griglia GNSS…",
+  "No GNSS interference grid has been built for this app.":
+    "Per questa app non è stata ancora generata una griglia delle interferenze GNSS.",
+  "The GNSS interference grid failed validation.":
+    "La griglia delle interferenze GNSS non ha superato la convalida.",
+  Cell: "Cella",
+  "{south}° to {north}° latitude, {west}° to {east}° longitude":
+    "latitudine da {south}° a {north}°, longitudine da {west}° a {east}°",
+  Aircraft: "Aerei",
+  "Reported degraded GNSS": "Con GNSS degradato segnalato",
+  "{share}% after discounting one aircraft": "{share}% escludendo un aereo",
+  "UTC day {date}: {cells} half-degree cells with at least {min} aircraft, from {aircraft} aircraft and {reports} classified reports.":
+    "Giorno UTC {date}: {cells} celle di mezzo grado con almeno {min} aerei, da {aircraft} aerei e {reports} rapporti classificati.",
+  "Blank cells had fewer aircraft, or none in range of a receiver, so they mean no data rather than no interference.":
+    "Le celle vuote avevano meno aerei, o nessuno alla portata di un ricevitore: indicano assenza di dati, non assenza di interferenze.",
+  Method: "Metodo",
+  "Each aircraft counts once per cell, and only if at some point that day it reported the accuracy the FAA requires of ADS-B Out (NACp {nacp}, NIC {nic}, SIL {sil}), so avionics that never report it are left out. It counts as degraded in a cell where it reported NACp {low} or less with NIC {lowNic} or less, a position uncertain by 4 nautical miles or more, or unknown. Shading follows GPSJam's published bands after subtracting one degraded aircraft per cell.":
+    "Ogni aereo conta una volta per cella, e solo se in quel giorno ha segnalato almeno una volta l’accuratezza che la FAA richiede all’ADS-B Out (NACp {nacp}, NIC {nic}, SIL {sil}), così l’avionica che non la segnala mai resta esclusa. Conta come degradato in una cella in cui ha segnalato NACp {low} o meno con NIC {lowNic} o meno, cioè una posizione incerta di 4 miglia nautiche o più, o sconosciuta. Le sfumature seguono le fasce pubblicate da GPSJam dopo aver sottratto un aereo degradato per cella.",
+  "Contains information from ADSB.lol globe_history, which is made available here under the Open Database License (ODbL).":
+    "Contiene informazioni da ADSB.lol globe_history, rese disponibili qui con la Open Database License (ODbL).",
+  "Download this grid (ODbL)": "Scarica questa griglia (ODbL)",
+  "Method and counts": "Metodo e conteggi",
 });
 export function translate(language: Language, text: string) {
   return language === "it"

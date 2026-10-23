@@ -1,6 +1,7 @@
 import type { IncidentView } from "../shared/contracts";
+import { MAGNITUDE_EXCERPTS } from "../shared/view";
 
-/** Natural hazard activities, in legend order. */
+/** Activities under the Hazards filter, in legend order: natural hazards, then aviation emergencies and advisories. */
 export const HAZARDS = [
   "earthquake",
   "tropical_cyclone",
@@ -9,13 +10,33 @@ export const HAZARDS = [
   "volcanic_eruption",
   "drought",
   "severe_weather",
+  "aviation_emergency",
+  "volcanic_ash",
+  "conflict_zone_advisory",
 ] as const;
 export type Hazard = (typeof HAZARDS)[number];
 export const isHazard = (activity: string): activity is Hazard =>
   (HAZARDS as readonly string[]).includes(activity);
+/** Estimated shaking colours by MMI, so ShakeMap contour lines never borrow an impact colour. */
+export const MMI_COLORS: [number, string][] = [
+  [3, "#7FB8D8"],
+  [5, "#9FD08A"],
+  [6, "#E4D06C"],
+  [7, "#EDAB61"],
+  [8, "#ED7575"],
+  [9, "#C55064"],
+];
+/** Activities drawn with a glyph, in legend order: the hazards, then measured connectivity drops. */
+export const GLYPH_ACTIVITIES = [
+  ...HAZARDS,
+  "connectivity_disruption",
+] as const;
+export type GlyphActivity = (typeof GLYPH_ACTIVITIES)[number];
+export const hasGlyph = (activity: string): activity is GlyphActivity =>
+  (GLYPH_ACTIVITIES as readonly string[]).includes(activity);
 
 /** Stroked outlines on a 24-unit grid, drawn by both the map canvas (Path2D) and feed SVGs. */
-export const glyphs: Record<Hazard, string> = {
+export const glyphs: Record<GlyphActivity, string> = {
   earthquake: "M2 12h4l2.5-6 4 12 3-9 1.5 3H22",
   tropical_cyclone:
     "M15 12a3 3 0 1 1-6 0 3 3 0 1 1 6 0M12 9C12 5 15 2.5 20 2.5M12 15c0 4-3 6.5-8 6.5",
@@ -29,21 +50,32 @@ export const glyphs: Record<Hazard, string> = {
     "M15.5 10a3.5 3.5 0 1 1-7 0 3.5 3.5 0 1 1 7 0M12 2.5v1M4.5 10h1M18.5 10h1M6.7 4.7l.7.7M17.3 4.7l-.7.7M2 18h7.5l2.5 3 2.5-3H22",
   severe_weather:
     "M7 15.5a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 6.5a4.5 4.5 0 0 1 .5 9M13 11.5l-3 5h4l-3 5",
+  // Lucide "plane" (ISC), the icon set the interface already ships.
+  aviation_emergency:
+    "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z",
+  // An ash cloud with fallout, apart from the eruption cone and the storm cloud.
+  volcanic_ash:
+    "M7 14a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 5a4.5 4.5 0 0 1 .5 9zM8 18h.01M12 18h.01M16 18h.01M10 21.5h.01M14 21.5h.01",
+  // Lucide "shield-alert" (ISC).
+  conflict_zone_advisory:
+    "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1zM12 8v4M12 16h.01",
+  connectivity_disruption:
+    "M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0M12 20h.01M3 3l18 18",
 };
 
-/** Map image for an incident: a hazard glyph when the activity has one, otherwise the impact shape alone. */
+/** Map image for an incident: its activity glyph when it has one, otherwise the impact shape alone. */
 export const markerIcon = (
   incident: Pick<IncidentView, "activity" | "impact">,
 ) =>
-  isHazard(incident.activity)
+  hasGlyph(incident.activity)
     ? `hazard-${incident.activity}-${incident.impact}`
     : `impact-${incident.impact}`;
 
-/** The USGS adapter keeps its event record as JSON evidence, so the magnitude is read from there rather than added to the incident contract. */
+/** The USGS and EMSC adapters keep their event records as JSON evidence, so the magnitude is read from there rather than added to the incident contract. */
 export function magnitude(incident: Pick<IncidentView, "reports">) {
   const record = incident.reports
     .flatMap((r) => r.excerpts ?? [])
-    .find((e: { id?: string }) => e.id === "usgs-event");
+    .find((e: { id?: string }) => MAGNITUDE_EXCERPTS.includes(e.id ?? ""));
   if (typeof record?.text !== "string") return null;
   let value: unknown;
   try {

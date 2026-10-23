@@ -1,0 +1,815 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { chromium } from "@playwright/test";
+import {
+  buildPublicSnapshot,
+  CARRY_FORWARD_SECONDS,
+  GEOSPATIAL_REFRESH_SECONDS,
+  PUBLIC_SOURCES,
+  reusableGeospatial,
+} from "../src/public/snapshot.js";
+import { CEMS_URL, FIRMS_SENSORS } from "../src/server/geospatial.js";
+import { USGS_FEED_URL } from "../src/collector/adapters/usgs.js";
+import { EMSC_QUERY_URL } from "../src/collector/adapters/emsc.js";
+import { GDACS_EVENTS_URL } from "../src/collector/adapters/gdacs.js";
+import { NWS_ALERTS_URL } from "../src/collector/adapters/nws.js";
+import { ECCC_ALERTS_URL } from "../src/collector/adapters/eccc.js";
+import {
+  EASA_CZIB_TEXT_URL,
+  EASA_CZIB_URL,
+} from "../src/collector/adapters/easa.js";
+import { sourceRegistry } from "../src/collector/registry.js";
+import {
+  BRIEF_WINDOWS,
+  FEED_FILE_LIMIT,
+  MANIFEST,
+  PUBLIC_FILE_LIMITS,
+  THERMAL_ARCHIVE,
+} from "../src/shared/public-snapshot.js";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { DEFAULT_FEED, feedFilters, feedPath } from "../src/shared/feeds.js";
+import { readHeader } from "../src/shared/pmtiles.js";
+import type { IncidentView } from "../src/shared/contracts.js";
+import { situations } from "../src/shared/fusion.js";
+
+/** A published JSON file. */
+const read = (files: Map<string, string | Uint8Array>, name: string) =>
+  JSON.parse(files.get(name) as string);
+
+// Real responses trimmed for the hazard tests; FIRMS and CEMS bodies are synthetic and dated
+// relative to the clock, because both catalogues keep only recent records. EMSC is asked for the
+// past day from the clock, so its query is matched without the start time.
+const feeds: Record<string, unknown> = {
+  [USGS_FEED_URL]: JSON.parse(
+    readFileSync("tests/fixtures/usgs-summary.json", "utf8"),
+  ),
+  [GDACS_EVENTS_URL]: JSON.parse(
+    readFileSync("tests/fixtures/gdacs-events.json", "utf8"),
+  ),
+  [NWS_ALERTS_URL]: JSON.parse(
+    readFileSync("tests/fixtures/nws-alerts.json", "utf8"),
+  ),
+  [ECCC_ALERTS_URL]: JSON.parse(
+    readFileSync("tests/fixtures/eccc-alerts.json", "utf8"),
+  ),
+  // CHAMPI-26's wind buffers from a later episode, served for the fixture's episode.
+  "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=TC&eventid=1001338&episodeid=29":
+    JSON.parse(readFileSync("tests/fixtures/gdacs-geometry-tc.json", "utf8")),
+  [EASA_CZIB_URL]: JSON.parse(
+    readFileSync("tests/fixtures/easa-czibs.json", "utf8"),
+  ),
+};
+const czibText = readFileSync("tests/fixtures/easa-czibs.csv", "utf8");
+const emsc = JSON.parse(
+  readFileSync("tests/fixtures/emsc-events.json", "utf8"),
+);
+// PAGASA's and INMET's CAP indexes, each document served at its path on the issuer's host.
+const capFeeds = ["ph-pagasa-warnings", "br-inmet-warnings"].map((id) => ({
+  source: sourceRegistry.find((s) => s.id === id)!,
+  ...JSON.parse(
+    readFileSync(`tests/fixtures/${id.split("-")[1]}-cap.json`, "utf8"),
+  ),
+}));
+const recent = () => {
+  const iso = new Date(Date.now() - 3600000).toISOString();
+  return [iso.slice(0, 10), iso.slice(11, 13) + iso.slice(14, 16)];
+};
+function upstream(requests: { url: string; method: string }[] = []) {
+  return (async (input: any, init: any = {}) => {
+    const url = String(input);
+    requests.push({ url, method: init.method ?? "GET" });
+    assert.equal(new Headers(init.headers).has("Authorization"), false);
+    if (feeds[url]) return Response.json(feeds[url]);
+    if (url === EASA_CZIB_TEXT_URL)
+      return new Response(czibText, { headers: { "content-type": "text/csv" } });
+    for (const cap of capFeeds) {
+      if (url === cap.source.url)
+        return new Response(cap.index, {
+          headers: { "content-type": "application/xml" },
+        });
+      const { origin, pathname } = new URL(url);
+      if (origin === new URL(cap.source.url).origin && cap.documents[pathname])
+        return new Response(cap.documents[pathname], {
+          headers: { "content-type": "text/xml" },
+        });
+    }
+    if (url.startsWith(EMSC_QUERY_URL + "?")) return Response.json(emsc);
+    const sensor = FIRMS_SENSORS.find((s) => s.url === url);
+    if (sensor) {
+      const [date, time] = recent();
+      return new Response(
+        "latitude,longitude,acq_date,acq_time,satellite,confidence\n" +
+          [
+            [41, 12],
+            [-17.8, 179.5],
+            [64.1, -21.9],
+          ]
+            .map(
+              ([lat, lon]) =>
+                `${lat},${lon},${date},${time},${sensor.satellite},nominal`,
+            )
+            .join("\n"),
+      );
+    }
+    const eventTime = new Date(Date.now() - 7200000).toISOString().slice(0, 19);
+    if (url === CEMS_URL)
+      return Response.json({
+        results: [{ code: "EMSR935", eventTime, n_aois: "1" }],
+      });
+    if (url.includes("/public-activations/?code=EMSR935"))
+      return Response.json({
+        results: [
+          {
+            code: "EMSR935",
+            name: "Flood Spain",
+            category: "Flood",
+            eventTime,
+            sensitive: false,
+            aois: [
+              {
+                name: "Moraira",
+                number: 1,
+                extent: "POLYGON ((0 38,1 38,1 39,0 38))",
+              },
+            ],
+          },
+        ],
+      });
+    // Geometry of the fixture's other cyclone is unavailable; it publishes as a centroid.
+    if (url.startsWith("https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?"))
+      return new Response("not found", { status: 404 });
+    throw Error("unexpected upstream request " + url);
+  }) as typeof fetch;
+}
+
+// An allowlist by role: connectivity measurements (RIPEstat forbids redistribution and its logo
+// permission is pending), aviation signals (ADSB.lol asks production users to contact it first)
+// and GDELT news signals (publisher headlines, and no baseline in a stateless run) stay out of
+// the public demo even though the private app displays them. AWC's ash SIGMETs share the aviation
+// advisory role with EASA but stay out while foreign issuers' terms are unresolved.
+test("public sources are the enabled structured hazard and aviation advisory feeds whose rights permit display", () => {
+  assert.deepEqual(PUBLIC_SOURCES.map((s) => s.id).sort(), [
+    "br-inmet-warnings",
+    "ca-eccc-warnings",
+    "global-easa-conflict-zone-bulletins",
+    "global-emsc-earthquakes",
+    "global-gdacs-alerts",
+    "global-usgs-earthquakes",
+    "ph-pagasa-warnings",
+    "us-nws-warnings",
+  ]);
+  assert(
+    PUBLIC_SOURCES.every((s) => s.rights.display && s.rights.ai === false),
+  );
+  // GDACS may be displayed but not redistributed, so the demo shows it and offers no export.
+  assert.equal(
+    PUBLIC_SOURCES.find((s) => s.id === "global-gdacs-alerts")!.rights
+      .redistribute,
+    false,
+  );
+  assert(!PUBLIC_SOURCES.some((s) => s.id.startsWith("meteoalarm-")));
+});
+
+test("the snapshot publishes the API's projection, briefs for every window and a bounded geospatial catalogue", async () => {
+  const requests: { url: string; method: string }[] = [];
+  const { manifest, files, results } = await buildPublicSnapshot({
+    fetch: upstream(requests),
+  });
+  assert.deepEqual(
+    results.map((r) => [r.source_id, r.status]).sort(),
+    PUBLIC_SOURCES.map((s) => [s.id, "ok"]).sort(),
+  );
+  // Only GET reads of the public sources leave the process; ingest and reconciliation stay in memory.
+  assert(requests.every((r) => r.method === "GET"));
+  assert(
+    !requests.some(
+      (r) => new URL(r.url).hostname === "public-snapshot.invalid",
+    ),
+  );
+  assert.deepEqual(
+    [...files.keys()].sort(),
+    [MANIFEST, ...Object.keys(manifest.files)].sort(),
+  );
+  for (const [name, text] of files)
+    assert(
+      Buffer.byteLength(text) <=
+        PUBLIC_FILE_LIMITS[name as keyof typeof PUBLIC_FILE_LIMITS],
+    );
+  for (const [name, { bytes }] of Object.entries(manifest.files))
+    assert.equal(bytes, Buffer.byteLength(files.get(name)!));
+  const { incidents } = read(files, "incidents.json") as {
+    incidents: IncidentView[];
+  };
+  assert(incidents.length > 0);
+  for (const incident of incidents)
+    for (const report of incident.reports) {
+      assert(PUBLIC_SOURCES.some((s) => s.id === report.source_id));
+      assert.equal(report.rights.display, true);
+    }
+  assert(incidents.every((i) => i.analyzed_at === null));
+  // Issuer geometry travels with the views the demo publishes, as display copies.
+  const roles = (role: string) => incidents.filter((i) => i.footprint?.role === role);
+  assert.equal(roles("advisory_area").length, incidents.filter((i) => ["us-nws-warnings", "ca-eccc-warnings", "ph-pagasa-warnings", "br-inmet-warnings"].includes(i.reports[0].source_id)).length);
+  assert(roles("advisory_area").some((i) => i.reports[0].source_id === "ph-pagasa-warnings"));
+  assert(roles("advisory_area").some((i) => i.reports[0].source_id === "br-inmet-warnings"));
+  assert.equal(roles("inferred_affected_area").length, 1);
+  assert(incidents.every((i) => !i.footprint || (!i.footprint.detail && i.footprint.display.parts.length > 0)));
+  // Linked records fuse: USGS, GDACS and EMSC for Vanuatu, USGS and EMSC for three more quakes,
+  // and GDACS and EMSC for Hokkaido.
+  assert.equal(situations(incidents).length, incidents.length - 6);
+  const briefs = read(files, "brief.json");
+  assert.deepEqual(Object.keys(briefs).sort(), [...BRIEF_WINDOWS].sort());
+  assert.equal(briefs["0"].kind, "structured");
+  const geo = read(files, "geospatial.json");
+  // Every detection is in the archive the catalogue names by content; none rides in the JSON.
+  // Three detections per sensor still delivering; an ended sensor is not read.
+  assert(geo.features.every((f: any) => f.layer !== "thermal"));
+  const firms = geo.sources.find((s: any) => s.id === "firms");
+  assert.equal(
+    firms.features_count,
+    3 *
+      FIRMS_SENSORS.filter(
+        (s) => !s.ended || Date.parse(s.ended.at) > Date.now(),
+      ).length,
+  );
+  assert.equal(firms.truncated, false);
+  assert.equal(geo.thermal_version, manifest.files[THERMAL_ARCHIVE].sha256.slice(0, 16));
+  assert.equal(readHeader(files.get(THERMAL_ARCHIVE) as Uint8Array).tiles > 0, true);
+  assert.equal(
+    geo.features.filter((f: any) => f.layer === "emergency_mapping").length,
+    1,
+  );
+  assert(
+    geo.sources.every(
+      (s: any) => s.cadence_seconds === GEOSPATIAL_REFRESH_SECONDS,
+    ),
+  );
+  assert.equal(manifest.analysis, "none");
+  assert.deepEqual(
+    manifest.sources.map((s) => [s.id, s.redistribute]).sort(),
+    PUBLIC_SOURCES.map((s) => [s.id, s.rights.redistribute]).sort(),
+  );
+  assert(manifest.sources.every((s) => s.attribution.length > 0));
+});
+
+const xml = new XMLParser({
+  ignoreAttributes: false,
+  isArray: (name) => ["entry", "category", "link"].includes(name),
+});
+const redistributed = PUBLIC_SOURCES.filter((s) => s.rights.redistribute);
+
+test("every area, hazard and impact feed is valid, bounded, attributed and limited to redistributable sources", async () => {
+  const { manifest, feeds, files } = await buildPublicSnapshot({ fetch: upstream() });
+  assert.equal(feeds.size, feedFilters().length * 2 + 1);
+  assert.equal(manifest.feeds.files, feeds.size);
+  assert.equal(
+    manifest.feeds.bytes,
+    [...feeds.values()].reduce((n, t) => n + Buffer.byteLength(t), 0),
+  );
+  assert(redistributed.some((s) => s.id === "global-emsc-earthquakes"));
+  const incidents: IncidentView[] = read(files, "incidents.json").incidents;
+  const allowed = new Set(redistributed.map((s) => s.id));
+  const shareable = (i: IncidentView) => i.reports.every((r) => allowed.has(r.source_id));
+  for (const filter of feedFilters()) {
+    const atom = feeds.get(feedPath(filter, "atom"))!;
+    const geojson = feeds.get(feedPath(filter, "geojson"))!;
+    for (const text of [atom, geojson]) assert(Buffer.byteLength(text) <= FEED_FILE_LIMIT);
+    assert.equal(XMLValidator.validate(atom), true);
+    const feed = xml.parse(atom).feed;
+    assert.equal(feed["@_xmlns"], "http://www.w3.org/2005/Atom");
+    assert.match(feed.id, /^urn:world-watch:feed:/);
+    for (const s of redistributed) assert(feed.rights["#text"].includes(s.rights.attribution));
+    const collection = JSON.parse(geojson);
+    assert.equal(collection.type, "FeatureCollection");
+    assert.deepEqual(collection.attribution, redistributed.map((s) => s.rights.attribution));
+    assert.deepEqual(
+      (feed.entry ?? []).map((e: any) => e.id),
+      collection.features.map((f: any) => "urn:world-watch:incident:" + f.id),
+    );
+    for (const f of collection.features) {
+      // GDACS may be shown but not redistributed, and RIPEstat, ADSB.lol and GDELT never enter the demo.
+      assert(f.properties.incident_ids.includes(f.id));
+      for (const id of f.properties.incident_ids)
+        assert(shareable(incidents.find((i) => i.id === id)!), id);
+      assert(f.properties.attribution.every((a: any) => !/GDACS|RIPE|ADSB|GDELT/.test(a.attribution)));
+      assert.equal(f.geometry.type, "Point");
+      // Warning polygons ride beside the point as their display copies; GDACS buffers never do.
+      for (const fp of f.properties.footprints ?? []) {
+        assert(f.properties.incident_ids.includes(fp.incident_id));
+        assert.deepEqual(fp.parts, incidents.find((i) => i.id === fp.incident_id)!.footprint!.display.parts);
+        assert.notEqual(fp.role, "inferred_affected_area");
+      }
+    }
+  }
+  // One entry per fused situation. A situation with a GDACS record still appears, through its
+  // redistributable records only; one with nothing redistributable doesn't.
+  const world = JSON.parse(feeds.get(feedPath({ ...DEFAULT_FEED, impact: "any" }, "geojson"))!);
+  const expected = situations(incidents)
+    .map((s) => (s.members ?? [s]).filter(shareable).map((m) => m.id).sort())
+    .filter((ids) => ids.length);
+  assert.deepEqual(
+    world.features.map((f: any) => [...f.properties.incident_ids].sort()).sort(),
+    expected.sort(),
+  );
+  assert.equal(
+    world.features.filter((f: any) => f.properties.footprints).length,
+    incidents.filter((i) => i.footprint?.role === "advisory_area").length,
+  );
+  const usgsEmsc = world.features.filter(
+    (f: any) => f.properties.incident_ids.length === 2,
+  );
+  assert(usgsEmsc.length >= 3);
+  for (const f of usgsEmsc)
+    assert.deepEqual(
+      f.properties.incident_ids
+        .map((id: string) => incidents.find((i) => i.id === id)!.reports[0].source_id)
+        .sort(),
+      ["global-emsc-earthquakes", "global-usgs-earthquakes"],
+    );
+  const partial = situations(incidents).filter(
+    (s) => (s.members ?? [s]).some(shareable) && !(s.members ?? [s]).every(shareable),
+  );
+  assert(partial.length >= 2);
+  const index = JSON.parse(feeds.get("feeds/index.json")!);
+  assert.equal(index.feeds.length, feedFilters().length);
+  assert(index.feeds.every((f: any) => feeds.has(f.atom) && feeds.has(f.geojson)));
+});
+
+test("a feed entry keeps its ID and update time across runs and fusion changes, and moves only on a material change", async () => {
+  const first = await buildPublicSnapshot({ fetch: upstream() });
+  const previous = { incidents: read(first.files, "incidents.json") };
+  const world = feedPath({ ...DEFAULT_FEED, impact: "any" }, "atom");
+  const again = await buildPublicSnapshot({ fetch: upstream(), previous });
+  // An unchanged source gives a byte-identical feed, so readers see nothing new.
+  assert.equal(again.feeds.get(world), first.feeds.get(world));
+  const entries = (run: { feeds: Map<string, string> }) =>
+    Object.fromEntries(
+      xml.parse(run.feeds.get(world)!).feed.entry.map((e: any) => [e.id, e]),
+    );
+  const quake = feeds[USGS_FEED_URL] as any;
+  const edited = (change: (feature: any) => void) => {
+    const copy = structuredClone(quake);
+    change(copy.features[0]);
+    return (async (input: any, init: any) =>
+      String(input) === USGS_FEED_URL ? Response.json(copy) : upstream()(input, init)) as typeof fetch;
+  };
+  const before = entries(first);
+  const reworded = entries(
+    await buildPublicSnapshot({
+      fetch: edited((f) => (f.properties.title += " (reviewed)")),
+      previous,
+    }),
+  );
+  assert.deepEqual(Object.keys(reworded).sort(), Object.keys(before).sort());
+  for (const id of Object.keys(before)) assert.equal(reworded[id].updated, before[id].updated);
+  const moved = entries(
+    await buildPublicSnapshot({
+      fetch: edited((f) => (f.geometry.coordinates[0] += 0.05)),
+      previous,
+    }),
+  );
+  assert.deepEqual(Object.keys(moved).sort(), Object.keys(before).sort());
+  const changed = Object.keys(before).filter((id) => moved[id].updated !== before[id].updated);
+  assert.equal(changed.length, 1);
+  assert(moved[changed[0]].updated > before[changed[0]].updated);
+
+  // Without EMSC each USGS quake is its own entry. When EMSC's records arrive and fuse with them,
+  // the entries keep their USGS keys whichever record now leads, and update for the new source.
+  const emscDown = (async (input: any, init: any) =>
+    String(input).startsWith(EMSC_QUERY_URL)
+      ? new Response("unavailable", { status: 503 })
+      : upstream()(input, init)) as typeof fetch;
+  const alone = await buildPublicSnapshot({ fetch: emscDown });
+  const fused = await buildPublicSnapshot({
+    fetch: upstream(),
+    previous: { incidents: read(alone.files, "incidents.json") },
+  });
+  const geo = (run: { feeds: Map<string, string> }) =>
+    JSON.parse(run.feeds.get(feedPath({ ...DEFAULT_FEED, impact: "any" }, "geojson"))!).features;
+  const usgsIds = new Set(
+    read(alone.files, "incidents.json")
+      .incidents.filter((i: IncidentView) => i.reports[0].source_id === "global-usgs-earthquakes")
+      .map((i: IncidentView) => i.id),
+  );
+  const pairs = geo(fused).filter((f: any) => f.properties.incident_ids.length === 2);
+  assert(pairs.length >= 3);
+  const earlier = new Map(geo(alone).map((f: any) => [f.id, f.properties.updated]));
+  for (const f of pairs) {
+    assert(usgsIds.has(f.id), f.id);
+    assert(f.properties.updated > earlier.get(f.id)!);
+  }
+});
+
+test("a source whose rights forbid display is never collected or published", async () => {
+  const requests: { url: string; method: string }[] = [];
+  const usgs = sourceRegistry.find((s) => s.id === "global-usgs-earthquakes")!;
+  const hidden = { ...usgs, rights: { ...usgs.rights, display: false } };
+  const gdacs = sourceRegistry.find((s) => s.id === "global-gdacs-alerts")!;
+  const { manifest, files } = await buildPublicSnapshot({
+    fetch: upstream(requests),
+    sources: [hidden, gdacs],
+  });
+  assert(!requests.some((r) => r.url === USGS_FEED_URL));
+  assert.deepEqual(
+    manifest.sources.map((s) => s.id),
+    ["global-gdacs-alerts"],
+  );
+  const { incidents, sources } = read(files, "incidents.json");
+  assert(incidents.length > 0);
+  assert(
+    incidents.every((i: IncidentView) =>
+      i.reports.every((r) => r.source_id === gdacs.id),
+    ),
+  );
+  assert(!sources.some((s: any) => s.id === usgs.id));
+});
+
+test("every file has a byte ceiling and an oversized snapshot fails instead of publishing", async () => {
+  const usgs = sourceRegistry.find((s) => s.id === "global-usgs-earthquakes")!;
+  await assert.rejects(
+    buildPublicSnapshot({
+      fetch: upstream(),
+      sources: [{ ...usgs, name: "x".repeat(PUBLIC_FILE_LIMITS[MANIFEST]) }],
+    }),
+    /public_snapshot_size: manifest\.json/,
+  );
+});
+
+test("a run that reaches no source fails, so the last published snapshot stays live", async () => {
+  await assert.rejects(
+    buildPublicSnapshot({
+      fetch: (async () =>
+        new Response("unavailable", { status: 503 })) as typeof fetch,
+    }),
+    /public_snapshot_sources_unavailable/,
+  );
+});
+
+test("a failed read keeps the source's last published records for an hour, then drops them", async () => {
+  const first = await buildPublicSnapshot({ fetch: upstream() });
+  const previous = {
+    manifest: read(first.files, MANIFEST),
+    incidents: read(first.files, "incidents.json"),
+  };
+  const gdacsDown = (async (input: any, init: any) =>
+    String(input).startsWith(GDACS_EVENTS_URL)
+      ? new Response("unavailable", { status: 503 })
+      : upstream()(input, init)) as typeof fetch;
+  const gdacsIds = (files: Map<string, string | Uint8Array>) =>
+    read(files, "incidents.json")
+      .incidents.filter(
+        (i: IncidentView) => i.reports[0].source_id === "global-gdacs-alerts",
+      )
+      .map((i: IncidentView) => i.id)
+      .sort();
+  const kept = await buildPublicSnapshot({ fetch: gdacsDown, previous });
+  const gdacs = kept.manifest.sources.find(
+    (s) => s.id === "global-gdacs-alerts",
+  )!;
+  assert.equal(gdacs.status, "error");
+  assert(gdacs.carried_forward > 0);
+  assert.equal(gdacs.last_success_at, first.manifest.generated_at);
+  assert.deepEqual(gdacsIds(kept.files), gdacsIds(first.files));
+  assert(
+    read(kept.files, "brief.json")["0"].references.some((r: any) =>
+      gdacsIds(first.files).includes(r.incident_id),
+    ),
+  );
+  const hourAgo = new Date(
+    Date.now() - CARRY_FORWARD_SECONDS * 1000,
+  ).toISOString();
+  const stale = await buildPublicSnapshot({
+    fetch: gdacsDown,
+    previous: {
+      ...previous,
+      manifest: {
+        ...previous.manifest,
+        sources: previous.manifest.sources.map((s: any) => ({
+          ...s,
+          last_success_at: hourAgo,
+        })),
+      },
+    },
+  });
+  assert.deepEqual(gdacsIds(stale.files), []);
+  assert.equal(
+    stale.manifest.sources.find((s) => s.id === "global-gdacs-alerts")!
+      .last_success_at,
+    hourAgo,
+  );
+});
+
+test("the manifest states each source's and sensor's coverage, and lag counts only revisions new since the previous run", async () => {
+  const first = await buildPublicSnapshot({ fetch: upstream() });
+  for (const s of first.manifest.sources) {
+    assert(["observed", "quiet"].includes(s.coverage), s.id + " " + s.coverage);
+    // A run from an empty database holds the issuers' backlog, which is not latency.
+    assert.equal(s.latency.issuer_to_ingest.n, 0);
+    assert.equal(s.latency.ingest_to_publication.p90, 0);
+  }
+  const firms = first.manifest.layers.find((l) => l.id === "firms")!;
+  assert.equal(firms.coverage, "observed");
+  assert.deepEqual(
+    firms.sensors!.map((s) => s.id),
+    FIRMS_SENSORS.map((s) => s.id),
+  );
+  const previous = () => ({
+    manifest: read(first.files, MANIFEST),
+    incidents: read(first.files, "incidents.json"),
+  });
+  const updated = structuredClone(feeds[USGS_FEED_URL]) as any;
+  updated.features[0].properties.updated = Date.now() - 60000;
+  const revised = (async (input: any, init: any) =>
+    String(input) === USGS_FEED_URL
+      ? Response.json(updated)
+      : upstream()(input, init)) as typeof fetch;
+  const second = await buildPublicSnapshot({ fetch: revised, previous: previous() });
+  const usgs = second.manifest.sources.find(
+    (s) => s.id === "global-usgs-earthquakes",
+  )!;
+  assert.equal(usgs.latency.issuer_to_ingest.n, 1);
+  assert(usgs.latency.issuer_to_ingest.p50! >= 60 && usgs.latency.issuer_to_ingest.p50! < 120);
+  assert(
+    second.manifest.sources
+      .filter((s) => s.id !== usgs.id)
+      .every((s) => s.latency.issuer_to_ingest.n === 0),
+  );
+  // The samples ride in the published source health, so the next run keeps them.
+  const third = await buildPublicSnapshot({
+    fetch: revised,
+    previous: {
+      manifest: read(second.files, MANIFEST),
+      incidents: read(second.files, "incidents.json"),
+    },
+  });
+  assert.equal(
+    third.manifest.sources.find((s) => s.id === usgs.id)!.latency.issuer_to_ingest.n,
+    1,
+  );
+});
+
+test("a recent healthy catalogue and the archive it names are reused instead of downloading the satellite files again", async () => {
+  const now = Date.now();
+  const first = await buildPublicSnapshot({ fetch: upstream() });
+  const archive = first.files.get(THERMAL_ARCHIVE) as Uint8Array,
+    version = read(first.files, "geospatial.json").thermal_version;
+  const layer = (status: "ok" | "error", minutes: number) => ({
+    id: "firms" as const,
+    status,
+    checked_at: new Date(now - minutes * 60000).toISOString(),
+    cadence_seconds: GEOSPATIAL_REFRESH_SECONDS,
+    features_count: 0,
+    total_available: 0,
+    truncated: false,
+    source_url: "https://firms.modaps.eosdis.nasa.gov/active_fire/",
+    attribution: "NASA FIRMS",
+    license_url: "https://www.earthdata.nasa.gov/",
+  });
+  const catalog = (status: "ok" | "error", minutes: number) => ({
+    bbox: [-180, -90, 180, 90] as [number, number, number, number],
+    features: [],
+    sources: [layer(status, minutes)],
+    thermal_version: version,
+  });
+  assert.equal(reusableGeospatial(catalog("ok", 20), archive, now), true);
+  assert.equal(reusableGeospatial(catalog("ok", 56), archive, now), false);
+  assert.equal(reusableGeospatial(catalog("error", 5), archive, now), false);
+  assert.equal(reusableGeospatial(undefined, archive, now), false);
+  assert.equal(reusableGeospatial(catalog("ok", 20), undefined, now), false);
+  assert.equal(
+    reusableGeospatial(catalog("ok", 20), archive.slice(1), now),
+    false,
+    "an archive that is not the one the catalogue names is rebuilt",
+  );
+  const requests: { url: string; method: string }[] = [];
+  const { files } = await buildPublicSnapshot({
+    fetch: upstream(requests),
+    previous: { geospatial: catalog("ok", 20), thermal: archive },
+  });
+  assert(
+    !requests.some(
+      (r) => r.url.includes("firms.modaps") || r.url.includes("copernicus"),
+    ),
+  );
+  assert.equal(
+    read(files, "geospatial.json").sources[0].checked_at,
+    layer("ok", 20).checked_at,
+  );
+  assert.deepEqual(files.get(THERMAL_ARCHIVE), archive);
+  assert.equal(read(files, "geospatial.json").thermal_version, version);
+});
+
+test(
+  "the public build reads only static files, sends no credential and has no owner or write interface",
+  { timeout: 120000 },
+  async () => {
+    const out = mkdtempSync(path.join(tmpdir(), "world-watch-public-"));
+    let browser: any;
+    const site = createServer();
+    try {
+      execFileSync(
+        process.execPath,
+        [
+          "node_modules/vite/bin/vite.js",
+          "build",
+          "--mode",
+          "public",
+          "--outDir",
+          out,
+          "--logLevel",
+          "error",
+        ],
+        { stdio: "ignore" },
+      );
+      const bundle = readdirSync(path.join(out, "assets"))
+        .filter((f) => f.endsWith(".js"))
+        .map((f) => readFileSync(path.join(out, "assets", f), "utf8"))
+        .join("\n");
+      for (const owner of [
+        "/api/session",
+        "/api/corrections",
+        "/api/incidents/merge",
+        "/api/incidents/split",
+        "/api/jobs/",
+        "/api/export",
+        "/api/events",
+        "/api/cameras",
+        "/api/news-signals",
+        "/api/thermal",
+        "/api/incidents/link",
+        "EventSource",
+        "/api/push",
+        "/api/alert-rules",
+        "serviceWorker",
+        "PushManager",
+        "sw.js",
+      ])
+        assert(!bundle.includes(owner), owner);
+      assert(!existsSync(path.join(out, "sw.js")));
+      assert(
+        readFileSync(path.join(out, "index.html"), "utf8").includes(
+          `<link rel="alternate" type="application/atom+xml" title="World Watch: world, significant impact or higher" href="data/${feedPath(DEFAULT_FEED, "atom")}">`,
+        ),
+      );
+      const { files } = await buildPublicSnapshot({ fetch: upstream() });
+      const base = "/world-watch/";
+      const types: Record<string, string> = {
+        ".js": "text/javascript",
+        ".css": "text/css",
+        ".html": "text/html",
+      };
+      site.on("request", (req, res) => {
+        const pathname = new URL(req.url!, "http://site").pathname;
+        const name = pathname.slice(base.length) || "index.html";
+        const built = path.join(out, name);
+        const body = !pathname.startsWith(base)
+          ? undefined
+          : name.startsWith("data/")
+            ? files.get(name.slice(5))
+            : existsSync(built)
+              ? readFileSync(built)
+              : undefined;
+        if (body === undefined) {
+          res.writeHead(404).end();
+          return;
+        }
+        res.writeHead(200, {
+          "content-type": types[path.extname(name)] ?? "application/json",
+        });
+        res.end(body);
+      });
+      await new Promise<void>((resolve) =>
+        site.listen(0, "127.0.0.1", resolve),
+      );
+      const origin = `http://127.0.0.1:${(site.address() as any).port}`;
+      browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage({
+        viewport: { width: 1280, height: 900 },
+      });
+      const requests: { method: string; url: string; auth: boolean }[] = [];
+      page.on("request", (r: any) =>
+        requests.push({
+          method: r.method(),
+          url: r.url(),
+          auth: "authorization" in r.headers() || "cookie" in r.headers(),
+        }),
+      );
+      await page.route("**/*", (route: any) =>
+        new URL(route.request().url()).origin === origin
+          ? route.continue()
+          : route.abort(),
+      );
+      await page.goto(origin + base + "?hours=0");
+      await page.waitForSelector(".feed-item");
+      assert.equal(
+        await page.locator(".feed-item").count(),
+        situations(read(files, "incidents.json").incidents).length,
+      );
+      assert.match(
+        await page.locator(".public-banner").innerText(),
+        /Public demo\. Live public sources\. Some layers and analysis disabled\./,
+      );
+      assert.match(
+        await page.locator(".health-pill").innerText(),
+        /Public snapshot/,
+      );
+      assert.equal(
+        await page.getByLabel("Switch incoming reports and incidents").count(),
+        0,
+      );
+      assert.equal(await page.getByLabel("Enable sound").count(), 0);
+      await page.locator(".feed-item").first().click();
+      await page.waitForSelector(".detail h1");
+      const detail = await page.locator(".detail").innerText();
+      for (const hidden of ["Private notes", "Incident reconstruction", "JSON"])
+        assert(!detail.includes(hidden), hidden);
+      await page.keyboard.press("Escape");
+      await page.getByLabel("Contextual controls").click();
+      const controls = await page.locator(".panel-content").innerText();
+      for (const hidden of [
+        "Private areas",
+        "Replay",
+        "Public cameras",
+        "GeoJSON",
+        "Sound volume",
+      ])
+        assert(!controls.includes(hidden), hidden);
+      // Every source the snapshot just read is on schedule, judged against the ten-minute rebuild.
+      assert.match(
+        await page.locator(".health-pill").innerText(),
+        new RegExp(`${PUBLIC_SOURCES.length}/${PUBLIC_SOURCES.length} sources fresh`),
+      );
+      for (const s of PUBLIC_SOURCES)
+        assert.match(
+          await page
+            .locator(".coverage .coverage-list li", { hasText: s.name })
+            .locator(".coverage-chip")
+            .innerText(),
+          /^(Observed|Quiet)$/,
+          s.id,
+        );
+      // This server ignores Range, so the archive arrives whole, once.
+      const archive = page.waitForRequest((r: any) =>
+        r.url().includes(`/data/${THERMAL_ARCHIVE}?v=`),
+      );
+      await page.getByLabel("Satellite thermal detections").check();
+      await archive;
+      await page
+        .getByRole("button", { name: "Explore geospatial context" })
+        .click();
+      await page
+        .getByText(
+          `All ${3 * FIRMS_SENSORS.filter((s) => !s.ended || Date.parse(s.ended.at) > Date.now()).length} detections worldwide are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.`,
+        )
+        .waitFor();
+      await page.locator(".public-banner button").click();
+      const sources = await page.locator(".panel-content").innerText();
+      for (const s of PUBLIC_SOURCES)
+        assert(sources.includes(s.rights.attribution), s.id);
+      await page.getByLabel("Impact").selectOption("severe");
+      assert.equal(
+        await page.getByRole("link", { name: "GeoJSON" }).getAttribute("href"),
+        "./data/" + feedPath({ ...DEFAULT_FEED, impact: "severe" }, "geojson"),
+      );
+      // A shared link keeps its view here, but a time in it opens the latest snapshot and says so.
+      await page.goto(origin + base + "?hours=0&filter=hazards&map=2.5/10/120&layer=density&at=2026-10-20T06:00:00Z");
+      await page.waitForSelector(".scope-notice");
+      assert.match(
+        await page.locator(".scope-notice").innerText(),
+        /This link asks for .+\. The public demo keeps no history, so it shows the latest snapshot\./,
+      );
+      assert.equal(await page.locator(".time-bar").count(), 0);
+      assert.equal(await page.getByLabel("Earlier time").count(), 0);
+      const shared = new URL(page.url()).searchParams;
+      assert.equal(shared.get("map"), "2.5/10/120");
+      assert.equal(shared.get("filter"), "hazards");
+      assert.equal(shared.get("layer"), "density");
+      assert.equal(shared.has("at"), false);
+      await page.getByLabel("Contextual controls").click();
+      await page.getByText("The public demo keeps no history, so it cannot show an earlier time.", { exact: false }).waitFor();
+      const local = requests.filter((r) => r.url.startsWith(origin));
+      assert(local.some((r) => r.url.includes("/data/geospatial.json")));
+      assert.equal(
+        local.filter((r) => r.url.includes(`/data/${THERMAL_ARCHIVE}`)).length,
+        1,
+      );
+      assert(requests.every((r) => r.method === "GET" && !r.auth));
+      assert(!local.some((r) => new URL(r.url).pathname.includes("/api/")));
+    } finally {
+      await browser?.close();
+      site.close();
+      rmSync(out, { recursive: true, force: true });
+    }
+  },
+);

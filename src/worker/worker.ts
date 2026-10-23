@@ -104,6 +104,8 @@ export class RemoteWorker {
   spool: string;
   analyzer: typeof analyze;
   briefAnalyzer: typeof analyzeBrief;
+  /** Briefs are Codex-only; a worker on another backend leaves them queued. */
+  briefs: boolean;
   lastBriefPoll = -Infinity;
   budget: DailyBudget;
   now: () => number;
@@ -119,6 +121,7 @@ export class RemoteWorker {
     spool: string;
     analyzer?: typeof analyze;
     briefAnalyzer?: typeof analyzeBrief;
+    briefs?: boolean;
     now?: () => number;
     sitesToken?: string;
     sitesOrigin?: string;
@@ -129,6 +132,7 @@ export class RemoteWorker {
     this.spool = opts.spool;
     this.analyzer = opts.analyzer ?? analyze;
     this.briefAnalyzer = opts.briefAnalyzer ?? analyzeBrief;
+    this.briefs = opts.briefs ?? true;
     this.now = opts.now ?? Date.now;
     this.sitesToken = opts.sitesToken ?? process.env.EW_SITES_SERVICE_TOKEN;
     this.sitesOrigin = opts.sitesOrigin ?? process.env.EW_SITES_ORIGIN;
@@ -344,18 +348,19 @@ export class RemoteWorker {
             if (good)
               await saveSpool(this.spool, spoolKey(l), {
                 result: good,
-                run: result.run,
+                run: result.runs.get(analysisKey(l.input)),
               });
           }
           for (const l of pending) {
-            const good = result.accepted.get(analysisKey(l.input));
+            const good = result.accepted.get(analysisKey(l.input)),
+              run = result.runs.get(analysisKey(l.input))!;
             if (good) {
               if (!held.has(l.job_id)) {
                 failed++;
                 continue;
               }
               try {
-                await this.submit(l, good, result.run);
+                await this.submit(l, good, run);
                 completed++;
                 held.delete(l.job_id);
                 await unlink(
@@ -370,7 +375,7 @@ export class RemoteWorker {
               await this.recordInvalid(
                 l,
                 result.invalid.get(analysisKey(l.input)) || "invalid_result",
-                result.run,
+                run,
               );
               if (held.has(l.job_id))
                 await this.api("fail", {
@@ -431,7 +436,7 @@ export class RemoteWorker {
     let delay = 1000;
     while (!signal.aborted) {
       try {
-        if (this.now() - this.lastBriefPoll >= 60000) {
+        if (this.briefs && this.now() - this.lastBriefPoll >= 60000) {
           this.lastBriefPoll = this.now();
           try {
             const brief = await this.briefOnce();

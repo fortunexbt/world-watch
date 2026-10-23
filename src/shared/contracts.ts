@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { validateSeverity } from "./severity.js";
+import type { Footprint } from "./footprint.js";
 export const CONTRACT_VERSION = "ew-1";
 export const Impact = z.enum([
   "informational",
@@ -27,6 +28,10 @@ export const Activity = z.enum([
   "volcanic_eruption",
   "drought",
   "severe_weather",
+  "aviation_emergency",
+  "volcanic_ash",
+  "conflict_zone_advisory",
+  "connectivity_disruption",
   "other_unknown",
 ]);
 export const Evidence = z.object({ id: z.string(), text: z.string() }).strict();
@@ -132,6 +137,8 @@ export type ObservationInput = {
     /** ISO 3166-1 alpha-2 code stated by the source or derived offline from its exact point; null when neither settles one country. */
     country?: string | null;
   };
+  /** Issuer geometry, separate from source_geo, which stays the display point. */
+  footprint?: Footprint;
   official?: {
     issuer: string;
     effective_at: string | null;
@@ -142,6 +149,8 @@ export type ObservationInput = {
     cancelled?: boolean;
     /** The issuer lists the event as current and states no expiry. It stays live until reconciliation of the issuer's complete current list no longer finds it. */
     current_listing?: boolean;
+    /** A self-report relayed by the source, such as a transponder code, that no authority has confirmed. It publishes as unverified, not as an official advisory. */
+    self_reported?: boolean;
     references?: string[];
     message_type?: string;
   };
@@ -177,6 +186,12 @@ export type ModelRun = {
   duration_ms: number;
   usage: unknown;
   tool_attempts: number;
+  /** Configured provider id for chat-completions runs; absent for the Codex transport. */
+  provider?: string;
+  /** Base URL that served the run, without credentials. */
+  endpoint?: string;
+  /** Providers tried and left for this invocation, in order, before the one that served it. */
+  switches?: { provider: string; model: string; reason: string }[];
 };
 export type IncidentView = {
   id: string;
@@ -195,6 +210,8 @@ export type IncidentView = {
     accuracy: string;
     radius_km: number;
   } | null;
+  /** The issuer's own geometry; location stays the marker and the spatial index key. */
+  footprint?: Footprint;
   event_start: string | null;
   event_end: string | null;
   published_at: string | null;
@@ -215,6 +232,23 @@ export type IncidentView = {
   cancelled: boolean;
   /** Live while its issuer lists it as current; false once the issuer stops listing it. */
   current_listing?: boolean;
+  /** Same-event assessments against other incidents, mirrored on both. Absent means none. */
+  links?: IncidentLink[];
+};
+/**
+ * same_event joins two records of one occurrence into one situation without changing either.
+ * possible_same_event points at a compatible record whose evidence does not settle identity.
+ * split_from is an operator decision that the two differ, which no rule overrides.
+ * independence says whether a same_event pair shares one upstream origin (republication) or
+ * comes from independent origins (corroboration); unknown when a record states no origin.
+ */
+export type IncidentLink = {
+  incident_id: string;
+  type: "same_event" | "possible_same_event" | "split_from";
+  independence?: "same_origin" | "independent" | "unknown";
+  /** The rule and its version, or "operator". */
+  basis: string;
+  reason: string;
 };
 export type SourceRecord = {
   id: string;
@@ -227,7 +261,15 @@ export type SourceRecord = {
   languages: string[];
   categories: string[];
   family:
-    "rss" | "bbk" | "tfl" | "gtfs_rt" | "social" | "gdelt" | "dwd" | "siri";
+    | "rss"
+    | "bbk"
+    | "cap"
+    | "tfl"
+    | "gtfs_rt"
+    | "social"
+    | "gdelt"
+    | "dwd"
+    | "siri";
   status:
     | "enabled"
     | "awaiting_credentials"

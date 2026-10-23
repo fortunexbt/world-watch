@@ -1,5 +1,10 @@
 import type { IncidentView } from "../shared/contracts";
 import { longitudeOverlaps } from "./bounds";
+import {
+  areaRing,
+  footprintMeetsArea,
+  footprintShape,
+} from "../shared/footprint";
 export type PrivateArea = {
   id: string;
   name: string;
@@ -11,6 +16,11 @@ export function intersectsArea(i: IncidentView, a: PrivateArea) {
   if (!i.location) return false;
   const b = a.bbox.split(",").map(Number);
   if (b.length !== 4 || b.some((x) => !Number.isFinite(x))) return false;
+  // An issuer area decides when there is one; contour lines and bare points keep the radius.
+  const area = i.footprint
+    ? footprintMeetsArea(footprintShape(i.footprint), areaRing({ bbox: b })!)
+    : null;
+  if (area !== null) return area;
   const g = i.location,
     dy = g.radius_km / 111.32,
     dx = dy / Math.max(0.05, Math.cos((g.lat * Math.PI) / 180));

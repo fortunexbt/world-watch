@@ -186,7 +186,10 @@ test(
       await page.waitForTimeout(20);
       await emit("incident.deleted", "race", 20, 2);
       releaseRace();
-      await page.waitForTimeout(50);
+      // Wait for the deletion to land rather than a fixed delay that a busy machine can outrun.
+      await page
+        .getByRole("heading", { name: "Fixture race v1", exact: true })
+        .waitFor({ state: "detached" });
       assert.equal(
         await page
           .getByRole("heading", { name: "Fixture race v1", exact: true })
@@ -280,7 +283,13 @@ test(
         (window as any).__hidden = false;
         document.dispatchEvent(new Event("visibilitychange"));
       });
-      await page.waitForTimeout(100);
+      // Wait for the resume to happen, then hold briefly so a second snapshot would still be caught.
+      for (const end = Date.now() + 10000; snapshots === beforeHidden && Date.now() < end; )
+        await page.waitForTimeout(25);
+      await page.waitForFunction(
+        () => (window as any).__streams.filter((s: any) => !s.closed).length === 1,
+      );
+      await page.waitForTimeout(150);
       assert.equal(
         snapshots,
         beforeHidden + 1,

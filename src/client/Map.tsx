@@ -5,14 +5,46 @@ maplibregl.setWorkerUrl(mapWorkerUrl);
 import type {
   Map as GLMap,
   GeoJSONSource,
+  MapGeoJSONFeature,
+  PointLike,
   StyleSpecification,
+  VectorTileSource,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { PublicCamera } from "../shared/media";
-import type { GeoFeature } from "../shared/geospatial";
+import {
+  THERMAL_MAX_ZOOM,
+  THERMAL_POINT_ZOOM,
+  thermalDetection,
+  type GeoFeature,
+  type ThermalSensorId,
+} from "../shared/geospatial";
+import { thermalProtocol } from "./thermal-tiles";
 import type { IncidentView } from "../shared/contracts";
+import { footprintShape } from "../shared/footprint";
+import type { Situation } from "../shared/fusion";
+import type { NewsSignal } from "../shared/news";
+import { gnssLevel, type GnssGrid } from "../shared/gnss";
+import { GNSS_COLORS } from "./Gnss";
+import { NEWS_COLOR, NEWS_GLYPH } from "./NewsSignals";
 import { viewportBounds } from "./bounds";
-import { glyphs, HAZARDS, magnitude, markerIcon, markerScale } from "./hazards";
+import {
+  GIBS_LAYERS,
+  GIBS_TERMS,
+  gibsTiles,
+  reducedData,
+  type GibsLayerId,
+} from "./imagery";
+import {
+  glyphs,
+  GLYPH_ACTIVITIES,
+  magnitude,
+  markerIcon,
+  markerScale,
+  MMI_COLORS,
+} from "./hazards";
+maplibregl.addProtocol("thermal", thermalProtocol);
+const THERMAL_LAYERS = ["thermal-cells", "thermal-detections"];
 export const colors: Record<string, string> = {
   informational: "#73B6E6",
   minor: "#E4D06C",
@@ -21,6 +53,7 @@ export const colors: Record<string, string> = {
   critical: "#C55064",
   unknown: "#9BA9B3",
 };
+const ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 /** Ascending severity; a cluster takes the colour of its most severe member. */
 const severity = [
   "unknown",
@@ -104,6 +137,7 @@ export default function WorldMap({
   selected,
   onSelect,
   onBounds,
+  initialView = null,
   onCountry,
   follow,
   pulse,
@@ -112,12 +146,21 @@ export default function WorldMap({
   density = false,
   selectedCamera = null,
   geoFeatures = [],
+  thermalTiles = null,
   onGeo = () => {},
+  newsSignals = [],
+  selectedSignal = null,
+  onSignal = () => {},
+  imagery = null,
+  gnss = null,
+  onGnss = () => {},
 }: {
   incidents: IncidentView[];
   selected: string | null;
   onSelect: (id: string) => void;
-  onBounds: (b: string) => void;
+  onBounds: (b: string, view: { zoom: number; lat: number; lon: number }) => void;
+  /** The camera a link opened the map at; otherwise the world frame. */
+  initialView?: { zoom: number; lat: number; lon: number } | null;
   onCountry: (name: string) => void;
   follow: boolean;
   pulse: string[];
@@ -126,13 +169,22 @@ export default function WorldMap({
   density?: boolean;
   selectedCamera?: string | null;
   geoFeatures?: GeoFeature[];
-  onGeo?: (id: string) => void;
+  /** Tile URL template of the thermal layer; null hides it. */
+  thermalTiles?: string | null;
+  onGeo?: (id: string, feature?: GeoFeature) => void;
+  newsSignals?: NewsSignal[];
+  selectedSignal?: string | null;
+  onSignal?: (id: string) => void;
+  imagery?: { layer: GibsLayerId; day: string } | null;
+  gnss?: GnssGrid | null;
+  onGnss?: (cell: number) => void;
 }) {
   const host = useRef<HTMLDivElement>(null),
     map = useRef<GLMap | null>(null),
     data = useRef(incidents),
     select = useRef(onSelect),
     bounds = useRef(onBounds),
+    opening = useRef(initialView),
     country = useRef(onCountry),
     cameraData = useRef(cameras),
     cameraSelect = useRef(onCamera),
@@ -142,6 +194,19 @@ export default function WorldMap({
     geoSelect = useRef(onGeo);
   geoData.current = geoFeatures;
   geoSelect.current = onGeo;
+  const thermalData = useRef(thermalTiles),
+    thermalShown = useRef<string | null>(null);
+  thermalData.current = thermalTiles;
+  const newsData = useRef(newsSignals),
+    newsSelect = useRef(onSignal);
+  newsData.current = newsSignals;
+  newsSelect.current = onSignal;
+  const imageryView = useRef(imagery);
+  imageryView.current = imagery;
+  const gnssData = useRef(gnss),
+    gnssSelect = useRef(onGnss);
+  gnssData.current = gnss;
+  gnssSelect.current = onGnss;
   data.current = incidents;
   select.current = onSelect;
   bounds.current = onBounds;
@@ -149,38 +214,134 @@ export default function WorldMap({
   cameraData.current = cameras;
   cameraSelect.current = onCamera;
   densityEnabled.current = density;
-  const update = () => {
+  const selectedId = useRef(selected),
+    cameraId = useRef(selectedCamera),
+    signalId = useRef(selectedSignal);
+  selectedId.current = selected;
+  cameraId.current = selectedCamera;
+  signalId.current = selectedSignal;
+  // Each source goes to the map worker only when its own inputs change. Sending every source on
+  // any render re-clustered all incidents and re-tiled the thermal points on each pan and SSE event.
+  const updateIncidents = () => {
     const m = map.current;
     if (!m?.getSource("events")) return;
-    const features = data.current
-      .filter((i) => i.location)
-      .map((i) => ({
-        type: "Feature" as const,
-        id: i.id,
-        geometry: {
-          type: "Point" as const,
-          coordinates: [i.location!.lon, i.location!.lat],
-        },
-        properties: {
+    const collection = {
+      type: "FeatureCollection" as const,
+      features: data.current
+        .filter((i) => i.location)
+        .map((i) => ({
+          type: "Feature" as const,
           id: i.id,
-          impact: i.impact,
-          color: colors[i.impact],
-          rank: severity.indexOf(i.impact),
-          icon: markerIcon(i),
-          scale: markerScale(magnitude(i)),
-          selected: i.id === selected ? 1 : 0,
-          approx: i.location!.accuracy !== "point",
+          geometry: {
+            type: "Point" as const,
+            coordinates: [i.location!.lon, i.location!.lat],
+          },
+          properties: {
+            id: i.id,
+            impact: i.impact,
+            color: colors[i.impact],
+            rank: severity.indexOf(i.impact),
+            icon: markerIcon(i),
+            scale: markerScale(magnitude(i)),
+            selected: i.id === selectedId.current ? 1 : 0,
+            // A drawn issuer footprint replaces the ring that stands in for an unknown one.
+            approx: i.location!.accuracy !== "point" && !i.footprint,
+          },
+        })),
+    };
+    (m.getSource("events") as GeoJSONSource).setData(collection);
+    // A hidden heatmap needs no data; turning density on sends the current set.
+    if (densityEnabled.current)
+      (m.getSource("report-density") as GeoJSONSource | undefined)?.setData(
+        collection,
+      );
+    if (m.getLayer("report-heatmap"))
+      m.setLayoutProperty(
+        "report-heatmap",
+        "visibility",
+        densityEnabled.current ? "visible" : "none",
+      );
+  };
+  // Footprints change far less often than incidents. After the first load only the footprints
+  // that appeared, changed or left are patched, so an SSE arrival sends its own parts rather than
+  // every footprint, and selection only restyles the source.
+  const drawnFootprints = useRef<Map<
+      string,
+      { key: string; ids: number[] }
+    > | null>(null),
+    footprintIds = useRef(0);
+  const updateFootprints = () => {
+    const m = map.current,
+      source = m?.getSource("footprints") as GeoJSONSource | undefined;
+    if (!m || !source) return;
+    const next = new Map<string, { lead: string; member: IncidentView }>(
+      data.current.flatMap((s) =>
+        ((s as Situation).members ?? [s]).flatMap((member) =>
+          member.footprint
+            ? [[`${s.id}|${member.id}`, { lead: s.id, member }]]
+            : [],
+        ),
+      ),
+    );
+    const key = (member: IncidentView) =>
+      `${member.version}:${member.footprint!.detail ? 1 : 0}`;
+    const drawn = new Map<string, { key: string; ids: number[] }>();
+    // Short numeric feature ids; incident-based ones made the first load about a third larger.
+    const features = (id: string, lead: string, member: IncidentView) => {
+      const parts = footprintShape(member.footprint!).parts,
+        ids = parts.map(() => footprintIds.current++);
+      drawn.set(id, { key: key(member), ids });
+      return parts.map((part, k) => ({
+        type: "Feature" as const,
+        id: ids[k],
+        geometry: part.geometry,
+        properties: {
+          id: lead,
+          member: member.id,
+          role: member.footprint!.role,
+          color: colors[member.impact],
+          level: part.level ?? 0,
+          // Whole MMI values carry a label; half steps are drawn thinner and unlabelled.
+          label:
+            member.footprint!.role === "shaking_intensity" &&
+            Number.isInteger(part.level)
+              ? "MMI " + ROMAN[part.level!]
+              : "",
         },
       }));
-    (m.getSource("events") as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features,
-    });
-    (m.getSource("report-density") as GeoJSONSource | undefined)?.setData({
-      type: "FeatureCollection",
-      features,
-    });
-    (m.getSource("public-cameras") as GeoJSONSource | undefined)?.setData({
+    };
+    const prior = drawnFootprints.current;
+    if (!prior) {
+      if (next.size)
+        source.setData({
+          type: "FeatureCollection",
+          features: [...next].flatMap(([id, x]) =>
+            features(id, x.lead, x.member),
+          ),
+        });
+    } else {
+      const kept = (id: string) =>
+        next.has(id) && prior.get(id)?.key === key(next.get(id)!.member);
+      const remove = [...prior].flatMap(([id, x]) => (kept(id) ? [] : x.ids));
+      const add = [...next].flatMap(([id, x]) => {
+        if (!kept(id)) return features(id, x.lead, x.member);
+        drawn.set(id, prior.get(id)!);
+        return [];
+      });
+      if (remove.length || add.length) source.updateData({ remove, add });
+    }
+    drawnFootprints.current = drawn;
+    const chosen = selectedId.current ?? "";
+    m.setFilter("footprint-selected", [
+      "any",
+      ["==", ["get", "id"], chosen],
+      ["==", ["get", "member"], chosen],
+    ]);
+  };
+  const updateCameras = () => {
+    (
+      map.current?.getSource("public-cameras") as GeoJSONSource | undefined
+    )?.setData({
       type: "FeatureCollection",
       features: cameraData.current.map((c) => ({
         type: "Feature",
@@ -190,17 +351,35 @@ export default function WorldMap({
           id: c.id,
           name: c.name,
           video: !!c.video_url,
-          selected: c.id === selectedCamera,
+          selected: c.id === cameraId.current,
         },
       })),
     });
-    if (m.getLayer("report-heatmap"))
-      m.setLayoutProperty(
-        "report-heatmap",
-        "visibility",
-        densityEnabled.current ? "visible" : "none",
-      );
-    (m.getSource("geospatial-context") as GeoJSONSource | undefined)?.setData({
+  };
+  const updateNews = () => {
+    (
+      map.current?.getSource("news-signals") as GeoJSONSource | undefined
+    )?.setData({
+      type: "FeatureCollection",
+      features: newsData.current.map((s) => ({
+        type: "Feature",
+        id: s.id,
+        geometry: { type: "Point", coordinates: [s.place.lon, s.place.lat] },
+        properties: {
+          id: s.id,
+          icon: s.rising ? "news-signal-rising" : "news-signal",
+          // Breadth of coverage, not impact: the mark grows with distinct sources up to 20.
+          scale: 0.75 + 0.5 * Math.min(1, s.sources_count / 20),
+          rank: s.score,
+          selected: s.id === signalId.current ? 1 : 0,
+        },
+      })),
+    });
+  };
+  const updateContext = () => {
+    (
+      map.current?.getSource("geospatial-context") as GeoJSONSource | undefined
+    )?.setData({
       type: "FeatureCollection",
       features: geoData.current.map((f) => ({
         type: "Feature",
@@ -208,6 +387,133 @@ export default function WorldMap({
         geometry: f.geometry,
         properties: { id: f.id, kind: f.properties.kind, name: f.name },
       })),
+    });
+  };
+  // The raster source exists only while a day is chosen, so an unused layer requests no tiles.
+  const updateImagery = () => {
+    const m = map.current;
+    if (!m?.getSource("events")) return;
+    const want = imageryView.current,
+      tiles = want && gibsTiles(want.layer, want.day),
+      current = m.getSource("imagery") as maplibregl.RasterTileSource | undefined;
+    if (current?.tiles?.[0] === tiles) return;
+    if (m.getLayer("imagery")) m.removeLayer("imagery");
+    if (current) m.removeSource("imagery");
+    if (!want || !tiles) return;
+    const layer = GIBS_LAYERS[want.layer];
+    m.addSource("imagery", {
+      type: "raster",
+      tiles: [tiles],
+      // With Save-Data, 256 px tiles drawn at 512 px need a quarter of the requests at half the detail.
+      tileSize: reducedData() ? 512 : 256,
+      maxzoom: layer.maxzoom,
+      attribution: `<a href="${GIBS_TERMS}">NASA GIBS</a>, ${layer.sensor}, ${want.day}`,
+    });
+    // Imagery replaces the basemap's area fills and stays under its roads, borders and labels.
+    const own = ["events", "report-density", "geospatial-context", "news-signals", "public-cameras"],
+      style = m.getStyle().layers,
+      lastFill = style.findLastIndex(
+        (l) =>
+          (l.type === "fill" || l.type === "background") &&
+          !own.includes((l as { source?: string }).source ?? ""),
+      );
+    m.addLayer({ id: "imagery", type: "raster", source: "imagery" }, style[lastFill + 1]?.id);
+  };
+  // Tiles load only while a layer of their source is visible, so a hidden layer costs nothing.
+  const updateThermal = () => {
+    const m = map.current,
+      url = thermalData.current;
+    if (!m?.getLayer("clusters")) return;
+    const source = m.getSource("thermal") as VectorTileSource | undefined;
+    if (!source) {
+      if (!url) return;
+      m.addSource("thermal", {
+        type: "vector",
+        tiles: [url],
+        maxzoom: THERMAL_MAX_ZOOM,
+        attribution: "NASA FIRMS / EOSDIS",
+      });
+      m.addLayer(
+        {
+          id: "thermal-cells",
+          type: "circle",
+          source: "thermal",
+          "source-layer": "cells",
+          maxzoom: THERMAL_POINT_ZOOM,
+          paint: {
+            // Area grows with the cell's count: one detection 2 px, 400 or more 8 px.
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["sqrt", ["get", "n"]],
+              1,
+              2,
+              20,
+              8,
+            ],
+            "circle-color": "#D8B28E",
+            "circle-opacity": 0.45,
+            "circle-stroke-color": "#E2C19C",
+            "circle-stroke-width": 0.8,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "thermal-detections",
+          type: "circle",
+          source: "thermal",
+          "source-layer": "detections",
+          minzoom: THERMAL_POINT_ZOOM,
+          paint: {
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 6],
+            "circle-color": "#D8B28E",
+            "circle-opacity": 0.32,
+            "circle-stroke-color": "#E2C19C",
+            "circle-stroke-width": 1.2,
+          },
+        },
+        "clusters",
+      );
+    } else if (url && thermalShown.current !== url) source.setTiles([url]);
+    if (url) thermalShown.current = url;
+    for (const id of THERMAL_LAYERS)
+      m.setLayoutProperty(id, "visibility", url ? "visible" : "none");
+  };
+  // One square per published cell, coloured by GPSJam's bands. Turning the layer off only hides
+  // it, so the grid's thousands of cells go to the map worker once per grid.
+  const gnssSent = useRef<GnssGrid | null>(null);
+  const updateGnss = () => {
+    const m = map.current,
+      grid = gnssData.current,
+      size = grid?.cell_degrees ?? 0;
+    if (!m?.getLayer("gnss-cells")) return;
+    // Hidden without a grid, so its ODbL credit shows only while its data does.
+    m.setLayoutProperty("gnss-cells", "visibility", grid ? "visible" : "none");
+    if (!grid || grid === gnssSent.current) return;
+    gnssSent.current = grid;
+    (m.getSource("gnss-grid") as GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: grid.cells.map(
+        ([south, west, aircraft, degraded], i) => ({
+          type: "Feature",
+          id: i,
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [west, south],
+                [west + size, south],
+                [west + size, south + size],
+                [west, south + size],
+                [west, south],
+              ],
+            ],
+          },
+          properties: { cell: i, level: gnssLevel(aircraft, degraded) },
+        }),
+      ),
     });
   };
   useEffect(() => {
@@ -256,6 +562,13 @@ export default function WorldMap({
         clusterMaxZoom: 10,
         clusterRadius: 40,
         clusterProperties: { rank: ["max", ["get", "rank"]] },
+        // The ODbL asks for this notice wherever its data is shown, not only in the record. The public demo has no ADSB.lol data.
+        ...(__PUBLIC_DEMO__
+          ? {}
+          : {
+              attribution:
+                'Contains information from <a href="https://adsb.lol">ADSB.lol</a>, made available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL</a>',
+            }),
       });
       m.addLayer({
         id: "clusters",
@@ -296,7 +609,123 @@ export default function WorldMap({
         },
         paint: { "text-color": "#E7EDF1" },
       });
-      // GDACS and other area records are centroids, so a soft ring stands in for an unknown footprint.
+      // Issuer geometry sits under every marker and context layer. Fills stay faint so a warning
+      // area reads as context, never as surveyed damage; contour lines are lines, not areas.
+      m.addSource("footprints", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      drawnFootprints.current = null;
+      m.addLayer(
+        {
+          id: "footprint-fill",
+          type: "fill",
+          source: "footprints",
+          filter: ["!=", ["get", "role"], "shaking_intensity"],
+          paint: {
+            "fill-color": ["get", "color"],
+            // Nested GDACS wind buffers add up towards the strongest winds.
+            "fill-opacity": [
+              "match",
+              ["get", "role"],
+              "advisory_area",
+              0.1,
+              0.05,
+            ],
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-outline",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "role"], "advisory_area"],
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1,
+            "line-opacity": 0.6,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-modelled",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "role"], "inferred_affected_area"],
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1,
+            "line-opacity": 0.6,
+            "line-dasharray": [4, 3],
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-contours",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "role"], "shaking_intensity"],
+          layout: { "line-join": "round" },
+          paint: {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["get", "level"],
+              ...MMI_COLORS.flat(),
+            ],
+            "line-width": [
+              "case",
+              ["==", ["%", ["get", "level"], 1], 0],
+              1.4,
+              0.7,
+            ],
+            "line-opacity": 0.75,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-labels",
+          type: "symbol",
+          source: "footprints",
+          filter: ["!=", ["get", "label"], ""],
+          minzoom: 5,
+          layout: {
+            "symbol-placement": "line",
+            "text-field": ["get", "label"],
+            "text-size": 10,
+            "text-font": ["Noto Sans Regular"],
+          },
+          paint: {
+            "text-color": "#D6E1E7",
+            "text-halo-color": "#0D151C",
+            "text-halo-width": 1.5,
+          },
+        },
+        "clusters",
+      );
+      m.addLayer(
+        {
+          id: "footprint-selected",
+          type: "line",
+          source: "footprints",
+          filter: ["==", ["get", "id"], ""],
+          paint: {
+            "line-color": "#E7EDF1",
+            "line-width": 1.5,
+            "line-opacity": 0.8,
+          },
+        },
+        "clusters",
+      );
+      // Area records without issuer geometry are centroids, so a soft ring stands in for their unknown footprint.
       m.addLayer({
         id: "area-cue",
         type: "circle",
@@ -348,12 +777,12 @@ export default function WorldMap({
             }),
             { pixelRatio: 2 },
           );
-        // Hazard glyph on an impact-coloured disc, with the impact shape as a
+        // Activity glyph on an impact-coloured disc, with the impact shape as a
         // corner badge so impact never rests on colour alone. Unknown stays hollow.
-        for (const hazard of HAZARDS)
-          if (!m.hasImage(`hazard-${hazard}-${impact}`))
+        for (const activity of GLYPH_ACTIVITIES)
+          if (!m.hasImage(`hazard-${activity}-${impact}`))
             m.addImage(
-              `hazard-${hazard}-${impact}`,
+              `hazard-${activity}-${impact}`,
               canvasImage(64, (ctx) => {
                 const hollow = impact === "unknown";
                 ctx.beginPath();
@@ -369,7 +798,7 @@ export default function WorldMap({
                 ctx.lineWidth = 2.3;
                 ctx.lineCap = ctx.lineJoin = "round";
                 ctx.strokeStyle = hollow ? color : "#0D151C";
-                ctx.stroke(new Path2D(glyphs[hazard]));
+                ctx.stroke(new Path2D(glyphs[activity]));
                 ctx.restore();
                 if (hollow) return;
                 ctx.translate(20, -20);
@@ -414,11 +843,41 @@ export default function WorldMap({
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
+      // Private only: the public demo cannot offer the derived grid that the ODbL requires.
+      if (!__PUBLIC_DEMO__) {
+        m.addSource("gnss-grid", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+          attribution:
+            'Contains information from <a href="https://github.com/adsblol/globe_history_2026">ADSB.lol globe_history</a>, made available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL</a>',
+        });
+        m.addLayer(
+          {
+            id: "gnss-cells",
+            type: "fill",
+            source: "gnss-grid",
+            layout: { visibility: "none" },
+            paint: {
+              "fill-color": [
+                "match",
+                ["get", "level"],
+                "high",
+                GNSS_COLORS.high,
+                "medium",
+                GNSS_COLORS.medium,
+                GNSS_COLORS.low,
+              ],
+              "fill-opacity": ["match", ["get", "level"], "low", 0.16, 0.45],
+              "fill-antialias": false,
+            },
+          },
+          "clusters",
+        );
+      }
       m.addSource("geospatial-context", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
-        attribution:
-          "NASA FIRMS / EOSDIS; Copernicus Emergency Management Service / European Union",
+        attribution: "Copernicus Emergency Management Service / European Union",
       });
       m.addLayer(
         {
@@ -445,23 +904,6 @@ export default function WorldMap({
         },
         "clusters",
       );
-      m.addLayer(
-        {
-          id: "thermal-detections",
-          type: "circle",
-          source: "geospatial-context",
-          filter: ["==", ["get", "kind"], "thermal_detection"],
-          paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 3, 10, 6],
-            "circle-color": "#D8B28E",
-            "circle-opacity": 0.32,
-            "circle-stroke-color": "#E2C19C",
-            "circle-stroke-width": 1.2,
-          },
-        },
-        "clusters",
-      );
-      m.addLayer({id:"thermal-hit",type:"circle",source:"geospatial-context",filter:["==",["get","kind"],"thermal_detection"],paint:{"circle-radius":22,"circle-opacity":0}},"clusters");
       m.addLayer(
         {
           id: "report-heatmap",
@@ -507,6 +949,57 @@ export default function WorldMap({
         },
         "clusters",
       );
+      // A broadcast mark on a rounded square, never an impact shape or colour: coverage is not an event.
+      for (const rising of [false, true])
+        if (!m.hasImage(rising ? "news-signal-rising" : "news-signal"))
+          m.addImage(
+            rising ? "news-signal-rising" : "news-signal",
+            canvasImage(64, (ctx) => {
+              ctx.beginPath();
+              ctx.roundRect(-21, -21, 42, 42, 10);
+              ctx.fillStyle = rising ? NEWS_COLOR : "#0D151C";
+              ctx.strokeStyle = rising ? "#0D151C" : NEWS_COLOR;
+              ctx.lineWidth = 3;
+              ctx.fill();
+              ctx.stroke();
+              ctx.scale(1.35, 1.35);
+              ctx.translate(-12, -12);
+              ctx.lineWidth = 2.3;
+              ctx.lineCap = ctx.lineJoin = "round";
+              ctx.strokeStyle = rising ? "#0D151C" : NEWS_COLOR;
+              ctx.stroke(new Path2D(NEWS_GLYPH));
+            }),
+            { pixelRatio: 2 },
+          );
+      m.addSource("news-signals", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        // The public demo has no GDELT data.
+        ...(__PUBLIC_DEMO__ ? {} : { attribution: "GDELT Project" }),
+      });
+      m.addLayer({
+        id: "news-hit",
+        type: "circle",
+        source: "news-signals",
+        paint: {
+          "circle-radius": ["*", ["get", "scale"], 22],
+          "circle-opacity": 0,
+          "circle-stroke-color": NEWS_COLOR,
+          "circle-stroke-width": ["case", ["==", ["get", "selected"], 1], 2, 0],
+        },
+      });
+      m.addLayer({
+        id: "news-symbols",
+        type: "symbol",
+        source: "news-signals",
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["get", "scale"],
+          "symbol-sort-key": ["-", ["get", "rank"]],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      });
       m.addSource("public-cameras", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -566,14 +1059,24 @@ export default function WorldMap({
           "text-halo-width": 2,
         },
       });
-      update();
+      updateIncidents();
+      updateFootprints();
+      updateCameras();
+      updateNews();
+      updateContext();
+      updateImagery();
+      updateThermal();
+      gnssSent.current = null;
+      updateGnss();
     };
     m.on("style.load", layers);
     m.on("load", () => {
       if (host.current) host.current.dataset.mapReady = "true";
-      initialFrame();
+      const view = opening.current;
+      if (view) m.jumpTo({ center: [view.lon, view.lat], zoom: view.zoom });
+      else initialFrame();
       layers();
-      fetch("/countries.geojson", {
+      fetch(import.meta.env.BASE_URL + "countries.geojson", {
         credentials: "same-origin",
         signal: AbortSignal.timeout(10000),
       })
@@ -637,7 +1140,7 @@ export default function WorldMap({
           m.once("style.load", () => {
             layers();
             m.jumpTo(camera);
-            fetch("/countries.geojson", {
+            fetch(import.meta.env.BASE_URL + "countries.geojson", {
               credentials: "same-origin",
               signal: AbortSignal.timeout(10000),
             })
@@ -664,6 +1167,8 @@ export default function WorldMap({
       m.addImage(e.id, ctx.getImageData(0, 0, 12, 12), { pixelRatio: 2 });
     });
     m.on("error", (e) => {
+      // A day GIBS has no tile for is reported beside the date, not as missing map detail.
+      if ((e as { sourceId?: string }).sourceId === "imagery") return;
       if (host.current)
         host.current.dataset.mapError = e.error?.message || "Unknown map error";
       if (/tile|fetch|load|ajax/i.test(e.error?.message || ""))
@@ -681,7 +1186,8 @@ export default function WorldMap({
         host.current.dataset.mapZoom = String(m.getZoom());
         host.current.dataset.mapBounds = view;
       }
-      bounds.current(view);
+      const center = m.getCenter().wrap();
+      bounds.current(view, { zoom: m.getZoom(), lat: center.lat, lon: center.lng });
     });
     m.on("click", "points", (e) => {
       const id = e.features?.[0]?.properties?.id;
@@ -695,6 +1201,12 @@ export default function WorldMap({
       ).getClusterExpansionZoom(f.properties.cluster_id);
       m.easeTo({ center: (f.geometry as any).coordinates, zoom: z });
     });
+    m.on("click", "news-hit", (e) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (id) newsSelect.current(id);
+    });
+    m.on("mouseenter", "news-hit", () => (m.getCanvas().style.cursor = "pointer"));
+    m.on("mouseleave", "news-hit", () => (m.getCanvas().style.cursor = ""));
     m.on("click", "camera-points", (e) => {
       const id = e.features?.[0]?.properties?.id;
       if (id) cameraSelect.current(id);
@@ -717,50 +1229,101 @@ export default function WorldMap({
       "camera-points",
       () => (m.getCanvas().style.cursor = ""),
     );
-    const contextClick = (event: maplibregl.MapMouseEvent) => {
-      const hits = m.queryRenderedFeatures(event.point);
-      if (
-        hits.some((f) =>
-          ["points", "clusters", "camera-points", "camera-clusters"].includes(
-            f.layer.id,
-          ),
-        )
-      )
-        return;
-      const feature = hits.find((f) =>
-        ["thermal-hit", "thermal-detections", "mapping-areas", "mapping-outlines"].includes(
-          f.layer.id,
-        ),
-      );
-      if (feature?.properties?.id) geoSelect.current(feature.properties.id);
-    };
     for (const layer of [
-      "thermal-hit",
-      "thermal-detections",
+      ...THERMAL_LAYERS,
       "mapping-areas",
       "mapping-outlines",
     ]) {
-      m.on("click", layer, contextClick);
       m.on("mouseenter", layer, () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", layer, () => (m.getCanvas().style.cursor = ""));
     }
-    m.on("click", (e) => {
-      const fs = m.queryRenderedFeatures(e.point);
+    const markers = [
+      "points",
+      "clusters",
+      "camera-points",
+      "camera-clusters",
+      "news-hit",
+    ];
+    // Thermal marks are a few pixels wide, so a click takes the nearest one within 12 px.
+    const nearestThermal = (e: maplibregl.MapMouseEvent) => {
+      if (!m.getLayer("thermal-cells")) return;
+      const box: [PointLike, PointLike] = [
+        [e.point.x - 12, e.point.y - 12],
+        [e.point.x + 12, e.point.y + 12],
+      ];
+      let best:
+        | { distance: number; feature: MapGeoJSONFeature; at: [number, number] }
+        | undefined;
+      for (const feature of m.queryRenderedFeatures(box, {
+        layers: THERMAL_LAYERS,
+      })) {
+        const g = feature.geometry as any;
+        for (const [lon, lat] of g.type === "Point"
+          ? [g.coordinates]
+          : g.coordinates) {
+          // The clicked world copy can be a whole turn from the tile's longitude.
+          const p = m.project([
+              lon + 360 * Math.round((e.lngLat.lng - lon) / 360),
+              lat,
+            ]),
+            distance = Math.hypot(p.x - e.point.x, p.y - e.point.y);
+          if (!best || distance < best.distance)
+            best = { distance, feature, at: [lon, lat] };
+        }
+      }
+      return best;
+    };
+    // An issuer area selects its incident only where nothing more specific was hit.
+    m.on("click", "footprint-fill", (e) => {
       if (
-        fs.some((f) =>
-          [
-            "points",
-            "clusters",
-            "camera-points",
-            "camera-clusters",
-            "thermal-hit",
-            "thermal-detections",
-            "mapping-areas",
-            "mapping-outlines",
-          ].includes(f.layer.id),
-        )
+        nearestThermal(e) ||
+        m
+          .queryRenderedFeatures(e.point)
+          .some((f) =>
+            [...markers, "mapping-areas", "mapping-outlines"].includes(f.layer.id),
+          )
       )
         return;
+      const id = e.features?.[0]?.properties?.id;
+      if (id) select.current(id);
+    });
+    m.on("click", (e) => {
+      const fs = m.queryRenderedFeatures(e.point);
+      if (fs.some((f) => markers.includes(f.layer.id)))
+        return;
+      const thermal = nearestThermal(e);
+      if (thermal) {
+        const { feature, at } = thermal,
+          p = feature.properties;
+        if (feature.layer.id === "thermal-cells")
+          m.easeTo({ center: at, zoom: THERMAL_POINT_ZOOM });
+        else {
+          // Tile coordinates resolve to about 20 m at most, so four decimals claim no more.
+          const detection = thermalDetection(
+            p.sensor as ThermalSensorId,
+            p.at * 1000,
+            Math.round(at[0] * 1e4) / 1e4,
+            Math.round(at[1] * 1e4) / 1e4,
+            p.confidence,
+          );
+          geoSelect.current(detection.id, detection);
+        }
+        return;
+      }
+      const area = fs.find((f) =>
+        ["mapping-areas", "mapping-outlines"].includes(f.layer.id),
+      );
+      if (area?.properties?.id) {
+        geoSelect.current(area.properties.id);
+        return;
+      }
+      if (fs.some((f) => f.layer.id === "footprint-fill")) return;
+      // A GNSS cell opens only where no marker, detection, area or footprint was hit.
+      const cell = fs.find((f) => f.layer.id === "gnss-cells")?.properties?.cell;
+      if (typeof cell === "number") {
+        gnssSelect.current(cell);
+        return;
+      }
       const f = fs.find(
         (f) => f.properties?.ADMIN || f.properties?.["name:en"],
       );
@@ -778,14 +1341,14 @@ export default function WorldMap({
       m.remove();
     };
   }, []);
-  useEffect(update, [
-    incidents,
-    selected,
-    cameras,
-    density,
-    selectedCamera,
-    geoFeatures,
-  ]);
+  useEffect(updateIncidents, [incidents, selected, density]);
+  useEffect(updateFootprints, [incidents, selected]);
+  useEffect(updateCameras, [cameras, selectedCamera]);
+  useEffect(updateNews, [newsSignals, selectedSignal]);
+  useEffect(updateContext, [geoFeatures]);
+  useEffect(updateImagery, [imagery?.layer, imagery?.day]);
+  useEffect(updateThermal, [thermalTiles]);
+  useEffect(updateGnss, [gnss]);
   useEffect(() => {
     if (!follow || !pulse.length || document.hidden) return;
     const i = incidents.find((x) => x.id === pulse[0]);

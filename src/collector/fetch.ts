@@ -1,5 +1,7 @@
 import { IDMC_UKRAINE_URL } from "./adapters/idmc.js";
 import { DEMOS_QUERY_URL, DEMOS_READ_QUERY } from "./adapters/demos.js";
+import { EASA_CZIB_TEXT_URL } from "./adapters/easa.js";
+import type { LagSample } from "../shared/coverage.js";
 /** Only registry-approved HTTPS origins may be contacted. Never accept source URLs from reports. */
 export const APPROVED_HOSTS = new Set([
   "api.protezionecivile.it",
@@ -20,9 +22,17 @@ export const APPROVED_HOSTS = new Set([
   "api.demonstrations.org",
   "data.humdata.org",
   "earthquake.usgs.gov",
+  "www.seismicportal.eu",
   "www.gdacs.org",
   "api.weather.gov",
   "api.weather.gc.ca",
+  "publicalert.pagasa.dost.gov.ph",
+  "apiprevmet3.inmet.gov.br",
+  "api.adsb.lol",
+  "aviationweather.gov",
+  "www.easa.europa.eu",
+  "stat.ripe.net",
+  "data.gdeltproject.org",
 ]);
 function idmcFilestore(u: URL) {
   return (
@@ -69,6 +79,16 @@ export type FetchState = {
   pending_hash?: string;
   pending_offset?: number;
   accepted_items?: Record<string, string>;
+  /** Rotation through RIPEstat's one-country-per-request routing statistics: the next country's index and every drop still open in any country. */
+  routing?: { next: number; ongoing: string[] };
+  /** GDELT file stamps already ingested among the newest listed. */
+  news_files?: string[];
+  /** Recent issuer-time-to-ingest samples for new and changed records. */
+  issuer_lag?: LagSample[];
+  /** CAP documents an issuer index lists that were read, by URL: the index's stamp for each and the alert it held. */
+  cap_documents?: Record<string, { stamp: string; identifier: string }>;
+  /** Issuer geometry reads in the last complete poll; pending records published without geometry and are read again next poll. */
+  footprints?: { read: number; pending: string[]; error: string | null };
 };
 export type FetchOptions = {
   fetch?: typeof fetch;
@@ -82,6 +102,8 @@ export type FetchOptions = {
   accept?: string;
   /** Only the documented public, read-only Demos event query; never arbitrary POST. */
   demosQuery?: boolean;
+  /** A GDELT ZIP file, returned as bytes rather than text. */
+  binary?: boolean;
 };
 export function isPublicAddress(ip: string) {
   return (
@@ -90,11 +112,19 @@ export function isPublicAddress(ip: string) {
     ) && !ip.includes(":ffff:")
   );
 }
+export type FetchResult = {
+  notModified: boolean;
+  text: string;
+  /** Set only for a binary request. */
+  bytes?: Uint8Array<ArrayBuffer>;
+  contentType: string;
+  state: FetchState;
+};
 export async function fetchSource(
   url: string,
   state: FetchState = {},
   options: FetchOptions = {},
-) {
+): Promise<FetchResult> {
   const fetcher = options.fetch ?? fetch;
   let target = checkedURL(url);
   if (options.demosQuery && target.href !== DEMOS_QUERY_URL)
@@ -184,14 +214,25 @@ export async function fetchSource(
         };
       }
       const mime = r.headers.get("content-type") ?? "";
+      const gdelt = target.hostname === "data.gdeltproject.org";
+      if (
+        options.binary &&
+        !(gdelt && /^application\/zip\b/i.test(mime))
+      )
+        throw Error("unsupported_source_mime");
       const licensedIdmcCsv =
         ((target.hostname === "data.humdata.org" &&
           target.pathname ===
             "/dataset/52880c3a-715d-4e01-b75a-1fc3f64babf6/resource/ee65f9fe-f1c7-4466-9f83-620b50eccdc6/download/ukr_idmc_idu_events.csv") ||
           idmcFilestore(target)) &&
         /^text\/csv\b/i.test(mime);
+      const easaCsv =
+        target.href === EASA_CZIB_TEXT_URL && /^text\/csv\b/i.test(mime);
       if (
+        !options.binary &&
         !licensedIdmcCsv &&
+        !easaCsv &&
+        !(gdelt && /^text\/plain\b/i.test(mime)) &&
         !/(?:xml|json|protobuf)/i.test(mime) &&
         !(options.allowHTML && /^text\/html\b/i.test(mime))
       )
@@ -221,7 +262,8 @@ export async function fetchSource(
       }
       return {
         notModified: false,
-        text: new TextDecoder().decode(data),
+        text: options.binary ? "" : new TextDecoder().decode(data),
+        ...(options.binary ? { bytes: data } : {}),
         contentType: mime,
         state: {
           etag: r.headers.get("etag") ?? undefined,

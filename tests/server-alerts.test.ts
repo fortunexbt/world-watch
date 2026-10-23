@@ -5,6 +5,7 @@ import {
   alertMaterialityProjection,
   alertMaterialityVersion,
   intersects,
+  situationDecision,
 } from "../src/server/alerts";
 import type { IncidentView } from "../src/shared/contracts";
 
@@ -214,4 +215,43 @@ test("ended, future and first-time retractions cannot trigger urgent notices", (
     "future_event",
   );
   assert.equal(alertDecision({ ...view, cancelled: true }, {}, null, null, time).state, "suppressed");
+});
+
+test("a linked record's first notice is covered by its partner's unless it escalates or changes materially", () => {
+  const fresh = alertDecision(view, rule, geometry, null, time);
+  const partner = (impact: string) => ({
+    incident_id: "usgs",
+    state: "eligible_ui",
+    created_at: "2026-10-21T11:00:00Z",
+    material_projection: alertMaterialityProjection({ ...view, impact } as IncidentView, rule),
+  });
+  assert.deepEqual(situationDecision(fresh, view, null, partner("severe"), null), {
+    state: "suppressed",
+    reason: "same_situation_notified: linked incident usgs already notified this rule",
+  });
+  assert.match(
+    situationDecision(fresh, view, null, partner("significant"), null).reason,
+    /^severity_escalation over linked incident usgs; broad_area/,
+  );
+  assert.equal(situationDecision(fresh, view, null, null, null), fresh, "no partner notice, no change");
+  const covered = { state: "suppressed", material_version: alertMaterialityVersion(view, rule) };
+  assert.equal(
+    situationDecision(fresh, view, null, partner("significant"), covered).state,
+    "suppressed",
+    "an escalation already weighed when the record was covered does not repeat",
+  );
+  const moved = { ...view, location: { ...view.location!, lon: 2.36 } };
+  assert.match(
+    situationDecision(alertDecision(moved, rule, geometry, null, time), moved, null, partner("severe"), covered).reason,
+    /^material change since covered by linked incident usgs/,
+  );
+  const own = { state: "eligible_ui", material_version: "alert-material-v1:old" };
+  const update = alertDecision(moved, rule, geometry, own, time);
+  assert.equal(situationDecision(update, moved, own, partner("severe"), null), update, "a record with its own notice keeps PR 0 semantics");
+  const cancelled = { ...view, cancelled: true };
+  const correction = alertDecision(cancelled, rule, geometry, own, time);
+  assert.match(correction.reason, /^correction_or_retraction/);
+  assert.equal(situationDecision(correction, cancelled, own, partner("severe"), null), correction);
+  const quiet = alertDecision({ ...view, expires_at: "2020-01-01T00:00:00Z" }, rule, geometry, null, time);
+  assert.equal(situationDecision(quiet, view, null, partner("severe"), null), quiet, "a suppression stays as it was");
 });

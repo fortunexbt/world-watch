@@ -7,6 +7,10 @@ import { parseUsgs } from "../src/collector/adapters/usgs.js";
 import { parseGdacs } from "../src/collector/adapters/gdacs.js";
 import { parseNws } from "../src/collector/adapters/nws.js";
 import { parseEccc } from "../src/collector/adapters/eccc.js";
+import { parseAdsbLol } from "../src/collector/adapters/adsblol.js";
+import { parseRipestatRouting } from "../src/collector/adapters/ripestat.js";
+import { parseAwcSigmets } from "../src/collector/adapters/awc.js";
+import { parseEasaCzibs } from "../src/collector/adapters/easa.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import server, { type Env } from "../src/server/index.js";
 import type { IncidentView } from "../src/shared/contracts.js";
@@ -195,6 +199,116 @@ test("NWS and ECCC warnings are counted per issuer, hazard and country", () => {
     b.statements.flatMap((s) => s.incident_ids).sort(),
     [...nws.filter((v) => !v.cancelled), ...eccc].map((v) => v.id).sort(),
   );
+});
+
+test("ADSB.lol aircraft are counted per squawk code as unverified reports, the most serious code first", () => {
+  const source = sourceRegistry.find((s) => s.id === "global-adsblol-emergency-squawks")!;
+  const fixture = JSON.parse(readFileSync("tests/fixtures/adsblol-aircraft.json", "utf8"));
+  const codes = ["7700", "7600", "7700", "7500", "7700", "7600", "7700"];
+  fixture.ac.forEach((a: any, i: number) => (a.squawk = codes[i]));
+  const aircraft = parseAdsbLol(source, fixture).map((row) =>
+    view(JSON.parse(row.excerpts[0].text), {
+      activity: row.official!.activity!,
+      impact: row.official!.impact!,
+      evidence_status: "unverified",
+    }),
+  );
+  const b = brief(aircraft);
+  assert.deepEqual(
+    b.statements.map((s) => s.text),
+    [
+      "1 aircraft reported squawking 7500 (unlawful interference).",
+      "4 aircraft reported squawking 7700 (general emergency).",
+      "2 aircraft reported squawking 7600 (radio failure).",
+    ],
+  );
+  // 7500 maps to significant, the only level that pins; nothing reaches severe.
+  assert.deepEqual(b.pins.map((p) => [p.impact, p.evidence_status]), [["significant", "unverified"]]);
+  // An analysed unverified record is model output, never a structured one.
+  assert.equal(structuredBrief(aircraft.map((v) => ({ ...v, analyzed_at: "2026-10-22T11:00:00Z" })), 168, clock), null);
+});
+
+test("ash SIGMETs are briefed by volcano and EASA bulletins by the countries they cover, withdrawn ones left out", () => {
+  const source = (id: string) => sourceRegistry.find((s) => s.id === id)!;
+  const published = (row: ReturnType<typeof parseAwcSigmets>[number]) =>
+    view(JSON.parse(row.excerpts[0].text), {
+      activity: row.official!.activity!,
+      impact: row.official!.impact!,
+      cancelled: row.official!.cancelled ?? false,
+      event_start: row.official!.effective_at,
+      expires_at: row.official!.expires_at,
+      location: row.source_geo ? { ...row.source_geo, country: row.source_geo.country ?? null, radius_km: row.source_geo.radius_km ?? 20 } : null,
+    });
+  const awc = JSON.parse(readFileSync("tests/fixtures/awc-sigmets.json", "utf8"));
+  const ash = parseAwcSigmets(source("global-awc-volcanic-ash-sigmets"), awc).map(published);
+  const at = Date.parse("2026-09-28T00:00:00Z");
+  assert.deepEqual(
+    structuredBrief(ash, 24, at)!.statements.map((s) => s.text),
+    ["2 volcanic ash SIGMETs for aircraft near Sheveluch."],
+  );
+  const renamed = structuredClone(awc);
+  renamed[0].rawSigmet = renamed[0].rawSigmet.replace("MT SHEVELUCH", "MT SAKURAJIMA (AIRA CALDERA)");
+  assert.deepEqual(
+    structuredBrief(parseAwcSigmets(source("global-awc-volcanic-ash-sigmets"), renamed).map(published), 24, at)!
+      .statements.map((s) => s.text),
+    // The newer SIGMET leads.
+    ["2 volcanic ash SIGMETs for aircraft near Sheveluch and Sakurajima (Aira Caldera)."],
+  );
+  // KILO 2 ends at 00:12 and KILO 3 at 03:45 on 28 September.
+  assert.deepEqual(
+    structuredBrief(ash, 24, Date.parse("2026-09-28T01:00:00Z"))!.statements.map((s) => s.text),
+    ["1 volcanic ash SIGMET for aircraft near Sheveluch."],
+  );
+  const czibs = parseEasaCzibs(
+    source("global-easa-conflict-zone-bulletins"),
+    JSON.parse(readFileSync("tests/fixtures/easa-czibs.json", "utf8")),
+    readFileSync("tests/fixtures/easa-czibs.csv", "utf8"),
+  ).map(published);
+  const b = structuredBrief(czibs, 168, Date.parse("2026-10-23T12:00:00Z"))!;
+  assert.deepEqual(b.statements.map((s) => s.text), [
+    "16 EASA conflict zone bulletins in force for Saudi Arabia, Jordan, Bahrain and 17 other countries.",
+  ]);
+  assert.equal(b.statements[0].incident_ids.length, 16);
+  assert(czibs.filter((v) => v.cancelled).every((v) => !b.statements[0].incident_ids.includes(v.id)));
+});
+
+test("routing drops are briefed as measured connectivity drops in their countries, and recovered ones drop out", () => {
+  const source = sourceRegistry.find((s) => s.id === "global-ripestat-routing")!;
+  const fixture = JSON.parse(
+    readFileSync("tests/fixtures/ripestat-routing.json", "utf8"),
+  );
+  const published = (
+    country: string,
+    payload: unknown,
+    at: number,
+    extra: Partial<IncidentView> = {},
+  ) =>
+    parseRipestatRouting(source, country, payload, at)!.map((row) =>
+      view(JSON.parse(row.excerpts[0].text), {
+        activity: row.official!.activity!,
+        impact: row.official!.impact!,
+        event_start: row.official!.effective_at,
+        expires_at: row.official!.expires_at,
+        location: { ...row.source_geo!, country: row.source_geo!.country ?? null, radius_km: row.source_geo!.radius_km! },
+        ...extra,
+      }),
+    );
+  // Both real shutdowns, published as still open, then Syria's as recovered.
+  const [iran] = published("IR", fixture["ir-2019"], Date.parse("2019-11-21T14:00:00Z"), { expires_at: null, current_listing: true });
+  const [syria] = published("SY", fixture["sy-2012"], Date.parse("2012-12-01T17:00:00Z"), { expires_at: null, current_listing: true });
+  const at = Date.parse("2019-11-21T15:00:00Z");
+  assert.deepEqual(
+    structuredBrief([iran], 24, at)!.statements.map((s) => s.text),
+    ["Internet connectivity drop measured in Iran."],
+  );
+  const both = structuredBrief([iran, syria], 24, at)!;
+  assert.deepEqual(both.statements.map((s) => s.text), [
+    "Internet connectivity drops measured in Syria and Iran.",
+  ]);
+  assert.deepEqual(both.statements[0].incident_ids, [syria.id, iran.id]);
+  assert.deepEqual(both.pins.map((p) => p.incident_id), [syria.id, iran.id]);
+  const [ended] = published("SY", fixture["sy-2012"], Date.parse("2012-12-01T17:00:00Z"));
+  assert.equal(structuredBrief([ended], 24, Date.parse("2012-12-01T17:00:00Z")), null);
 });
 
 test("affected countries are named with articles, deduplicated and capped, with the issuer text as fallback", () => {
@@ -417,8 +531,8 @@ test("the structured brief reuses the snapshot's live read and then answers poll
     assert.ok(first.rowsRead <= snapshot.rowsRead, `brief ${first.rowsRead} rows, snapshot ${snapshot.rowsRead}`);
     assert.deepEqual(
       cold.map((r) => r.sql.match(/FROM (\w+)/)?.[1]),
-      ["brief_windows", "brief_windows", "workers", "sources"],
-      "beyond the shared head the cold brief reads only brief state, the worker check and source rights",
+      ["brief_windows", "brief_windows", "workers", "sources", "sources"],
+      "beyond the shared head the cold brief reads only brief state, the worker check, source rights and the GDELT sources' rights",
     );
   } finally {
     s.db.close();

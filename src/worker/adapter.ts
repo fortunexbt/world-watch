@@ -286,75 +286,68 @@ export async function sandboxDoctor() {
   }
 }
 
-async function analyzeChunk(
-  inputs: JobInput[],
-  options: {
-    tier?: string;
-    effort?: string;
-    timeout?: number;
-    budget?: DailyBudget;
-  } = {},
-) {
-  if (!inputs.length || inputs.length > 12)
-    throw new WorkerError("invalid", "bounded_batch_required");
-  if (Buffer.byteLength(JSON.stringify(inputs)) > 80000)
-    throw new WorkerError("invalid", "batch_input_limit");
+export type BackendRequest = {
+  invocation_id: string;
+  instructions: string;
+  payload: unknown;
+  schema: Record<string, any>;
+  timeout: number;
+  tier: string;
+  effort: string;
+  budget?: DailyBudget;
+};
+export type BackendRun = Omit<
+  ModelRun,
+  "invocation_id" | "prompt_version" | "schema_version" | "duration_ms"
+>;
+/** Executes one bounded extraction and returns the parsed model output; the host validates it. */
+export type Backend = (
+  request: BackendRequest,
+) => Promise<{ output: unknown; run: BackendRun }>;
+export type AnalyzeOptions = {
+  tier?: string;
+  effort?: string;
+  timeout?: number;
+  budget?: DailyBudget;
+  backend?: Backend;
+};
+export function batchSchema(inputs: JobInput[]) {
+  const jsonSchema: any = zodToJsonSchema(WireBatch, {
+    $refStrategy: "none",
+    target: "openAi",
+  });
+  jsonSchema.properties.results.items.properties.index.enum = inputs.map(
+    (_, i) => i,
+  );
+  const ids = [...new Set(inputs.flatMap((r) => r.excerpts.map((e) => e.id)))];
+  const claimSchema =
+    jsonSchema.properties.results.items.properties.claims.items;
+  const citations = [
+    claimSchema.properties.evidence_ids,
+    claimSchema.properties.places.items.properties.evidence_ids,
+    claimSchema.properties.official_instruction.anyOf[0].properties
+      .evidence_ids,
+  ];
+  for (const citation of citations) {
+    citation.minItems = 1;
+    citation.items.enum = ids;
+  }
+  return jsonSchema;
+}
+export const codexBackend: Backend = async (request) => {
   const dir = await mkdtemp(path.join(tmpdir(), "ew-luna-"));
   try {
-    await mkdir(dir, { recursive: true });
     const schema = path.join(dir, "schema.json"),
       out = path.join(dir, "result.json");
-    const payload = compactInputs(inputs);
-    const jsonSchema: any = zodToJsonSchema(WireBatch, {
-      $refStrategy: "none",
-      target: "openAi",
-    });
-    jsonSchema.properties.results.items.properties.index.enum = inputs.map(
-      (_, i) => i,
-    );
-    const ids = [
-      ...new Set(inputs.flatMap((r) => r.excerpts.map((e) => e.id))),
-    ];
-    const claimSchema =
-      jsonSchema.properties.results.items.properties.claims.items;
-    const citations = [
-      claimSchema.properties.evidence_ids,
-      claimSchema.properties.places.items.properties.evidence_ids,
-      claimSchema.properties.official_instruction.anyOf[0].properties
-        .evidence_ids,
-    ];
-    for (const citation of citations) {
-      citation.minItems = 1;
-      citation.items.enum = ids;
-    }
-
-    await writeFile(path.join(dir, "analyst.txt"), ANALYST);
-    await writeFile(schema, JSON.stringify(jsonSchema));
+    await writeFile(path.join(dir, "analyst.txt"), request.instructions);
+    await writeFile(schema, JSON.stringify(request.schema));
     const version = await command(CODEX, ["--version"], "", 10000);
-    const invocation_id = randomUUID();
-    if (options.budget) {
-      try {
-        await options.budget.reserve(
-          invocation_id,
-          6000 + Math.ceil(Buffer.byteLength(JSON.stringify(payload)) / 3),
-        );
-      } catch (e) {
-        throw new WorkerError("budget", String(e));
-      }
-    }
-    const start = Date.now();
-    const args = extractionArgs(
-      dir,
-      schema,
-      out,
-      options.tier || "fast",
-      options.effort || "low",
-    );
+    const args = extractionArgs(dir, schema, out, request.tier, request.effort);
     const r = await command(
       CODEX,
       args,
-      JSON.stringify(payload),
-      options.timeout || 180000,
+      JSON.stringify(request.payload),
+      request.timeout,
     );
     const events = r.stdout.split("\n").flatMap((l) => {
       try {
@@ -363,11 +356,10 @@ async function analyzeChunk(
         return [];
       }
     });
-    if (options.budget)
-      await options.budget.record(
-        invocation_id,
-        events.find((e) => e.type === "turn.completed")?.usage,
-      );
+    const usage =
+      events.find((e) => e.type === "turn.completed")?.usage ?? null;
+    if (request.budget)
+      await request.budget.record(request.invocation_id, usage);
     if (r.code !== 0)
       throw new WorkerError(
         classifyError(r.stderr + r.stdout),
@@ -397,68 +389,116 @@ async function analyzeChunk(
             .join(",")
             .slice(0, 1200),
       );
-    let envelope: any;
+    let output: unknown;
     try {
-      envelope = JSON.parse(await readFile(out, "utf8"));
+      output = JSON.parse(await readFile(out, "utf8"));
     } catch {
       throw new WorkerError("invalid", "missing_or_invalid_json_output");
     }
-    if (!Array.isArray(envelope.results))
-      throw new WorkerError("invalid", "invalid_batch_envelope");
-    const run: ModelRun = {
-      invocation_id,
-      requested_model: "gpt-6-luna",
-      requested_tier: options.tier || "fast",
-      actual_model: null,
-      actual_tier: null,
-      client_version: version.stdout.trim(),
-      prompt_version: PROMPT_VERSION,
-      schema_version: CONTRACT_VERSION + "/wire-1",
-      duration_ms: Date.now() - start,
-      usage: events.find((e) => e.type === "turn.completed")?.usage ?? null,
-      tool_attempts: tools.length,
+    return {
+      output,
+      run: {
+        requested_model: "gpt-6-luna",
+        requested_tier: request.tier,
+        actual_model: null,
+        actual_tier: null,
+        client_version: version.stdout.trim(),
+        usage,
+        tool_attempts: tools.length,
+      },
     };
-    const accepted = new Map<string, AnalysisResult>(),
-      invalid = new Map<string, string>();
-    for (const item of envelope.results) {
-      const input = Number.isInteger(item.index)
-        ? inputs[item.index]
-        : undefined;
-      if (!input) continue;
-      const id = analysisKey(input);
-      if (accepted.has(id) || invalid.has(id)) {
-        accepted.delete(id);
-        invalid.set(id, "duplicate_result");
-        continue;
-      }
-      try {
-        accepted.set(id, restoreResult(WireResult.parse(item), input));
-      } catch (e) {
-        invalid.set(id, String(e));
-      }
-    }
-    for (const input of inputs)
-      if (!accepted.has(analysisKey(input)) && !invalid.has(analysisKey(input)))
-        invalid.set(analysisKey(input), "missing_result");
-    return { accepted, invalid, run };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+};
+/** Charges one invocation to the local daily allocation before any model call. */
+export async function reserveInvocation(
+  budget: DailyBudget | undefined,
+  payload: unknown,
+) {
+  const invocation_id = randomUUID();
+  if (budget) {
+    try {
+      await budget.reserve(
+        invocation_id,
+        6000 + Math.ceil(Buffer.byteLength(JSON.stringify(payload)) / 3),
+      );
+    } catch (e) {
+      throw new WorkerError("budget", String(e));
+    }
+  }
+  return invocation_id;
+}
+export type BatchAnalysis = {
+  accepted: Map<string, AnalysisResult>;
+  invalid: Map<string, string>;
+  /** The run that produced each input's result, keyed like accepted and invalid. */
+  runs: Map<string, ModelRun>;
+};
+async function analyzeChunk(
+  inputs: JobInput[],
+  options: AnalyzeOptions,
+): Promise<BatchAnalysis> {
+  if (!inputs.length || inputs.length > 12)
+    throw new WorkerError("invalid", "bounded_batch_required");
+  if (Buffer.byteLength(JSON.stringify(inputs)) > 80000)
+    throw new WorkerError("invalid", "batch_input_limit");
+  const payload = compactInputs(inputs);
+  const invocation_id = await reserveInvocation(options.budget, payload);
+  const start = Date.now();
+  const { output, run: backendRun } = await (options.backend ?? codexBackend)({
+    invocation_id,
+    instructions: ANALYST,
+    payload,
+    schema: batchSchema(inputs),
+    timeout: options.timeout || 180000,
+    tier: options.tier || "fast",
+    effort: options.effort || "low",
+    budget: options.budget,
+  });
+  const envelope = output as { results?: any[] };
+  if (!Array.isArray(envelope?.results))
+    throw new WorkerError("invalid", "invalid_batch_envelope");
+  const run: ModelRun = {
+    invocation_id,
+    ...backendRun,
+    prompt_version: PROMPT_VERSION,
+    schema_version: CONTRACT_VERSION + "/wire-1",
+    duration_ms: Date.now() - start,
+  };
+  const accepted = new Map<string, AnalysisResult>(),
+    invalid = new Map<string, string>();
+  for (const item of envelope.results) {
+    const input = Number.isInteger(item?.index)
+      ? inputs[item.index]
+      : undefined;
+    if (!input) continue;
+    const id = analysisKey(input);
+    if (accepted.has(id) || invalid.has(id)) {
+      accepted.delete(id);
+      invalid.set(id, "duplicate_result");
+      continue;
+    }
+    try {
+      accepted.set(id, restoreResult(WireResult.parse(item), input));
+    } catch (e) {
+      invalid.set(id, String(e));
+    }
+  }
+  for (const input of inputs)
+    if (!accepted.has(analysisKey(input)) && !invalid.has(analysisKey(input)))
+      invalid.set(analysisKey(input), "missing_result");
+  return {
+    accepted,
+    invalid,
+    runs: new Map(inputs.map((input) => [analysisKey(input), run])),
+  };
 }
 
 export async function analyze(
   inputs: JobInput[],
-  options: {
-    tier?: string;
-    effort?: string;
-    timeout?: number;
-    budget?: DailyBudget;
-  } = {},
-): Promise<{
-  accepted: Map<string, AnalysisResult>;
-  invalid: Map<string, string>;
-  run: ModelRun;
-}> {
+  options: AnalyzeOptions = {},
+): Promise<BatchAnalysis> {
   if (!inputs.length || inputs.length > 12)
     throw new WorkerError("invalid", "bounded_batch_required");
   try {
@@ -476,12 +516,7 @@ export async function analyze(
     return {
       accepted: new Map([...a.accepted, ...b.accepted]),
       invalid: new Map([...a.invalid, ...b.invalid]),
-      run: {
-        ...b.run,
-        duration_ms: a.run.duration_ms + b.run.duration_ms,
-        tool_attempts: a.run.tool_attempts + b.run.tool_attempts,
-        usage: { split_batches: [a.run.usage, b.run.usage] },
-      },
+      runs: new Map([...a.runs, ...b.runs]),
     };
   }
 }

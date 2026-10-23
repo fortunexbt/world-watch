@@ -1,6 +1,5 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type { ObservationInput, SourceRecord } from "../shared/contracts.js";
-import { polygonArea } from "./adapters/area.js";
 const list = (x: any): any[] =>
   x === undefined || x === null ? [] : Array.isArray(x) ? x : [x];
 const text = (x: any): string =>
@@ -42,7 +41,8 @@ function safeLink(x: string, fallback: string) {
     return fallback;
   }
 }
-export function parseXML(xml: string) {
+/** Parses without resolving entities; removeNSPrefix reads `cap:alert` and `alert` alike. */
+export function parseXML(xml: string, removeNSPrefix = false) {
   if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(xml))
     throw Error("unsafe_xml_declaration");
   if (XMLValidator.validate(xml) !== true) throw Error("invalid_xml");
@@ -50,11 +50,29 @@ export function parseXML(xml: string) {
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
     processEntities: false,
-    removeNSPrefix: false,
+    removeNSPrefix,
     parseTagValue: false,
     trimValues: true,
   }).parse(xml);
 }
+const ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+};
+/** Character and the predefined entity references, which parseXML leaves unresolved; unknown names stay as written. */
+export const decodeEntities = (value: string) =>
+  value.replace(
+    /&(?:#x([0-9a-f]{1,6})|#(\d{1,7})|([a-z]+));/gi,
+    (all, hex, dec, name) => {
+      const code = hex ? parseInt(hex, 16) : dec ? Number(dec) : null;
+      if (code === null) return ENTITIES[name.toLowerCase()] ?? all;
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+    },
+  );
 /** Narrow DPC template extractor: whole article text, never page chrome or footer headquarters. */
 export function parseDpcArticle(html: string) {
   const articles = [
@@ -211,58 +229,6 @@ export function parseTfl(
         : 2,
     };
   });
-}
-export function parseBbk(
-  source: SourceRecord,
-  json: string,
-  geo?: any,
-): ObservationInput[] {
-  const x = JSON.parse(json);
-  if (x.status !== "Actual" || x.scope !== "Public") return [];
-  const info = list(x.info).find((i) => i.language === "de") ?? list(x.info)[0];
-  if (!info || !x.identifier) throw Error("invalid_bbk_warning");
-  const area = polygonArea(geo?.features?.[0]?.geometry);
-  const source_geo: ObservationInput["source_geo"] = area
-    ? {
-        ...area,
-        name: list(info.area)
-          .map((a) => a.areaDesc)
-          .join("; "),
-        accuracy: "area",
-      }
-    : undefined;
-  return [
-    {
-      source_id: source.id,
-      native_id: x.identifier,
-      canonical_url:
-        "https://warnung.bund.de/meldung/" + encodeURIComponent(x.identifier),
-      title: plain(info.headline),
-      original_language: info.language ?? "de",
-      published_at: date(x.sent),
-      source_updated_at: date(x.sent),
-      input_coverage: "full_licensed_text",
-      excerpts: [
-        { id: "warning", text: plain(info.description) },
-        { id: "instruction", text: plain(info.instruction) },
-      ],
-      ...(source_geo ? { source_geo } : {}),
-      official: {
-        issuer: source.owner,
-        effective_at: date(info.effective ?? info.onset ?? x.sent),
-        expires_at: date(info.expires),
-        cancelled: x.msgType === "Cancel",
-        message_type: x.msgType,
-        references: text(x.references)
-          .trim()
-          .split(/\s+/)
-          .filter(Boolean)
-          .map((r) => r.split(",")[1])
-          .filter(Boolean),
-      },
-      priority: 20,
-    },
-  ];
 }
 export function parseDwd(
   source: SourceRecord,

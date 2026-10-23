@@ -295,6 +295,27 @@ test(
           });
           return;
         }
+        if (url.pathname === "/api/push") {
+          await route.fulfill({ json: { configured: false, public_key: null, subscriptions: 0 } });
+          return;
+        }
+        if (url.pathname === "/api/alert-rules") {
+          await route.fulfill({
+            json: {
+              rules: [
+                {
+                  id: "r1",
+                  rule: { name: "Fixture rule" },
+                  feeds: {
+                    atom: "http://127.0.0.1:5199/api/alert-rules/r1/feed.atom?key=k",
+                    geojson: "http://127.0.0.1:5199/api/alert-rules/r1/feed.geojson?key=k",
+                  },
+                },
+              ],
+            },
+          });
+          return;
+        }
         if (url.pathname === "/api/brief") {
           briefQuery = url.search;
           await route.fulfill({
@@ -421,6 +442,14 @@ test(
       await page
         .getByRole("button", { name: "Save private area", exact: true })
         .click();
+      // Server watch rules list their private feeds; without VAPID keys the page says push is off.
+      await page.getByText("Fixture rule").waitFor();
+      assert.equal(
+        await page.getByRole("link", { name: "Atom" }).getAttribute("href"),
+        "http://127.0.0.1:5199/api/alert-rules/r1/feed.atom?key=k",
+      );
+      await page.getByText("Web Push isn't configured on this server.", { exact: false }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Notify this device" }).count(), 0);
       await page
         .getByRole("button", { name: "Use this area in the feed", exact: true })
         .click();

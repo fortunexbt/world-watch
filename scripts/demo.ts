@@ -1,6 +1,7 @@
-// Local-only showcase: a throwaway database fed by the worldwide structured
-// hazard sources (USGS, GDACS, NWS, ECCC). No model runs and no private file is
-// read.
+// Local-only showcase: a throwaway database fed by the structured sources
+// (USGS, EMSC, GDACS, NWS, ECCC, PAGASA, INMET, ADSB.lol, AWC ash SIGMETs, EASA
+// conflict zone bulletins), World Watch's routing drop detector on RIPEstat and
+// GDELT news coverage signals. No model runs and no private file is read.
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
@@ -14,9 +15,18 @@ import { configuredRegistry } from "../src/collector/registry.js";
 
 const DEMO_SOURCES = [
   "global-usgs-earthquakes",
+  "global-emsc-earthquakes",
   "global-gdacs-alerts",
   "us-nws-warnings",
   "ca-eccc-warnings",
+  "ph-pagasa-warnings",
+  "br-inmet-warnings",
+  "global-adsblol-emergency-squawks",
+  "global-awc-volcanic-ash-sigmets",
+  "global-easa-conflict-zone-bulletins",
+  "global-ripestat-routing",
+  "global-gdelt-news-english",
+  "global-gdelt-news-translingual",
 ];
 const API_PORT = 8797;
 const PREVIEW_PORT = Number(process.env.EW_PREVIEW_PORT || 4319);
@@ -98,19 +108,27 @@ try {
   const sources = configuredRegistry({}).filter((s) =>
     DEMO_SOURCES.includes(s.id),
   );
+  // News files and hazard records each get a run's request budget, so a large
+  // first GDACS load cannot crowd out the news layer.
+  const groups = [
+    sources.filter((s) => s.family !== "gdelt"),
+    sources.filter((s) => s.family === "gdelt"),
+  ];
   const collect = async () => {
-    const results = await collectSources(
-      { EW_API_URL: api, EW_COLLECTOR_TOKEN: secrets.EUROPE_WATCH_COLLECTOR_TOKEN },
-      {
-        sources,
-        resolveHost: async (host) =>
-          (await lookup(host, { all: true })).map((x) => x.address),
-      },
-    );
-    for (const r of results)
-      console.log(
-        `${new Date().toISOString()}  ${r.source_id}: ${r.status}, ${r.received} records${r.error ? " (" + r.error + ")" : ""}`,
+    for (const group of groups) {
+      const results = await collectSources(
+        { EW_API_URL: api, EW_COLLECTOR_TOKEN: secrets.EUROPE_WATCH_COLLECTOR_TOKEN },
+        {
+          sources: group,
+          resolveHost: async (host) =>
+            (await lookup(host, { all: true })).map((x) => x.address),
+        },
       );
+      for (const r of results)
+        console.log(
+          `${new Date().toISOString()}  ${r.source_id}: ${r.status}, ${r.received} records${r.error ? " (" + r.error + ")" : ""}`,
+        );
+    }
   };
   await collect();
   const { EW_SITES_SERVICE_TOKEN, EW_SITES_ORIGIN, ...env } = process.env;
@@ -128,7 +146,7 @@ try {
   await waitFor(`http://127.0.0.1:${PREVIEW_PORT}/api/health`);
   console.log(
     `\nWorld Watch demo: http://127.0.0.1:${PREVIEW_PORT}/?hours=168\n` +
-      "Live USGS earthquakes, GDACS alerts and NWS and ECCC warnings, refreshed every 5 minutes. " +
+      "Live USGS and EMSC earthquakes, GDACS alerts, NWS, ECCC, PAGASA and INMET warnings, ADSB.lol emergency squawks, volcanic ash SIGMETs, EASA conflict zone bulletins, Internet routing drops and GDELT news signals, refreshed every 5 minutes. " +
       "Toggle the thermal layer for NASA FIRMS detections. Ctrl-C stops everything and deletes the demo data.",
   );
   setInterval(() => void collect().catch((e) => console.error(String(e))), REFRESH_MS);

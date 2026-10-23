@@ -342,7 +342,7 @@ test("all accepted outputs are durable before first submission hits storage quot
             leases.map((l) => [analysisKey(l.input), result(l)]),
           ),
           invalid: new Map(),
-          run: runInfo,
+          runs: new Map(leases.map((l) => [analysisKey(l.input), runInfo])),
         };
       },
     });
@@ -424,7 +424,10 @@ test("partial invalid batch commits valid peer and retries only invalid report",
         analyzer: async () => ({
           accepted: new Map([[analysisKey(a.input), result(a)]]),
           invalid: new Map([[analysisKey(b.input), "unsupported_evidence"]]),
-          run: runInfo,
+          runs: new Map([
+            [analysisKey(a.input), runInfo],
+            [analysisKey(b.input), runInfo],
+          ]),
         }),
       });
       assert.deepEqual(await worker.once(2), {
@@ -489,7 +492,7 @@ test("forged stale spool identity is rejected before current lease completion", 
           return {
             accepted: new Map([[analysisKey(a.input), result(a)]]),
             invalid: new Map(),
-            run: runInfo,
+            runs: new Map([[analysisKey(a.input), runInfo]]),
           };
         },
       });
@@ -779,7 +782,10 @@ test("two revisions of one report remain separate analysis identities in the sam
             [analysisKey(second.input), result(second)],
           ]),
           invalid: new Map(),
-          run: runInfo,
+          runs: new Map([
+            [analysisKey(first.input), runInfo],
+            [analysisKey(second.input), runInfo],
+          ]),
         }),
       });
       assert.deepEqual(await worker.once(2), {

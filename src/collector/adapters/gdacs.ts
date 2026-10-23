@@ -1,4 +1,5 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
+import { buildFootprint } from "../../shared/footprint.js";
 
 /** Orange and Red only. Green adds hundreds of current events at impact minor, mostly small GWIS wildfires beside the FIRMS thermal layer. */
 export const GDACS_EVENTS_URL =
@@ -101,6 +102,11 @@ export function parseGdacs(
               episode_id: episodeId,
               episode_alert_level: text(p.episodealertlevel) || null,
               severity: text(p.severitydata?.severitytext) || null,
+              // Magnitude for earthquakes, wind speed for cyclones, burnt area for fires, as the unit says.
+              severity_value: Number.isFinite(p.severitydata?.severity)
+                ? p.severitydata.severity
+                : null,
+              severity_unit: text(p.severitydata?.severityunit) || null,
               from,
               to,
               source_updated_at: modified,
@@ -135,4 +141,35 @@ export function parseGdacs(
       },
     ];
   });
+}
+
+/** GDACS's geometry for a cyclone episode; other hazards keep their centroid only. */
+export function gdacsGeometryURL(o: ObservationInput) {
+  const q = new URL(o.canonical_url).searchParams;
+  const eventid = q.get("eventid"),
+    episodeid = q.get("episodeid");
+  return q.get("eventtype") === "TC" && eventid && episodeid
+    ? "https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?" +
+        new URLSearchParams({ eventtype: "TC", eventid, episodeid })
+    : null;
+}
+/**
+ * The cumulative wind buffers GDACS models along a cyclone's past and forecast track, labelled
+ * 60, 90 and 120 km/h. Per-forecast-time buffers, track lines and uncertainty cones are left out.
+ */
+export function parseGdacsGeometry(payload: unknown, url: string) {
+  const data = payload as any;
+  if (data?.type !== "FeatureCollection" || !Array.isArray(data.features))
+    throw Error("invalid_gdacs_geometry");
+  return buildFootprint(
+    "inferred_affected_area",
+    url,
+    data.features.flatMap((f: any) => {
+      const label = text(f?.properties?.polygonlabel);
+      return /^Poly_(Green|Orange|Red)$/.test(f?.properties?.Class) &&
+        /^\d+ km\/h$/.test(label)
+        ? [{ geometry: f.geometry, level: parseInt(label), label }]
+        : [];
+    }),
+  );
 }

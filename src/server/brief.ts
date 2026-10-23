@@ -80,7 +80,8 @@ export function briefPinEligible(view: any, clock = Date.now()) {
     );
   });
 }
-async function sourceState(c: BriefContext, provenance: any[], checkAI = true) {
+/** Whether a brief's sources still permit it; a replayed brief keeps the source revisions it was built from. */
+async function sourceState(c: BriefContext, provenance: any[], checkAI = true, revised = true) {
   const refs = provenance.flatMap((p) => p.reports ?? []);
   if (!refs.length) return "source_rights_changed";
   const ids = [...new Set(refs.map((r) => r.report_id))];
@@ -94,7 +95,7 @@ async function sourceState(c: BriefContext, provenance: any[], checkAI = true) {
     const row = map.get(ref.report_id);
     if (!row || row.deleted_at || row.source_id !== ref.source_id)
       return "source_rights_changed";
-    if (row.latest_revision !== ref.revision) return "source_revision_changed";
+    if (revised && row.latest_revision !== ref.revision) return "source_revision_changed";
     const source = parsed(row.record),
       rights = source.rights;
     if (
@@ -108,8 +109,8 @@ async function sourceState(c: BriefContext, provenance: any[], checkAI = true) {
   }
   return "ok";
 }
-async function allowed(c: BriefContext, provenance: any[]) {
-  return (await sourceState(c, provenance)) === "ok";
+async function allowed(c: BriefContext, provenance: any[], historical = false) {
+  return (await sourceState(c, provenance, true, !historical)) === "ok";
 }
 
 async function build(
@@ -589,20 +590,31 @@ export async function failBrief(
     .first();
   return { accepted: !!changed, ...(!changed ? { stale: true } : {}) };
 }
-export async function currentBrief(c: BriefContext, clock = Date.now()) {
+/**
+ * The newest complete brief, or with `at` the newest one completed by then, its pins and changes
+ * judged against the incident revisions held at that time. Nothing is pending in the past.
+ */
+export async function currentBrief(c: BriefContext, clock = Date.now(), at?: string) {
   const w = briefWindow(clock),
-    latest = await c
-      .stmt(
-        "SELECT * FROM brief_windows WHERE state='complete' ORDER BY window_end DESC LIMIT 1",
-      )
-      .first();
-  const state = await c
-    .stmt(
-      "SELECT state,updated_at,error_kind FROM brief_windows WHERE id=?",
-      w.id,
-    )
-    .first();
-  if (!latest || !(await allowed(c, parsed(latest.provenance))))
+    latest = await (at
+      ? c.stmt(
+          "SELECT * FROM brief_windows WHERE state='complete' AND window_end<=? AND updated_at<=? ORDER BY window_end DESC LIMIT 1",
+          at,
+          at,
+        )
+      : c.stmt(
+          "SELECT * FROM brief_windows WHERE state='complete' ORDER BY window_end DESC LIMIT 1",
+        )
+    ).first();
+  const state = at
+    ? { state: "complete", updated_at: latest?.updated_at ?? null }
+    : await c
+        .stmt(
+          "SELECT state,updated_at,error_kind FROM brief_windows WHERE id=?",
+          w.id,
+        )
+        .first();
+  if (!latest || !(await allowed(c, parsed(latest.provenance), !!at)))
     return {
       current: null,
       pending:
@@ -631,13 +643,22 @@ export async function currentBrief(c: BriefContext, clock = Date.now()) {
   const referencedIds = [
     ...new Set<string>([...refs, ...pins].map((p: any) => p.incident_id)),
   ];
-  const currentViews = referencedIds.length
-    ? await rows(
-        c,
-        `SELECT id,version,view FROM incidents WHERE deleted_at IS NULL AND id IN(${referencedIds.map(() => "?").join(",")})`,
-        ...referencedIds,
-      )
-    : [];
+  const marks = referencedIds.map(() => "?").join(",");
+  const currentViews = !referencedIds.length
+    ? []
+    : at
+      ? await rows(
+          c,
+          `SELECT incident_id AS id,version,view FROM incident_revisions WHERE incident_id IN(${marks}) AND known_at<=? AND (superseded_at IS NULL OR superseded_at>?)`,
+          ...referencedIds,
+          at,
+          at,
+        )
+      : await rows(
+          c,
+          `SELECT id,version,view FROM incidents WHERE deleted_at IS NULL AND id IN(${marks})`,
+          ...referencedIds,
+        );
   const currentPins = currentViews.filter((row) =>
     pins.some((p: any) => p.incident_id === row.id),
   );

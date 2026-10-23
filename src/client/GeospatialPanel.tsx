@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { GeospatialCatalog } from "../shared/geospatial";
+import type { GeoFeature, GeospatialCatalog } from "../shared/geospatial";
 import { translate, type Language } from "./locale";
 
 export default function GeospatialPanel({
   catalog,
   selected,
+  picked,
   onSelect,
   error,
   loading,
@@ -12,6 +13,8 @@ export default function GeospatialPanel({
 }: {
   catalog: GeospatialCatalog | null;
   selected: string | null;
+  /** A thermal detection read from the map's tiles; the catalogue lists only mapping areas. */
+  picked: GeoFeature | null;
   onSelect: (id: string) => void;
   error: string;
   loading: boolean;
@@ -27,12 +30,15 @@ export default function GeospatialPanel({
       tr(text),
     );
   const heading = useRef<HTMLHeadingElement>(null);
-  const feature = catalog?.features.find((f) => f.id === selected);
+  const feature =
+    picked?.id === selected
+      ? picked
+      : catalog?.features.find((f) => f.id === selected);
   useEffect(() => {
     if (selected) heading.current?.focus();
   }, [selected, feature?.id]);
   const matches = (catalog?.features ?? []).filter((f) =>
-    `${f.layer === "thermal" ? tr(f.name) : f.name} ${f.properties.sensor ?? ""} ${f.properties.activation_code ?? ""}`
+    `${f.name} ${f.properties.activation_code ?? ""}`
       .toLocaleLowerCase()
       .includes(query.toLocaleLowerCase()),
   );
@@ -159,23 +165,18 @@ export default function GeospatialPanel({
         <>
           <p>
             {number(
-              catalog.features.filter((f) => f.layer === "thermal").length,
+              catalog.sources.find((s) => s.id === "firms")?.features_count ??
+                0,
             )}{" "}
-            {tr("thermal detections")} ·{" "}
-            {number(
-              catalog.features.filter((f) => f.layer === "emergency_mapping")
-                .length,
-            )}{" "}
+            {tr("thermal detections")} · {number(catalog.features.length)}{" "}
             {tr("mapping areas")}
           </p>
-          <label htmlFor="geospatial-search">
-            {tr("Find mapping area or sensor")}
-          </label>
+          <label htmlFor="geospatial-search">{tr("Find mapping area")}</label>
           <input
             id="geospatial-search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={tr("Place, activation code or sensor")}
+            placeholder={tr("Place or activation code")}
           />
           <div className="camera-list">
             {matches.slice(0, 30).map((f) => (
@@ -184,12 +185,9 @@ export default function GeospatialPanel({
                 key={f.id}
                 onClick={() => onSelect(f.id)}
               >
-                <span>{f.layer === "thermal" ? tr(f.name) : f.name}</span>
+                <span>{f.name}</span>
                 <small>
-                  {f.layer === "thermal"
-                    ? tr("Thermal detection")
-                    : tr("Mapping area")}{" "}
-                  · {timestamp(f.observed_at)}
+                  {tr("Mapping area")} · {timestamp(f.observed_at)}
                 </small>
               </button>
             ))}
@@ -216,26 +214,35 @@ export default function GeospatialPanel({
               </small>
               {s.truncated && (
                 <p className="caution">
-                  {s.id === "firms"
-                    ? fill(
-                        "Showing {shown} of {total} in this view. Zoom in for complete coverage.",
-                        { shown: s.features_count, total: s.total_available },
-                      )
-                    : fill(
-                        "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.",
-                        { shown: s.features_count, total: s.total_available },
-                      )}
+                  {fill(
+                    "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.",
+                    { shown: s.features_count, total: s.total_available },
+                  )}
+                </p>
+              )}
+              {s.id === "firms" && s.status === "ok" && (
+                <p>
+                  {fill(
+                    __PUBLIC_DEMO__
+                      ? "All {total} detections worldwide are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections."
+                      : "All {total} detections in this view are on the map. Zoomed out, each dot counts the detections around it; zoom in to open single detections.",
+                    { total: s.features_count },
+                  )}
                 </p>
               )}
               {s.sensors?.map((sensor) => (
                 <small key={sensor.id}>
                   {sensor.label} ·{" "}
                   {sensor.status === "ok"
-                    ? fill("{shown} of {total} detections in this view", {
-                        shown: sensor.features_count,
-                        total: sensor.total_available,
-                      })
-                    : tr("Sensor unavailable")}
+                    ? fill(
+                        __PUBLIC_DEMO__
+                          ? "{total} detections worldwide"
+                          : "{total} detections in this view",
+                        { total: sensor.features_count },
+                      )
+                    : sensor.status === "ended"
+                      ? `${tr("Delivery ended")} ${timestamp(sensor.ended_at ?? null)}`
+                      : tr("Sensor unavailable")}
                   {sensor.error && ` · ${tr(sensor.error)}`}
                 </small>
               ))}

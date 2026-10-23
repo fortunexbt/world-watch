@@ -6,7 +6,6 @@ import { fetchSource, type FetchOptions, type FetchState } from "./fetch.js";
 import {
   parseFeed,
   parseTfl,
-  parseBbk,
   parseDwd,
   parseSiri,
   parseDpcArticle,
@@ -15,11 +14,33 @@ import {
   parseParisEvents,
 } from "./parsers.js";
 import { configuredRegistry } from "./registry.js";
+import { issuerLag, keepLag } from "../shared/coverage.js";
 import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
-import { parseUsgs } from "./adapters/usgs.js";
-import { GDACS_PAGE_SIZE, parseGdacs } from "./adapters/gdacs.js";
+import {
+  parseShakeMapContours,
+  parseUsgs,
+  shakeMapContoursURL,
+  shakeMapDetailURL,
+} from "./adapters/usgs.js";
+import { emscQueryURL, parseEmsc } from "./adapters/emsc.js";
+import {
+  GDACS_PAGE_SIZE,
+  gdacsGeometryURL,
+  parseGdacs,
+  parseGdacsGeometry,
+} from "./adapters/gdacs.js";
 import { parseNws } from "./adapters/nws.js";
+import { capIndex, parseBbk, parseCap, readCap } from "./adapters/cap.js";
 import { parseEccc } from "./adapters/eccc.js";
+import { parseAwcSigmets } from "./adapters/awc.js";
+import { EASA_CZIB_TEXT_URL, parseEasaCzibs } from "./adapters/easa.js";
+import { parseAdsbLol } from "./adapters/adsblol.js";
+import {
+  parseRipestatRouting,
+  ROUTING_COUNTRIES,
+  routingURL,
+} from "./adapters/ripestat.js";
+import { gdeltFiles, gkgBatch, type GdeltStream } from "./adapters/gdelt.js";
 import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
@@ -51,6 +72,10 @@ export type CollectorOptions = FetchOptions & {
   ingest?: (observations: ObservationInput[]) => Promise<unknown>;
   register?: (sources: SourceRecord[]) => Promise<unknown>;
 };
+/** Issuer geometry reads per source per poll; a ShakeMap read is two requests. */
+const FOOTPRINT_READS = 4;
+/** CAP documents read at once from one issuer. */
+const CAP_READS = 4;
 export type CollectorResult = {
   source_id: string;
   status: "ok" | "not_modified" | "skipped" | "error";
@@ -200,21 +225,44 @@ export async function collectSources(
       results.push({ source_id: source.id, status: "skipped", received: 0 });
       continue;
     }
-    let received = 0;
+    let received = 0,
+      newsFiles: string[] | undefined;
+    // A GDELT file's own timestamp is its issuer time.
+    const newsIssued: { published_at: string; source_updated_at: null }[] = [];
+    // RIPEstat answers one country per request, so each poll reads the next few in turn.
+    const first = before.routing?.next ?? 0;
+    const countries =
+      source.config.format === "ripestat_country_routing"
+        ? Array.from(
+            { length: Number(source.config.countries_per_poll) || 1 },
+            (_, i) => ROUTING_COUNTRIES[(first + i) % ROUTING_COUNTRIES.length],
+          )
+        : [];
+    let routing: FetchState["routing"];
+    let capDocuments: FetchState["cap_documents"];
     try {
       const requestURL =
         source.config.format === "zwaailicht_incidents"
           ? zwaailichtQueryURL(now())
-          : source.url;
+          : source.config.format === "emsc_json"
+            ? emscQueryURL(now())
+            : countries.length
+              ? routingURL(countries[0], now())
+              : source.url;
       const response = await fetchSource(requestURL, before, {
         ...options,
         fetch: fetcher,
         demosQuery: source.config.format === "demos_json",
+        // EMSC and AWC answer an empty query with 204 No Content.
+        allowNoContent: ["emsc_json", "awc_sigmet_json"].includes(
+          String(source.config.format),
+        ),
         accept:
           typeof source.config.accept === "string"
             ? source.config.accept
             : undefined,
         maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+        timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
       });
       if (response.notModified) {
         await health(source.id, {
@@ -251,6 +299,11 @@ export async function collectSources(
         case "usgs_geojson":
           observations = parseUsgs(source, JSON.parse(response.text));
           break;
+        case "emsc_json":
+          observations = response.text
+            ? parseEmsc(source, JSON.parse(response.text))
+            : [];
+          break;
         case "gdacs_geojson": {
           const pages = [JSON.parse(response.text)];
           // Only a short or empty page proves the list is complete; reconciliation depends on it.
@@ -265,6 +318,7 @@ export async function collectSources(
                 fetch: fetcher,
                 allowNoContent: true,
                 maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
               },
             );
             if (!page.text) break;
@@ -286,6 +340,162 @@ export async function collectSources(
         case "eccc_geojson":
           observations = parseEccc(source, JSON.parse(response.text));
           break;
+        case "awc_sigmet_json":
+          observations = response.text
+            ? parseAwcSigmets(source, JSON.parse(response.text))
+            : [];
+          break;
+        case "easa_czib_json": {
+          // The list carries EASA's node IDs and times, the CSV export of the same list the bulletins' text.
+          const bulletins = await fetchSource(
+            EASA_CZIB_TEXT_URL,
+            {},
+            {
+              ...options,
+              fetch: fetcher,
+              maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+            },
+          );
+          observations = parseEasaCzibs(
+            source,
+            JSON.parse(response.text),
+            bulletins.text,
+          );
+          break;
+        }
+        case "cap_index": {
+          // Each listed document is read once per index stamp; documents the run's budget leaves
+          // unread stay out of the checkpoint and are read on the next poll.
+          const known = before.cap_documents ?? {};
+          capDocuments = {};
+          const unread = [];
+          for (const entry of capIndex(source, response.text))
+            if (known[entry.url]?.stamp === entry.stamp)
+              capDocuments[entry.url] = known[entry.url];
+            else unread.push(entry);
+          for (let i = 0; i < unread.length; i += CAP_READS) {
+            const batch = unread.slice(i, i + CAP_READS);
+            // Room is kept to ingest what was read, three records a request, so a short budget still progresses.
+            if (
+              requests +
+                batch.length +
+                Math.ceil((observations.length + batch.length) / 3) >
+              maxRequests - 8
+            )
+              break;
+            const read = await Promise.all(
+              batch.map(async (entry) => ({
+                entry,
+                alert: readCap(
+                  (
+                    await fetchSource(entry.url, {}, {
+                      ...options,
+                      fetch: fetcher,
+                      maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                    })
+                  ).text,
+                ),
+              })),
+            );
+            for (const { entry, alert } of read) {
+              capDocuments[entry.url] = {
+                stamp: entry.stamp,
+                identifier: alert.identifier,
+              };
+              observations.push(...parseCap(source, alert, entry.url));
+            }
+          }
+          // A cancellation or update must reach the server after the message it references.
+          observations.sort((a, b) =>
+            a.published_at!.localeCompare(b.published_at!),
+          );
+          break;
+        }
+        case "adsblol_squawks":
+          observations = parseAdsbLol(
+            source,
+            JSON.parse(response.text),
+            Object.keys(before.accepted_items ?? {}),
+          );
+          break;
+        case "ripestat_country_routing": {
+          const ongoing = new Set(before.routing?.ongoing ?? []);
+          for (const [i, country] of countries.entries()) {
+            const page = i
+              ? await fetchSource(
+                  routingURL(country, now()),
+                  {},
+                  {
+                    ...options,
+                    fetch: fetcher,
+                    maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                  },
+                )
+              : response;
+            const drops = parseRipestatRouting(
+              source,
+              country,
+              JSON.parse(page.text),
+              now(),
+            );
+            // Lagging data leaves the country's open drops exactly as they were.
+            if (!drops) continue;
+            for (const id of ongoing)
+              if (id.startsWith(country + "-")) ongoing.delete(id);
+            for (const drop of drops)
+              if (drop.official?.current_listing) ongoing.add(drop.native_id);
+            observations.push(...drops);
+          }
+          routing = {
+            next: (first + countries.length) % ROUTING_COUNTRIES.length,
+            ongoing: [...ongoing].sort(),
+          };
+          break;
+        }
+        case "gdelt_gkg": {
+          // News signals are counts by place, not observations, so they go to their own endpoint.
+          const files = gdeltFiles(
+            response.text,
+            source.config.stream as GdeltStream,
+            before.news_files,
+          );
+          newsFiles = (before.news_files ?? []).filter((stamp) =>
+            files.recent.includes(stamp),
+          );
+          let unavailable = 0,
+            ingested = 0;
+          // A file that 404s doesn't use up the run's quota, so a lagging listing still yields the newest fetchable files.
+          for (const file of files.pending) {
+            if (ingested >= Number(source.config.max_files ?? 2)) break;
+            let data;
+            try {
+              data = await fetchSource(
+                file.url,
+                {},
+                {
+                  ...options,
+                  fetch: fetcher,
+                  binary: true,
+                  accept: "application/zip",
+                  maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                },
+              );
+            } catch (error) {
+              // A listed file can 404 for a while; it stays eligible until it leaves the newest eight.
+              if ((error as Error).message !== "source_http_404") throw error;
+              unavailable++;
+              continue;
+            }
+            const { batch } = await gkgBatch(source.id, file.file_at, data.bytes!);
+            await request("/api/news/ingest", batch);
+            newsFiles.push(file.stamp);
+            newsIssued.push({ published_at: file.file_at, source_updated_at: null });
+            ingested++;
+            received += batch.places.reduce((n, p) => n + p.articles.length, 0);
+          }
+          if (unavailable && !ingested) throw Error("gdelt_files_unavailable");
+          break;
+        }
         case "paris_json": {
           const first = JSON.parse(response.text);
           let all = Array.isArray(first.results) ? first.results : [];
@@ -306,6 +516,7 @@ export async function collectSources(
                 ...options,
                 fetch: fetcher,
                 maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
               },
             );
             const data = JSON.parse(page.text);
@@ -467,6 +678,7 @@ export async function collectSources(
                     title: o.title,
                     excerpts: o.excerpts,
                     geo: o.source_geo,
+                    footprint: o.footprint,
                     official: o.official,
                     published: o.published_at,
                   }),
@@ -494,23 +706,74 @@ export async function collectSources(
           (x) =>
             acceptedItems[x.observation.native_id] !== fingerprints[x.index],
         );
+      // Geometry that needs its own request is read only for changed records, a few per poll. A
+      // record whose geometry was not read publishes without it and stays unaccepted, so the next
+      // poll reads it again.
+      const footprintURL =
+        source.config.format === "usgs_geojson"
+          ? shakeMapDetailURL
+          : source.config.format === "gdacs_geojson"
+            ? gdacsGeometryURL
+            : null;
+      const footprints = { read: 0, pending: new Set<string>(), error: null as string | null };
+      if (footprintURL)
+        for (const { observation } of missing) {
+          const url = footprintURL(observation);
+          if (!url) continue;
+          if (footprints.read >= FOOTPRINT_READS || requests >= maxRequests - 8) {
+            footprints.pending.add(observation.native_id);
+            continue;
+          }
+          footprints.read++;
+          const read = async (u: string) =>
+            JSON.parse(
+              (
+                await fetchSource(u, {}, {
+                  ...options,
+                  fetch: fetcher,
+                  maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                  timeoutMs: Number(source.config.timeout_ms) || options.timeoutMs,
+                })
+              ).text,
+            );
+          try {
+            let contours: string | null = null;
+            const footprint =
+              source.config.format === "usgs_geojson"
+                ? (contours = shakeMapContoursURL(await read(url))) &&
+                  parseShakeMapContours(await read(contours), contours)
+                : parseGdacsGeometry(await read(url), url);
+            if (footprint) observation.footprint = footprint;
+          } catch (error) {
+            footprints.error = (error as Error).message;
+            footprints.pending.add(observation.native_id);
+          }
+        }
       let offset = 0;
       while (offset < missing.length && requests < maxRequests - 5) {
         const batch = missing.slice(offset, offset + 3);
         await ingest(batch.map((x) => x.observation));
         for (const x of batch)
-          acceptedItems[x.observation.native_id] = fingerprints[x.index];
+          if (!footprints.pending.has(x.observation.native_id))
+            acceptedItems[x.observation.native_id] = fingerprints[x.index];
         received += batch.length;
         offset += batch.length;
       }
-      const currentIds = new Set(observations.map((o) => o.native_id));
+      const currentIds = new Set([
+        ...observations.map((o) => o.native_id),
+        // Documents still listed and read before keep their alerts accepted.
+        ...Object.values(capDocuments ?? {}).map((d) => d.identifier),
+      ]);
       for (const id of Object.keys(acceptedItems))
         if (!currentIds.has(id)) delete acceptedItems[id];
       let complete = offset >= missing.length;
       if (
         complete &&
-        (source.config.format === "bbk" ||
-          source.config.format === "gdacs_geojson")
+        (["bbk", "gdacs_geojson", "adsblol_squawks"].includes(
+          String(source.config.format),
+        ) ||
+          // A drop that left the open set without a recovered record has nothing else to end it.
+          before.routing?.ongoing.some((id) => !routing?.ongoing.includes(id)))
       ) {
         let more = true;
         while (more && requests < maxRequests - 3) {
@@ -518,13 +781,33 @@ export async function collectSources(
             "/api/sources/" + encodeURIComponent(source.id) + "/reconcile",
             {
               complete: true,
-              active_native_ids: observations.map((o) => o.native_id),
+              // Drops still open in countries this poll did not read stay listed.
+              active_native_ids:
+                routing?.ongoing ?? observations.map((o) => o.native_id),
             },
           );
           more = result.more === true;
         }
         if (more) complete = false;
       }
+      const issuer_lag = keepLag(
+        [
+          ...(before.issuer_lag ?? []),
+          ...issuerLag(
+            [
+              // A record sent again only to read its geometry was already sampled.
+              ...missing
+                .slice(0, offset)
+                .map((x) => x.observation)
+                .filter((o) => !before.footprints?.pending.includes(o.native_id)),
+              ...newsIssued,
+            ],
+            before.last_success_at,
+            now(),
+          ),
+        ],
+        now(),
+      );
       await health(source.id, {
         checked_at: new Date(now()).toISOString(),
         last_success_at: complete
@@ -535,8 +818,21 @@ export async function collectSources(
         checkpoint: complete
           ? {
               ...response.state,
+              ...(routing ? { routing } : {}),
               accepted_items: acceptedItems,
+              news_files: newsFiles,
+              cap_documents: capDocuments,
+              issuer_lag,
               admission,
+              ...(footprintURL
+                ? {
+                    footprints: {
+                      read: footprints.read,
+                      pending: [...footprints.pending],
+                      error: footprints.error,
+                    },
+                  }
+                : {}),
               pending_hash: undefined,
               pending_offset: undefined,
               next_attempt_at: undefined,
@@ -544,6 +840,7 @@ export async function collectSources(
           : {
               ...before,
               accepted_items: acceptedItems,
+              issuer_lag,
               admission,
               pending_hash: hash,
               pending_offset: Object.keys(acceptedItems).length,
@@ -631,6 +928,18 @@ export function sourceEligibility(
     return observation.source_event_id
       ? keep("structured_natural_hazard_record")
       : exclude("missing_hazard_native_identity");
+  if (source.config.operational_role === "structured_aviation_advisory")
+    return observation.source_event_id
+      ? keep("structured_aviation_advisory_record")
+      : exclude("missing_advisory_native_identity");
+  if (source.config.operational_role === "self_reported_aviation_signal")
+    return observation.source_event_id
+      ? keep("self_reported_transponder_emergency_code")
+      : exclude("missing_aircraft_episode_identity");
+  if (source.config.operational_role === "structured_measurement")
+    return observation.source_event_id
+      ? keep("structured_measurement_record")
+      : exclude("missing_measurement_native_identity");
   if (source.id === "fr-paris-public-events") {
     const crowd =
       /\b(?:manifestant\w*|manifestation\w*|rassembl\w*|cortege\w*|foule\w*|greve\w*|emeute\w*|evacuat\w*|incendie\w*|explosion\w*|mouvement social|perimetre de securite)\b/u;

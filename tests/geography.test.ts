@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import server, { type Env } from "../src/server/index";
-import { inBbox, bboxCandidates } from "../src/server/geo";
+import { bboxCandidates, locationCell } from "../src/server/geo";
+import { inBbox } from "../src/shared/view";
 import { incidentInWindow } from "../src/shared/temporal";
 import { intersects } from "../src/server/alerts";
 import type { IncidentView } from "../src/shared/contracts";
@@ -170,48 +171,58 @@ function store() {
   };
 }
 
-test("SQL bbox candidates are a superset of the exact bbox check, including the dateline", () => {
-  const s = store();
+test("SQL bbox candidates and their grid cells are a superset of the exact bbox check, including the dateline", () => {
   let seed = 7;
   const random = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
-  const radii = [0, 8, 20, 250, 1500];
-  for (let i = 0; i < 3000; i++)
-    s.add(
-      at(random() * 360 - 180, random() * 170 - 85, radii[i % radii.length]),
-      {},
-      "2026-10-21T00:00:00Z",
-    );
-  const views = s.db
-    .prepare("SELECT view FROM incidents")
-    .all()
-    .map((r) => JSON.parse(String(r.view)) as IncidentView);
   const boxes = [
     [170, -25, -170, -10],
     [170, 60, -170, 70],
     [-10, 35, 30, 60],
     [2.2, 48.8, 2.5, 48.9],
     [175, -20, 180, -15],
+    [-180, -5, -175, 5],
     [-250, -10, -100, 10],
     [-180, -90, 180, 90],
     [-20, 80, 20, 90],
+    [-20, -90, 20, -80],
   ];
   for (let i = 0; i < 40; i++) {
     const west = random() * 360 - 180,
       south = random() * 160 - 80;
     boxes.push([west, south, west + random() * 60 - 20, south + random() * 20]);
   }
-  for (const box of boxes) {
-    const c = bboxCandidates(box, 1500);
-    const found = new Set(
-      s.db
-        .prepare(
-          `SELECT json_extract(view,'$.id') AS id FROM incidents WHERE deleted_at IS NULL AND ${c.sql}`,
-        )
-        .all(...c.params)
-        .map((r) => r.id),
-    );
-    for (const v of views)
-      if (inBbox(v.location, box)) assert.ok(found.has(v.id), `${box} ${v.id}`);
+  // Large radii widen every candidate set; small ones test the cell edges closely.
+  for (const radii of [[0, 8, 20, 250, 1500], [0, 8]]) {
+    const s = store();
+    for (let i = 0; i < 3000; i++)
+      s.add(
+        at(random() * 360 - 180, random() * 170 - 85, radii[i % radii.length]),
+        {},
+        "2026-10-21T00:00:00Z",
+      );
+    // Cell edges, both poles and both sides of the antimeridian.
+    for (const [lon, lat] of [[180, 0], [-180, 0], [180, -17], [-180, 66], [0, 90], [0, -90], [10, 50], [-10, -40], [179.999, 10], [-179.999, 10]])
+      for (const radius of radii.slice(0, 2))
+        s.add(at(lon, lat, radius), {}, "2026-10-21T00:00:00Z");
+    const views = s.db
+      .prepare("SELECT view FROM incidents")
+      .all()
+      .map((r) => JSON.parse(String(r.view)) as IncidentView);
+    for (const box of boxes) {
+      const c = bboxCandidates(box, Math.max(...radii));
+      if (box.join() === "-180,-90,180,90") assert.equal(c.cells, null);
+      const cells = c.cells ? ` AND ${locationCell} IN(${c.cells.join(",")})` : "";
+      const found = new Set(
+        s.db
+          .prepare(
+            `SELECT json_extract(view,'$.id') AS id FROM incidents WHERE deleted_at IS NULL${cells} AND ${c.sql}`,
+          )
+          .all(...c.params)
+          .map((r) => r.id),
+      );
+      for (const v of views)
+        if (inBbox(v.location, box)) assert.ok(found.has(v.id), `${box} ${v.id}`);
+    }
   }
 });
 
@@ -253,7 +264,7 @@ test("snapshot filters bbox and window in indexed SQL so busy regions cannot hid
   assert.equal(fiji.limited, false);
   assert.match(
     s.plan("SELECT view FROM incidents"),
-    /^SEARCH incidents USING INDEX incidents_latitude \(<expr>>\? AND <expr><\?\)/,
+    /^SEARCH incidents USING INDEX incidents_cell \(<expr>=\?\)/,
   );
   assert.match(
     s.plan("SELECT max("),
@@ -274,6 +285,11 @@ test("snapshot filters bbox and window in indexed SQL so busy regions cannot hid
   assert.deepEqual(
     both.incidents.map((i) => i.location?.lon),
     [10, 10],
+  );
+  // A window seeks its keys inside each cell, so stale rows in the area are never read.
+  assert.match(
+    s.plan("SELECT view FROM incidents"),
+    /^SEARCH incidents USING INDEX incidents_cell \(<expr>=\? AND <expr>>\?\)/,
   );
 });
 

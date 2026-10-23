@@ -1,7 +1,9 @@
 import {claimBrief,renewBrief,completeBrief,failBrief,currentBrief,pruneBrief} from "./brief";
 import { structuredBrief } from "./structured-brief";
+import { ingestNews, newsCatalog, type NewsContext } from "./news";
 import { sourceEligibility } from "../collector/index";
 import { stableBundlePayload } from "./bundling";
+import { FUSION_RULE, fusionCandidates, relink, sameEvent, withLinks } from "./fusion";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
 import {
   CONTRACT_VERSION,
@@ -18,17 +20,45 @@ import {
 } from "../shared/contracts";
 import {
   resolveClaimLocation,
-  inBbox,
   bboxCandidates,
+  eventTime,
+  LASTING_MS,
+  lastingRevision,
+  locationCell,
   locationRadius,
+  windowKey,
 } from "./geo";
+import { listView, textMatch, viewFilter } from "../shared/view";
+import { validFootprint } from "../shared/footprint";
+import { THERMAL_MAX_ZOOM } from "../shared/geospatial";
 import {
   alertDecision,
   alertMaterialityProjection,
   alertMaterialityVersion,
+  situationDecision,
+  SAME_SITUATION,
+  CORRECTION,
   type AlertRule,
   type AlertDeliverySnapshot,
 } from "./alerts";
+import {
+  atomFeed,
+  geojsonFeature,
+  geojsonFeed,
+  incidentCorrection,
+  noticeCorrection,
+  redistributable,
+  type FeedEntry,
+} from "./feeds";
+import { FEED_ENTRY_LIMIT } from "../shared/feeds";
+import {
+  base64url,
+  fromBase64url,
+  pushKeys,
+  pushMessage,
+  sendPush,
+  PUSH_TTL_SECONDS,
+} from "./push";
 type Stmt = {
   bind(...v: any[]): Stmt;
   first<T = any>(column?: string): Promise<T | null>;
@@ -47,13 +77,33 @@ export type Env = {
     queries: number;
     unknown: number;
   };
+  /** Set when this request queued Web Push messages for the owner's devices. */
+  _pushQueued?: boolean;
   ASSETS: { fetch(r: Request): Promise<Response> };
   EUROPE_WATCH_OWNER_TOKEN: string;
   EUROPE_WATCH_WORKER_TOKEN: string;
   EUROPE_WATCH_COLLECTOR_TOKEN: string;
   PUBLIC_ORIGIN?: string;
   ANALYSIS_MODE?: string;
+  /** Comma-separated provider/model pairs whose chat-completions results the owner accepts. */
+  ACCEPTED_ANALYSIS_MODELS?: string;
+  /** VAPID application server keys (base64url P-256 point and scalar) and contact URI; Web Push is off without all three. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 };
+/** Luna through Codex, or a chat-completions provider/model the owner listed explicitly. */
+export function acceptedModelRun(
+  run: any,
+  e: Pick<Env, "ACCEPTED_ANALYSIS_MODELS">,
+) {
+  if (!run || (run.tool_attempts ?? 1) !== 0) return false;
+  if (run.provider === undefined) return run.requested_model === "gpt-6-luna";
+  return (e.ACCEPTED_ANALYSIS_MODELS ?? "")
+    .split(",")
+    .map((pair) => pair.trim())
+    .includes(run.provider + "/" + run.requested_model);
+}
 let quotaPausedUntil = 0;
 const readMemo = new WeakMap<
   object,
@@ -142,8 +192,92 @@ function stmt(e: Env, sql: string, ...values: any[]) {
 async function rows<T = any>(e: Env, sql: string, ...values: any[]) {
   return (await stmt(e, sql, ...values).all<T>()).results;
 }
+const newsContext = (e: Env): NewsContext => ({
+  stmt: (sql, ...values) => stmt(e, sql, ...values),
+  batch: (statements) => measuredBatch(e, statements as Stmt[]),
+});
 async function cookie(e: Env) {
   return hash(`europe-watch-session:${e.EUROPE_WATCH_OWNER_TOKEN}`);
+}
+/** A feed reader can't sign in, so each rule's feed URL carries a key only the owner token can mint. */
+async function ruleFeedKey(e: Env, ruleId: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(e.EUROPE_WATCH_OWNER_TOKEN),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  return base64url(
+    new Uint8Array(
+      await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("rule-feed:" + ruleId)),
+    ),
+  );
+}
+async function ruleFeedUrls(e: Env, origin: string, ruleId: string) {
+  const base = `${origin}/api/alert-rules/${encodeURIComponent(ruleId)}/feed`,
+    key = "?key=" + (await ruleFeedKey(e, ruleId));
+  return { atom: base + ".atom" + key, geojson: base + ".geojson" + key };
+}
+/** The latest eligible notice per incident for one rule, as the revision it was given for. */
+async function ruleFeed(e: Env, u: URL, ruleId: string, format: string) {
+  const rule = await stmt(
+    e,
+    "SELECT rule FROM alert_rules WHERE id=? AND owner_id='owner'",
+    ruleId,
+  ).first<any>();
+  if (!rule) return json({ error: "not_found" }, 404);
+  const notices = await rows(
+    e,
+    `SELECT d.incident_id,d.reason,d.created_at,v.view FROM alert_deliveries d
+     JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version
+     WHERE d.rule_id=? AND d.state='eligible_ui' ORDER BY d.created_at DESC LIMIT ?`,
+    ruleId,
+    FEED_ENTRY_LIMIT * 4,
+  );
+  const latest = new Map<string, any>();
+  for (const n of notices) if (!latest.has(n.incident_id)) latest.set(n.incident_id, n);
+  const given = [...latest.values()]
+    .slice(0, FEED_ENTRY_LIMIT)
+    .map((n) => ({ ...n, view: parse(n.view) as IncidentView }));
+  const rights = await currentRights(e, [
+    ...new Set(given.flatMap((n) => n.view.reports.map((r: any) => r.source_id))),
+  ]);
+  const entries: FeedEntry[] = given
+    .map((n) => ({
+      id: n.incident_id,
+      incident: refreshRights(n.view, rights),
+      updated: n.created_at,
+      correction: noticeCorrection(n.reason, n.view),
+    }))
+    .filter((entry) => redistributable(entry.incident));
+  const withheld = given.length - entries.length;
+  const urls = await ruleFeedUrls(e, u.origin, ruleId);
+  const meta = {
+    id: `urn:world-watch:rule:${ruleId}`,
+    title: `World Watch: ${(parse(rule.rule) as AlertRule).name ?? ruleId}`,
+    subtitle:
+      "Notices this watch rule made eligible, newest first, one entry per incident. A correction updates the entry it corrects." +
+      (withheld
+        ? ` ${withheld} left out because a source doesn't permit redistribution.`
+        : ""),
+    self: format === "atom" ? urls.atom : urls.geojson,
+    alternate: format === "atom" ? urls.geojson : urls.atom,
+    attribution: [
+      ...new Set(
+        entries.flatMap((x) => x.incident.reports.map((r: any) => r.rights.attribution)),
+      ),
+    ],
+    updated: now(),
+  };
+  const headers = { "cache-control": "private, no-store", "x-content-type-options": "nosniff" };
+  return format === "atom"
+    ? new Response(atomFeed(meta, entries), {
+        headers: { ...headers, "content-type": "application/atom+xml; charset=utf-8" },
+      })
+    : new Response(JSON.stringify(geojsonFeed(meta, entries)), {
+        headers: { ...headers, "content-type": "application/geo+json" },
+      });
 }
 async function role(r: Request, e: Env) {
   const token = r.headers.get("authorization")?.replace(/^Bearer /i, "") ?? "";
@@ -205,12 +339,14 @@ function refreshRights(
 }
 // A material comparison must use the last notice eligible for this rule, not
 // an intervening revision whose delivery was suppressed. UI eligibility is not
-// evidence of delivery through an external notification channel.
+// evidence of delivery through an external notification channel. `covered`
+// reads instead the last notice withheld because a same-event partner gave it.
 async function lastAlertDelivery(
   e: Env,
   incidentId: string,
   ruleId: string,
   rule: AlertRule,
+  covered = false,
 ): Promise<AlertDeliverySnapshot | null> {
   const last = await stmt(
     e,
@@ -219,7 +355,7 @@ async function lastAlertDelivery(
      FROM alert_deliveries d
      LEFT JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version
      LEFT JOIN incidents i ON i.id=d.incident_id AND i.version=d.incident_version AND i.deleted_at IS NULL
-     WHERE d.incident_id=? AND d.rule_id=? AND d.state='eligible_ui'
+     WHERE d.incident_id=? AND d.rule_id=? AND ${covered ? `d.state='suppressed' AND d.reason LIKE '${SAME_SITUATION}%'` : "d.state='eligible_ui'"}
      ORDER BY d.incident_version DESC,d.rule_version DESC LIMIT 1`,
     incidentId,
     ruleId,
@@ -255,35 +391,130 @@ async function correctionAlerts(
   acceptance?: { sql: string; values: unknown[] },
 ): Promise<Stmt[]> {
   const result: Stmt[] = [];
+  const partners = (view.links ?? [])
+    .filter((l) => l.type === "same_event")
+    .map((l) => l.incident_id);
   for (const rule of await rows(
     e,
     "SELECT r.*,a.geometry FROM alert_rules r LEFT JOIN watch_areas a ON a.id=json_extract(r.rule,'$.watch_area_id') WHERE r.owner_id='owner'",
   )) {
     const policy = parse(rule.rule) as AlertRule;
     const last = await lastAlertDelivery(e, view.id, rule.id, policy);
-    const decision = alertDecision(
+    let decision = alertDecision(
       view,
       policy,
       rule.geometry ? parse(rule.geometry) : null,
       last,
     );
+    // Only a first notice of a linked record can repeat its situation, so only then read the partners' notices.
+    if (decision.state === "eligible_ui" && !last && partners.length) {
+      let partner: (AlertDeliverySnapshot & { incident_id: string }) | null = null;
+      for (const id of partners) {
+        const notice = await lastAlertDelivery(e, id, rule.id, policy);
+        if (notice && (!partner || notice.created_at! > partner.created_at!))
+          partner = { ...notice, incident_id: id };
+      }
+      if (partner)
+        decision = situationDecision(
+          decision,
+          view,
+          last,
+          partner,
+          await lastAlertDelivery(e, view.id, rule.id, policy, true),
+        );
+    }
+    const delivery = await hash(`${view.id}:${view.version}:${rule.id}:${rule.version}`),
+      time = now();
     result.push(
       stmt(
         e,
         `INSERT OR IGNORE INTO alert_deliveries(id,incident_id,incident_version,rule_id,rule_version,state,reason,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${acceptance?.sql ?? "1"}`,
-        await hash(`${view.id}:${view.version}:${rule.id}:${rule.version}`),
+        delivery,
         view.id,
         view.version,
         rule.id,
         rule.version,
         decision.state,
         decision.reason,
-        now(),
+        time,
         ...(acceptance?.values ?? []),
       ),
     );
+    // Queue a push per owner device only when this batch inserted the notice, which its creation
+    // time shows. A correction goes only to devices already subscribed at the last earlier notice.
+    if (decision.state === "eligible_ui" && pushKeys(e)) {
+      e._pushQueued = true;
+      result.push(
+        stmt(
+          e,
+          `INSERT OR IGNORE INTO push_outbox(delivery_id,subscription_id,created_at)
+           SELECT d.id,s.id,d.created_at FROM alert_deliveries d JOIN push_subscriptions s ON s.owner_id='owner'
+           WHERE d.id=? AND d.created_at=?${
+             decision.reason.startsWith(CORRECTION)
+               ? " AND s.created_at<=(SELECT max(p.created_at) FROM alert_deliveries p WHERE p.incident_id=d.incident_id AND p.rule_id=d.rule_id AND p.state='eligible_ui' AND p.id<>d.id)"
+               : ""
+           }`,
+          delivery,
+          time,
+        ),
+      );
+    }
   }
   return result;
+}
+/** Sends queued pushes. A subscription its push service reports gone is removed; other failures retry until the TTL. */
+async function dispatchPush(e: Env) {
+  const keys = pushKeys(e);
+  if (!keys) return;
+  await stmt(
+    e,
+    "DELETE FROM push_outbox WHERE created_at<?",
+    new Date(Date.now() - PUSH_TTL_SECONDS * 1000).toISOString(),
+  ).run();
+  const queued = await rows(
+    e,
+    `SELECT o.delivery_id,o.subscription_id,s.endpoint,s.p256dh,s.auth,d.reason,v.view
+     FROM push_outbox o JOIN push_subscriptions s ON s.id=o.subscription_id
+     JOIN alert_deliveries d ON d.id=o.delivery_id
+     LEFT JOIN incident_revisions v ON v.incident_id=d.incident_id AND v.version=d.incident_version
+     ORDER BY o.created_at LIMIT 20`,
+  );
+  if (!queued.length) return;
+  const views = queued.map((q) => (q.view ? (parse(q.view) as IncidentView) : null));
+  const rights = await currentRights(e, [
+    ...new Set(views.flatMap((v) => v?.reports.map((r: any) => r.source_id) ?? [])),
+  ]);
+  for (const [n, q] of queued.entries()) {
+    const view = views[n];
+    // A purged revision, or a record whose source the app no longer shows, sends nothing.
+    if (view && permittedView(view, rights)) {
+      const response = await sendPush(
+        q,
+        pushMessage(view, noticeCorrection(q.reason, view)),
+        keys,
+      ).catch((error) => {
+        console.error("push_send_failed", String(error).slice(0, 120));
+        return null;
+      });
+      if (response?.status === 404 || response?.status === 410) {
+        await measuredBatch(e, [
+          stmt(e, "DELETE FROM push_outbox WHERE subscription_id=?", q.subscription_id),
+          stmt(e, "DELETE FROM push_subscriptions WHERE id=?", q.subscription_id),
+        ]);
+        continue;
+      }
+      if (!response?.ok) {
+        if (response) console.error("push_rejected", response.status);
+        continue;
+      }
+    }
+    await stmt(
+      e,
+      "DELETE FROM push_outbox WHERE delivery_id=? AND subscription_id=?",
+      q.delivery_id,
+      q.subscription_id,
+    ).run();
+  }
 }
 export async function enforceRetention(e: Env) {
   await pruneBrief({stmt:(sql,...values)=>stmt(e,sql,...values)});
@@ -391,6 +622,10 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           !/^[A-Z]{2}$/.test(item.source_geo.country)))
     )
       throw Error("invalid_geography");
+    if (item.footprint !== undefined) {
+      if (!validFootprint(item.footprint)) throw Error("invalid_footprint");
+      canonical(item.footprint.source_url);
+    }
     if (
       (item.official?.activity !== undefined &&
         !Activity.safeParse(item.official.activity).success) ||
@@ -404,6 +639,7 @@ export async function ingest(e: Env, items: ObservationInput[]) {
         title: item.title,
         excerpts: item.excerpts,
         geo: item.source_geo,
+        footprint: item.footprint,
         official: item.official,
         published: item.published_at,
       }),
@@ -428,13 +664,14 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           const retained = reports.filter(v => !v.published_at || Date.parse(v.published_at) >= Date.now()-30*86400000).sort((a,b) => (a.published_at ?? "").localeCompare(b.published_at ?? "") || a.native_id.localeCompare(b.native_id)).slice(-32);
           const excerpts = [...new Map([...old.excerpts, ...item.excerpts].map((v: any) => [v.id, v])).values()] as ObservationInput["excerpts"];
           item = { ...item, source_reports: retained, excerpts: excerpts.filter(v => retained.some(r => v.id.startsWith(r.native_id + ":"))).sort((a,b) => retained.findIndex(r => a.id.startsWith(r.native_id + ":")) - retained.findIndex(r => b.id.startsWith(r.native_id + ":")) || a.id.localeCompare(b.id)), published_at: old.published_at ?? item.published_at, source_updated_at: [old.source_updated_at, item.source_updated_at].filter(Boolean).sort().at(-1) ?? null, title: old.title };
-          rev = await hash(JSON.stringify({title:item.title,excerpts:item.excerpts,geo:item.source_geo,official:item.official,published:item.published_at}));
+          rev = await hash(JSON.stringify({title:item.title,excerpts:item.excerpts,geo:item.source_geo,footprint:item.footprint,official:item.official,published:item.published_at}));
         }
         const normalized = (o: ObservationInput) =>
           JSON.stringify({
             title: o.title,
             excerpts: o.excerpts,
             geo: o.source_geo,
+            footprint: o.footprint,
             official: o.official,
             published: o.published_at,
           });
@@ -521,32 +758,40 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           }),
         ),
       );
+    // BBK and issuer CAP feeds name the earlier messages an update or cancellation supersedes.
+    const refs =
+      s.family === "bbk" || s.family === "cap"
+        ? (item.official?.references ?? []).slice(0, 20)
+        : [];
+    const publishes =
+      !!item.official && (!!item.source_geo || refs.length > 0) && s.rights.display && existing?.latest_revision !== rev;
+    const ancestors = publishes && refs.length
+      ? await rows(
+          e,
+          `SELECT DISTINCT i.id FROM observations o JOIN evidence_links l ON l.report_id=o.id JOIN incidents i ON i.id=l.incident_id WHERE o.source_id=? AND o.native_id IN(${refs.map(() => "?").join(",")}) AND i.deleted_at IS NULL`,
+          item.source_id,
+          ...refs,
+        )
+      : [];
+    const iid = publishes ? ancestors[0]?.id ?? (await hash(item.source_event_id ? `${item.source_id}:${item.source_event_id}:0` : `${id}:0`)) : "";
+    const previous = publishes
+      ? await stmt(e, "SELECT version,view FROM incidents WHERE id=?", iid).first<any>()
+      : null;
+    // A message that names earlier ones but finds no warning World Watch published, whether a
+    // cancellation or one without its own geometry, has nothing to end or place; it stays an observation.
     if (
       item.official &&
-      (item.source_geo ||
-        ((item.official.references?.length ?? 0) > 0 && s.family === "bbk")) &&
-      s.rights.display &&
-      existing?.latest_revision !== rev
+      publishes &&
+      (previous || (item.source_geo && !(item.official.cancelled && refs.length)))
     ) {
-      const refs =
-        s.family === "bbk" ? (item.official.references ?? []).slice(0, 20) : [];
-      const ancestors = refs.length
-        ? await rows(
-            e,
-            `SELECT DISTINCT i.id FROM observations o JOIN evidence_links l ON l.report_id=o.id JOIN incidents i ON i.id=l.incident_id WHERE o.source_id=? AND o.native_id IN(${refs.map(() => "?").join(",")}) AND i.deleted_at IS NULL`,
-            item.source_id,
-            ...refs,
-          )
-        : [];
-      const iid = ancestors[0]?.id ?? (await hash(item.source_event_id ? `${item.source_id}:${item.source_event_id}:0` : `${id}:0`));
-      const previous = await stmt(
-          e,
-          "SELECT version,view FROM incidents WHERE id=?",
-          iid,
-        ).first<any>(),
-        version = (previous?.version ?? 0) + 1,
-        g = item.source_geo;
-      const view: IncidentView = {
+      const version = (previous?.version ?? 0) + 1,
+        g = item.source_geo,
+        // A cancellation without geometry keeps the geometry of the warning it ends.
+        ended =
+          !g && item.official.cancelled && previous?.view
+            ? (parse(previous.view) as IncidentView)
+            : null;
+      let view: IncidentView = {
         id: iid,
         version,
         headline: item.title,
@@ -554,7 +799,9 @@ export async function ingest(e: Env, items: ObservationInput[]) {
         summary_it: null,
         activity: item.official.activity ?? "official_advisory",
         impact: item.official.impact ?? "unknown",
-        evidence_status: "official_advisory",
+        evidence_status: item.official.self_reported
+          ? "unverified"
+          : "official_advisory",
         location: g
           ? {
               ...g,
@@ -565,9 +812,12 @@ export async function ingest(e: Env, items: ObservationInput[]) {
                   : null),
               radius_km: g.radius_km ?? (g.accuracy === "area" ? 20 : 8),
             }
-          : item.official.cancelled && previous?.view
-            ? parse(previous.view).location
-            : null,
+          : (ended?.location ?? null),
+        ...(item.footprint
+          ? { footprint: item.footprint }
+          : ended?.footprint
+            ? { footprint: ended.footprint }
+            : {}),
         event_start: item.official.effective_at,
         event_end: null,
         published_at: item.published_at,
@@ -586,6 +836,7 @@ export async function ingest(e: Env, items: ObservationInput[]) {
             excerpts: item.excerpts,
             input_coverage: item.input_coverage,
             published_at: item.published_at,
+            source_updated_at: item.source_updated_at,
             original_language: item.original_language,
             content_revision: rev,
             rights: s.rights,
@@ -598,6 +849,53 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           ? { current_listing: true }
           : {}),
       };
+      const candidates = fusionCandidates(view),
+        prior =
+          (previous?.view ? (parse(previous.view) as IncidentView).links : null) ?? [];
+      const others = [
+        ...(candidates ? await rows(e, candidates.sql, ...candidates.params) : []),
+        ...(prior.length
+          ? await rows(
+              e,
+              `SELECT view FROM incidents WHERE deleted_at IS NULL AND id IN(${prior.map(() => "?").join(",")})`,
+              ...prior.map((l) => l.incident_id),
+            )
+          : []),
+      ].map((v) => parse(v.view) as IncidentView);
+      const fused = relink(
+        view,
+        prior,
+        [...new Map(others.map((v) => [v.id, v])).values()],
+      );
+      view = withLinks(view, fused.links);
+      for (const other of fused.changed) {
+        const revised = { ...other, version: other.version + 1, updated_at: time };
+        statements.push(
+          stmt(
+            e,
+            "UPDATE incidents SET view=?,version=?,updated_at=? WHERE id=?",
+            JSON.stringify(revised),
+            revised.version,
+            time,
+            revised.id,
+          ),
+          stmt(
+            e,
+            "INSERT INTO incident_revisions(incident_id,version,view,known_at,reason) VALUES(?,?,?,?,?)",
+            revised.id,
+            revised.version,
+            JSON.stringify(revised),
+            time,
+            `same-event links revised by ${FUSION_RULE} after incident ${iid} changed`,
+          ),
+          stmt(
+            e,
+            "INSERT INTO outbox(event_type,entity_id,payload) VALUES('incident.updated',?,?)",
+            revised.id,
+            JSON.stringify({ incident: revised, catchup: true }),
+          ),
+        );
+      }
       statements.push(
         stmt(
           e,
@@ -672,10 +970,8 @@ export async function ingest(e: Env, items: ObservationInput[]) {
           );
         }
       }
-      if (previous?.view)
-        statements.push(
-          ...(await correctionAlerts(e, view)),
-        );
+      // Every published revision meets the watch rules, including the first.
+      statements.push(...(await correctionAlerts(e, view)));
       const origin = await hash(item.canonical_url);
       statements.push(
         stmt(
@@ -979,8 +1275,7 @@ async function complete(
       403,
     );
   }
-  if (run?.requested_model !== "gpt-6-luna" || (run.tool_attempts ?? 1) !== 0)
-    throw Error("invalid_model_run");
+  if (!acceptedModelRun(run, e)) throw Error("invalid_model_run");
   const time = now(),
     aid = await hash(`analysis:${job.id}`);
   const guard =
@@ -1203,38 +1498,9 @@ async function complete(
         aid,
       ),
     );
-    const rules = await rows(
-      e,
-      "SELECT r.*,a.geometry FROM alert_rules r LEFT JOIN watch_areas a ON a.id=json_extract(r.rule,'$.watch_area_id') WHERE r.owner_id='owner'",
+    statements.push(
+      ...(await correctionAlerts(e, view, { sql: guard, values: [aid] })),
     );
-    for (const rule of rules) {
-      const policy = parse(rule.rule) as AlertRule;
-      const last = await lastAlertDelivery(e, iid, rule.id, policy);
-      const decision = alertDecision(
-        view,
-        policy,
-        rule.geometry ? parse(rule.geometry) : null,
-        last,
-      );
-      const delivery = await hash(
-        `${iid}:${version}:${rule.id}:${rule.version}`,
-      );
-      statements.push(
-        stmt(
-          e,
-          `INSERT OR IGNORE INTO alert_deliveries(id,incident_id,incident_version,rule_id,rule_version,state,reason,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${guard}`,
-          delivery,
-          iid,
-          version,
-          rule.id,
-          rule.version,
-          decision.state,
-          decision.reason,
-          time,
-          aid,
-        ),
-      );
-    }
   }
   const previousSupports = await rows(
     e,
@@ -1348,32 +1614,38 @@ async function complete(
   if (accepted) await settleBundles(e);
   return json({ accepted: !!accepted, analysis_id: aid });
 }
-function defaultSignalEligible(incident: IncidentView) {
+function defaultSignalEligible(incident: IncidentView, at = Date.now()) {
   if(incident.superseded_by)return false;
   return !incident.reports.length || incident.reports.some((report: any) => {
     const contextual = report.source_id === "fr-sncf-siri" || report.source_id?.startsWith("fcdo-") || report.source_id?.startsWith("it-dpc-") || report.source_id === "de-dwd";
     if (!contextual) return true;
     // Retained transport/weather/admin records remain accessible through explicit source context.
-    return report.source_id !== "fr-sncf-siri" && ["severe", "critical"].includes(incident.impact) && incident.claims.some(c => temporalStatus(c) === "current");
+    return report.source_id !== "fr-sncf-siri" && ["severe", "critical"].includes(incident.impact) && incident.claims.some(c => temporalStatus(c, at) === "current");
   });
 }
-const eventTime =
-    "coalesce(json_extract(view,'$.event_start'),json_extract(view,'$.published_at'))",
-  // Latest of start and expiry; '9' sorts timeless and issuer-current incidents after every ISO time, as incidentInWindow keeps them once started.
-  windowKey = `CASE WHEN json_extract(view,'$.current_listing') THEN '9' ELSE coalesce(max(${eventTime},coalesce(json_extract(view,'$.expires_at'),${eventTime})),'9') END`;
+/** A replay time from a query string, in the form known_at is stored in so the two compare as text. */
+function knownAt(u: URL) {
+  const at = u.searchParams.get("at");
+  if (!at) return null;
+  if (!Number.isFinite(Date.parse(at))) throw Error("invalid_time");
+  return new Date(at).toISOString();
+}
 /**
  * Index-backed supersets of incidentInWindow and inBbox, applied before LIMIT so a busy region or
- * stale backlog cannot hide matching incidents. A bbox reads its padded latitude band, a window its
- * recent, unexpired and timeless incidents; only a pole-to-pole bbox without a window falls back to
- * the recency scan. The exact checks in snapshot still decide membership.
+ * stale backlog cannot hide matching incidents. A bbox seeks its grid cells in incidents_cell and,
+ * with a window, only the window's keys within each cell, so it reads its own area's live rows
+ * rather than a whole latitude band. Without a bbox, or when the cells cover the whole grid, the
+ * recency index stops after LIMIT matches. The exact checks in snapshot still decide membership.
+ * With `at`, the same predicates address incident_revisions through revisions_cell, and the window
+ * is relative to that time.
  */
-async function liveScope(e: Env, hours: number, bbox?: number[]) {
+async function liveScope(e: Env, hours: number, bbox?: number[], at?: string) {
   const where: string[] = [],
     params: (string | number)[] = [];
   let index = "";
   // Day-aligned bounds with a day of slack cover UTC offsets and date-only values and keep the memo key stable.
   const day = 86400000,
-    today = Math.floor(Date.now() / day) * day,
+    today = Math.floor((at ? Date.parse(at) : Date.now()) / day) * day,
     after = new Date(today - hours * 3600000 - day),
     before = new Date(today + hours * 3600000 + 2 * day);
   if (
@@ -1387,22 +1659,30 @@ async function liveScope(e: Env, hours: number, bbox?: number[]) {
     params.push(after.toISOString(), before.toISOString());
   }
   if (bbox) {
-    const reach = await memoRead(e, "incident-reach", 1000, () =>
+    // A replay reaches as far as any retained revision, which a later correction may have narrowed.
+    const reach = await memoRead(e, at ? "revision-reach" : "incident-reach", 1000, () =>
       stmt(
         e,
-        `SELECT max(${locationRadius}) AS km FROM incidents WHERE deleted_at IS NULL`,
+        at
+          ? `SELECT max(${locationRadius}) AS km FROM incident_revisions`
+          : `SELECT max(${locationRadius}) AS km FROM incidents WHERE deleted_at IS NULL`,
       ).first<{ km: number | null }>(),
     );
     const candidates = bboxCandidates(bbox, reach?.km ?? 0);
+    if (candidates.cells) {
+      // Integers computed here, inlined because a whole hemisphere exceeds D1's 100 bound parameters.
+      where.push(`${locationCell} IN(${candidates.cells.join(",")})`);
+      index = at ? " INDEXED BY revisions_cell" : " INDEXED BY incidents_cell";
+    }
     where.push(candidates.sql);
     params.push(...candidates.params);
-    if (candidates.banded) index = " INDEXED BY incidents_latitude";
   }
+  const clause = where.map((w) => ` AND ${w}`).join("");
   return {
-    where: where.map((w) => ` AND ${w}`).join(""),
+    where: clause,
     params,
     index,
-    key: JSON.stringify(params),
+    key: JSON.stringify([clause, params]),
   };
 }
 /** The live incident head shared by the snapshot and the structured brief, so one read serves both. */
@@ -1415,9 +1695,35 @@ function liveHead(e: Env, scope: Awaited<ReturnType<typeof liveScope>>) {
     ),
   );
 }
+/**
+ * What the platform held at `at`: each incident's latest revision known by then, in area, window
+ * and text, most recently known first. A revision is held from its known_at until superseded_at,
+ * when a later version became known, so area, window and text are judged on the view held then,
+ * never on an earlier or later one, and nothing known after `at` reaches the result. Without a
+ * bbox the knowledge-time index stops after LIMIT matches. In an area, revisions_cell seeks window
+ * keys up to LASTING_MS past `at`, so it passes over only the revisions known in those few days
+ * after; a held revision with a later key is a lasting one (its key is more than LASTING_MS past
+ * its own known_at, which precedes `at`), and revisions_lasting holds those apart.
+ */
+function replayHead(e: Env, at: string, scope: Awaited<ReturnType<typeof liveScope>>, text: string) {
+  // An ASCII needle is a superset of textMatch's case-insensitive substring test; SQLite lowers ASCII only.
+  const needle = /^[\x20-\x7e]+$/.test(text) ? text.toLowerCase() : "";
+  const held = `known_at<=? AND (superseded_at IS NULL OR superseded_at>?)${scope.where}${needle ? " AND instr(lower(view),?)>0" : ""}`,
+    params = [at, at, ...scope.params, ...(needle ? [needle] : [])];
+  if (!scope.index)
+    return rows(e, `SELECT view FROM incident_revisions WHERE ${held} ORDER BY known_at DESC LIMIT 1000`, ...params);
+  const edge = new Date(Date.parse(at) + LASTING_MS).toISOString();
+  return rows(
+    e,
+    `SELECT view,known_at FROM incident_revisions${scope.index} WHERE ${held} AND ${windowKey}<=? UNION ALL SELECT view,known_at FROM incident_revisions INDEXED BY revisions_lasting WHERE ${held} AND ${windowKey}>? AND ${lastingRevision} ORDER BY known_at DESC LIMIT 1000`,
+    ...params,
+    edge,
+    ...params,
+    edge,
+  );
+}
 async function snapshot(e: Env, u: URL) {
-  const at = u.searchParams.get("at");
-  if (at && !Number.isFinite(Date.parse(at))) throw Error("invalid_time");
+  const at = knownAt(u);
   const searchText = (
     u.searchParams.get("query") ??
     u.searchParams.get("q") ??
@@ -1432,23 +1738,21 @@ async function snapshot(e: Env, u: URL) {
   const bbox = u.searchParams.get("bbox")?.split(",").map(Number);
   if (bbox && (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))))
     throw Error("invalid_bbox");
-  const scope = await liveScope(e, at ? 0 : hours, at ? undefined : bbox);
+  const scope = await liveScope(e, hours, bbox, at ?? undefined);
   const records = at
-    ? await rows(
-        e,
-        "SELECT view FROM incident_revisions r WHERE known_at<=? AND version=(SELECT max(version) FROM incident_revisions WHERE incident_id=r.incident_id AND known_at<=?) ORDER BY known_at DESC LIMIT 1000",
-        at,
-        at,
-      )
+    ? await replayHead(e, at, scope, searchText)
     : fts
       ? await rows(
           e,
           `SELECT i.view FROM incidents i JOIN incidents_fts f ON f.incident_id=i.id WHERE incidents_fts MATCH ? AND i.deleted_at IS NULL${scope.where} ORDER BY rank LIMIT 1000`,
-          fts,
+          // incident_id is indexed only so revisions can drop their old row without a scan.
+          `search_text : (${fts})`,
           ...scope.params,
         )
       : await liveHead(e, scope);
-  const rights = await currentRights(e);
+  const rights = await currentRights(e),
+    time = at ? Date.parse(at) : Date.now();
+  // Rights are always today's: a source whose permission was withdrawn stays hidden in replay.
   let incidents = records
     .map((v) => parse(v.view) as IncidentView)
     .filter((i) => permittedView(i, rights))
@@ -1456,38 +1760,14 @@ async function snapshot(e: Env, u: URL) {
       ...refreshRights(i, rights),
       claims: i.claims.map((c) => ({
         ...c,
-        temporal_status: temporalStatus(c, at ? Date.parse(at) : Date.now()),
+        temporal_status: temporalStatus(c, time),
       })),
     }));
-  if (!at && !u.searchParams.get("source") && u.searchParams.get("include_routine") !== "1") incidents = incidents.filter(defaultSignalEligible);
-  const query = (
-    u.searchParams.get("query") ?? u.searchParams.get("q")
-  )?.toLocaleLowerCase();
-  if (query && at)
-    incidents = incidents.filter((i) =>
-      JSON.stringify([i.headline, i.summary_en, i.location, i.reports])
-        .toLocaleLowerCase()
-        .includes(query),
-    );
-  for (const [key, match] of [
-    ["activity", (i: IncidentView, v: string) => i.activity === v],
-    ["evidence", (i: IncidentView, v: string) => i.evidence_status === v],
-    [
-      "source",
-      (i: IncidentView, v: string) =>
-        i.reports.some((r: any) => r.source_id === v),
-    ],
-    [
-      "language",
-      (i: IncidentView, v: string) =>
-        i.reports.some((r: any) => r.original_language === v),
-    ],
-  ] as const) {
-    const value = u.searchParams.get(key);
-    if (value) incidents = incidents.filter((i) => match(i, value));
-  }
-  if (hours > 0 && !at) incidents=incidents.filter(i=>incidentInWindow(i,hours));
-  if (bbox) incidents = incidents.filter((i) => inBbox(i.location, bbox));
+  if (!u.searchParams.get("source") && u.searchParams.get("include_routine") !== "1") incidents = incidents.filter((i) => defaultSignalEligible(i, time));
+  const query = u.searchParams.get("query") ?? u.searchParams.get("q");
+  if (query && at) incidents = incidents.filter((i) => textMatch(i, query));
+  incidents = incidents.filter(viewFilter(u.searchParams, bbox));
+  if (u.searchParams.get("view") === "list") incidents = incidents.map(listView) as IncidentView[];
   const incoming =
     at || u.searchParams.get("include_incoming") === "0"
       ? []
@@ -1545,8 +1825,23 @@ async function snapshot(e: Env, u: URL) {
       },
     })),
     historical_at: at,
+    // The earliest knowledge time retention has kept, so a time control knows how far back it reaches.
+    history_from: (
+      await memoRead(e, "history-from", 60000, () =>
+        stmt(e, "SELECT min(known_at) AS first FROM incident_revisions").first<{ first: string | null }>(),
+      )
+    )?.first ?? null,
     limited: records.length >= 1000,
   };
+}
+/** An event's incident as /api/incidents/:id?compact=1 would return it, in list form; undefined when that read would refuse it. */
+function eventView(item: IncidentView, rights: Map<string, SourceRecord["rights"]>) {
+  if (!defaultSignalEligible(item) || !permittedView(item, rights)) return undefined;
+  return listView({
+    ...refreshRights(item, rights),
+    claims: item.claims.map((c) => ({ ...c, temporal_status: temporalStatus(c) })),
+    history: [],
+  });
 }
 async function events(r: Request, e: Env) {
   const after = Number(
@@ -1601,18 +1896,25 @@ async function events(r: Request, e: Env) {
             controller.close();
             return;
           }
-          const updates = await memoRead(e, "outbox:" + cursor, 900, () =>
-            rows(
+          // Only the fields an event carries, and for a live incident change the list view a
+          // compact detail read would return, so clients need not read each incident back.
+          // Streams in one isolate share the read, its parsing and the rights check.
+          const updates = await memoRead(e, "outbox:" + cursor, 900, async () => {
+            const list = await rows(
               e,
-              "SELECT * FROM outbox WHERE id>? ORDER BY id LIMIT 200",
+              "SELECT id,event_type,entity_id,created_at,json_extract(payload,'$.reason') AS reason,json_extract(payload,'$.incident.version') AS version,json_extract(payload,'$.catchup') AS catchup,CASE WHEN event_type IN('incident.created','incident.updated','incident.escalated') THEN json_extract(payload,'$.incident') END AS incident FROM outbox WHERE id>? ORDER BY id LIMIT 200",
               cursor,
-            ),
-          );
+            );
+            const rights = list.some((v) => v.incident) ? await currentRights(e) : null;
+            return list.map((v) => ({
+              ...v,
+              incident: v.incident ? eventView(parse(v.incident), rights!) : undefined,
+            }));
+          });
           for (const v of updates) {
-            const payload = parse(v.payload);
             const safe =
               v.event_type === "resync"
-                ? { reason: payload.reason ?? "authoritative_resync" }
+                ? { reason: v.reason ?? "authoritative_resync" }
                 : {
                     kind: v.event_type,
                     committed_at: v.created_at,
@@ -1621,10 +1923,10 @@ async function events(r: Request, e: Env) {
                       : undefined,
                     report_id:
                       v.event_type === "incoming" ? v.entity_id : undefined,
-                    version: payload.incident?.version ?? null,
+                    version: v.version ?? null,
                     catchup:
-                      payload.catchup === true ||
-                      Date.parse(v.created_at) <= started,
+                      v.catchup === 1 || Date.parse(v.created_at) <= started,
+                    incident: v.incident,
                   };
             send(
               `id: ${v.id}\nevent: ${v.event_type}\ndata: ${JSON.stringify(safe)}\n\n`,
@@ -1693,6 +1995,22 @@ async function routes(r: Request, e: Env) {
     if (!bbox) return json({error:"invalid_bbox"},400);
     return json(await geo.getGeospatialCatalog(bbox));
   }
+  const thermalTile = p.match(/^\/api\/thermal\/([0-9a-z]{1,16})\/(\d{1,2})\/(\d{1,6})\/(\d{1,6})$/);
+  if (r.method === "GET" && thermalTile) {
+    if (who !== "owner") return json({error:"forbidden"},who ? 403 : 401);
+    const [z, x, y] = thermalTile.slice(2).map(Number);
+    if (z > THERMAL_MAX_ZOOM || x >= 2 ** z || y >= 2 ** z) return json({error:"invalid_tile"},400);
+    const geo = await import("./geospatial");
+    const { version, tile } = await geo.getThermalTile(z, x, y);
+    // A version names one FIRMS refresh, so its tiles never change; an older version gets the current tiles uncached.
+    return new Response(tile, {
+      status: tile ? 200 : 204,
+      headers: {
+        "content-type": "application/x-protobuf",
+        "cache-control": version === thermalTile[1] ? "private, max-age=86400, immutable" : "no-store",
+      },
+    });
+  }
   if (r.method === "GET" && (p === "/api/cameras" || p.startsWith("/api/cameras/"))) {
     if (who !== "owner") return json({error: "forbidden"}, who ? 403 : 401);
     const media = await import("./cameras");
@@ -1700,7 +2018,18 @@ async function routes(r: Request, e: Env) {
     const camera = await media.getPublicCamera(decodeURIComponent(p.slice("/api/cameras/".length)));
     return camera ? json(camera) : json({error:"camera_not_found"},404);
   }
-  if (!who) {
+  const feed =
+    r.method === "GET"
+      ? p.match(/^\/api\/alert-rules\/([^/]+)\/feed\.(atom|geojson)$/)
+      : null;
+  const feedReader =
+    !!feed &&
+    who !== "owner" &&
+    (await eq(
+      u.searchParams.get("key") ?? "",
+      await ruleFeedKey(e, decodeURIComponent(feed[1])),
+    ));
+  if (!who && !feedReader) {
     if (p.startsWith("/api/")) return json({ error: "unauthorized" }, 401);
     return new Response(
       '<!doctype html><meta name="viewport" content="width=device-width"><title>World Watch · Private</title><style>body{background:#0d151c;color:#e7edf1;font:18px system-ui;display:grid;place-content:center;height:95vh}input,button{font:inherit;padding:12px;border-radius:8px;border:1px solid #354650;background:#192730;color:inherit}form{display:grid;gap:16px;max-width:360px}p{color:#a6b5be}</style><form id="login"><h1>World Watch</h1><p>Private owner access</p><input aria-label="Owner access token" type="password" id="token" autocomplete="current-password" required><button>Open map</button><output id="status"></output></form><script>login.onsubmit=async e=>{e.preventDefault();const r=await fetch("/api/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token.value})});if(r.ok)location.reload();else status.textContent="Access token not accepted"}</script>',
@@ -1727,6 +2056,8 @@ async function routes(r: Request, e: Env) {
       },
       503,
     );
+  if (feed && (who === "owner" || feedReader))
+    return ruleFeed(e, u, decodeURIComponent(feed[1]), feed[2]);
   if (!p.startsWith("/api/")) {
     if (who !== "owner") return json({ error: "forbidden" }, 403);
     return e.ASSETS.fetch(r);
@@ -1739,19 +2070,29 @@ async function routes(r: Request, e: Env) {
       analysis_mode: e.ANALYSIS_MODE ?? "local-codex",
       ...(who === "owner" ? { status: await status(e) } : {}),
     });
+  if (p === "/api/news-signals" && r.method === "GET") {
+    if (who !== "owner") return json({ error: "forbidden" }, 403);
+    const bbox = u.searchParams.get("bbox")?.split(",").map(Number) ?? null;
+    if (bbox && (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))))
+      throw Error("invalid_bbox");
+    return json(await memoRead(e, "news-signals:" + bbox, 60000, () => newsCatalog(newsContext(e), bbox)));
+  }
   if (p.startsWith("/api/worker/") && who !== "worker" && who !== "owner")
     return json({ error: "forbidden" }, 403);
   if (p === "/api/brief" && r.method === "GET") {
     if (who!=="owner")return json({error:"forbidden"},403);
-    const brief=await currentBrief({stmt:(sql,...values)=>stmt(e,sql,...values)});
+    const at=knownAt(u),time=at?Date.parse(at):Date.now();
+    const brief=await currentBrief({stmt:(sql,...values)=>stmt(e,sql,...values)},time,at??undefined);
     // A model brief always wins; issuer fields stand in only while no analysis worker has ever connected.
-    if(brief.current||await stmt(e,"SELECT id FROM workers LIMIT 1").first())return json(brief);
+    // In replay, issuer fields stand in for any time whose model brief retention has dropped or that had none.
+    if(brief.current||!at&&await stmt(e,"SELECT id FROM workers LIMIT 1").first())return json(brief);
     const hours=Number(u.searchParams.get("hours"));
     // Viewers poll every minute; one build per five minutes keeps the live read off that cadence.
-    const current=await memoRead(e,"structured-brief:"+hours,300000,async()=>{
-      const rights=await currentRights(e);
-      const views=(await liveHead(e,await liveScope(e,hours))).map(v=>parse(v.view) as IncidentView);
-      return structuredBrief(views.filter(i=>permittedView(i,rights)&&defaultSignalEligible(i)&&incidentInWindow(i,hours)),hours);
+    const current=await memoRead(e,`structured-brief:${hours}:${at}`,300000,async()=>{
+      const rights=await currentRights(e),scope=await liveScope(e,hours,undefined,at??undefined);
+      const views=(await (at?replayHead(e,at,scope,""):liveHead(e,scope))).map(v=>parse(v.view) as IncidentView);
+      // News signals keep no history, so a replayed brief is built from issuer fields alone.
+      return structuredBrief(views.filter(i=>permittedView(i,rights)&&defaultSignalEligible(i,time)&&incidentInWindow(i,hours,time)),hours,time,at?[]:(await newsCatalog(newsContext(e))).signals);
     });
     return json({current,pending:false,updated_at:null});
   }
@@ -1903,6 +2244,10 @@ async function routes(r: Request, e: Env) {
     const b = (await r.json()) as any;
     return json(await ingest(e, b.observations));
   }
+  if (p === "/api/news/ingest" && r.method === "POST") {
+    if (!collectorAllowed) return json({ error: "forbidden" }, 403);
+    return json(await ingestNews(newsContext(e), await r.json()));
+  }
   if (p === "/api/sources" && r.method === "POST") {
     if (!collectorAllowed) return json({ error: "forbidden" }, 403);
     const b = (await r.json()) as any;
@@ -1947,8 +2292,15 @@ async function routes(r: Request, e: Env) {
       sourceId,
     ).first<any>();
     const source = sourceRow && parse(sourceRow.record);
-    // BBK withdraws warnings from its complete active feed; GDACS ends events it stops listing as current.
-    const listing = source?.config?.format === "gdacs_geojson";
+    // BBK withdraws warnings from its complete active feed; GDACS and ADSB.lol end what they stop listing as current,
+    // and the routing detector ends drops it no longer finds open in any country.
+    const listing = [
+      "gdacs_geojson",
+      "adsblol_squawks",
+      "ripestat_country_routing",
+    ].includes(
+      source?.config?.format,
+    );
     if (
       !source ||
       (source.family !== "bbk" && !listing) ||
@@ -2024,9 +2376,11 @@ async function routes(r: Request, e: Env) {
           view.version,
           JSON.stringify(view),
           view.updated_at,
-          listing
-            ? "issuer no longer lists the event as current"
-            : "complete issuer feed withdrawal",
+          !listing
+            ? "complete issuer feed withdrawal"
+            : source.config.format === "ripestat_country_routing"
+              ? "measured drop no longer found open"
+              : "issuer no longer lists the event as current",
         ),
         stmt(
           e,
@@ -2308,7 +2662,9 @@ async function routes(r: Request, e: Env) {
       })),
     });
   if (
-    (p === "/api/incidents/merge" || p === "/api/incidents/split") &&
+    (p === "/api/incidents/merge" ||
+      p === "/api/incidents/split" ||
+      p === "/api/incidents/link") &&
     r.method === "POST"
   ) {
     const b = (await r.json()) as any;
@@ -2360,6 +2716,42 @@ async function routes(r: Request, e: Env) {
             superseded_by: target.id,
           },
           reason: `merged into ${target.id}: ${b.reason}`,
+        });
+    } else if (p.endsWith("/link")) {
+      // Separating two records, or handing the pair back to the rule; neither record changes otherwise.
+      if (
+        !Array.isArray(b.ids) ||
+        b.ids.length !== 2 ||
+        b.ids[0] === b.ids[1] ||
+        typeof b.linked !== "boolean"
+      )
+        throw Error("invalid_link");
+      const pair: IncidentView[] = [];
+      for (const id of b.ids) {
+        const saved = await stmt(
+          e,
+          "SELECT view FROM incidents WHERE id=? AND deleted_at IS NULL",
+          id,
+        ).first<any>();
+        if (!saved) throw Error("incident_not_found");
+        pair.push(parse(saved.view));
+      }
+      const verdict = b.linked
+        ? sameEvent(pair[0], pair[1])
+        : { type: "split_from" as const, basis: "operator", reason: b.reason.trim() };
+      for (const [view, other] of [pair, [...pair].reverse()])
+        changes.push({
+          view: {
+            ...withLinks(view, [
+              ...(view.links ?? []).filter((l) => l.incident_id !== other.id),
+              ...(verdict ? [{ ...verdict, incident_id: other.id }] : []),
+            ]),
+            version: view.version + 1,
+            updated_at: time,
+          },
+          reason: b.linked
+            ? `same-event rule restored for ${other.id}: ${b.reason}`
+            : `separated from ${other.id}: ${b.reason}`,
         });
     } else {
       const saved = await stmt(
@@ -2458,24 +2850,32 @@ async function routes(r: Request, e: Env) {
   }
   const detail = p.match(/^\/api\/incidents\/([^/]+)$/);
   if (detail) {
-    const i = await stmt(
-      e,
-      "SELECT view FROM incidents WHERE id=? AND deleted_at IS NULL",
-      detail[1],
+    // With `at`, the revision held then, with only the history, shared evidence and origins known by then.
+    const at = knownAt(u),
+      time = at ? Date.parse(at) : Date.now();
+    const i = await (at
+      ? stmt(e, "SELECT view FROM incident_revisions WHERE incident_id=? AND known_at<=? ORDER BY version DESC LIMIT 1", detail[1], at)
+      : stmt(e, "SELECT view FROM incidents WHERE id=? AND deleted_at IS NULL", detail[1])
     ).first<any>();
     if (!i) return json({ error: "not_found" }, 404);
     const item = parse(i.view) as IncidentView;
-    if (u.searchParams.get("compact") === "1" && !defaultSignalEligible(item)) return json({error:"outside_default_monitoring"},404);
+    if (u.searchParams.get("compact") === "1" && !defaultSignalEligible(item, time)) return json({error:"outside_default_monitoring"},404);
     if (u.searchParams.get("compact") !== "1") {
-      const linked = await rows(e, "SELECT r.input FROM evidence_links l JOIN observation_revisions r ON r.report_id=l.report_id AND r.revision=l.revision JOIN observations o ON o.id=l.report_id JOIN analysis_jobs j ON j.report_id=l.report_id AND j.revision=l.revision WHERE l.incident_id=? AND j.state='bundled' AND j.completed_at IS NOT NULL AND o.deleted_at IS NULL AND o.latest_revision=l.revision ORDER BY j.created_at LIMIT 50", detail[1]);
+      const linked = await rows(
+        e,
+        `SELECT r.input FROM evidence_links l JOIN observation_revisions r ON r.report_id=l.report_id AND r.revision=l.revision JOIN observations o ON o.id=l.report_id JOIN analysis_jobs j ON j.report_id=l.report_id AND j.revision=l.revision WHERE l.incident_id=? AND j.state='bundled' AND j.completed_at IS NOT NULL AND o.deleted_at IS NULL AND ${at ? "j.completed_at<=? AND r.ingested_at<=? AND NOT EXISTS(SELECT 1 FROM observation_revisions x WHERE x.report_id=l.report_id AND x.ingested_at>r.ingested_at AND x.ingested_at<=?)" : "o.latest_revision=l.revision"} ORDER BY j.created_at LIMIT 50`,
+        detail[1],
+        ...(at ? [at, at, at] : []),
+      );
       item.reports.push(...linked.map(v => ({...parse(v.input), analysis_reused: true, shared_content: true})).filter(v => !item.reports.some(r => r.report_id === v.report_id)));
     }
     const historical =
       u.searchParams.get("compact") !== "1"
         ? await rows(
             e,
-            "SELECT version,known_at,reason,view FROM incident_revisions WHERE incident_id=? ORDER BY version",
+            `SELECT version,known_at,reason,view FROM incident_revisions WHERE incident_id=?${at ? " AND known_at<=?" : ""} ORDER BY version`,
             detail[1],
+            ...(at ? [at] : []),
           )
         : [];
     const sourceIds = [
@@ -2494,7 +2894,7 @@ async function routes(r: Request, e: Env) {
           ...item,
           claims: item.claims.map((c) => ({
             ...c,
-            temporal_status: temporalStatus(c),
+            temporal_status: temporalStatus(c, time),
           })),
         },
         rights,
@@ -2505,11 +2905,13 @@ async function routes(r: Request, e: Env) {
       evidence_origins:
         u.searchParams.get("compact") === "1"
           ? []
-          : await rows(
-              e,
-              "SELECT o.*,l.report_id FROM origin_groups o JOIN evidence_links l ON l.origin_id=o.id WHERE l.incident_id=?",
-              detail[1],
-            ),
+          : (
+              await rows(
+                e,
+                "SELECT o.*,l.report_id FROM origin_groups o JOIN evidence_links l ON l.origin_id=o.id WHERE l.incident_id=?",
+                detail[1],
+              )
+            ).filter((o) => !at || item.reports.some((r) => r.report_id === o.report_id)),
     });
   }
   const deletion = p.match(/^\/api\/sources\/([^/]+)$/);
@@ -2597,26 +2999,14 @@ async function routes(r: Request, e: Env) {
         type: "FeatureCollection",
         features: permitted
           .filter((i) => i.location)
-          .map((i) => ({
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: [i.location!.lon, i.location!.lat],
-            },
-            properties: {
+          .map((i) =>
+            geojsonFeature({
               id: i.id,
-              headline: i.headline,
-              impact: i.impact,
-              event_start: i.event_start,
-              accuracy: i.location!.accuracy,
-              urls: i.reports.map((r: any) => r.canonical_url),
-              attribution: i.reports.map((r: any) => ({
-                source: r.source_name ?? r.source_id,
-                attribution: r.rights.attribution,
-                license: r.rights.basis,
-              })),
-            },
-          })),
+              incident: i,
+              updated: i.updated_at,
+              correction: incidentCorrection(i),
+            }),
+          ),
       });
     if (format === "csv") {
       const escape = (s: any) => {
@@ -2681,14 +3071,24 @@ async function routes(r: Request, e: Env) {
   if (p === "/api/alert-rules") {
     if (r.method === "GET")
       return json({
-        rules: (
-          await rows(e, "SELECT * FROM alert_rules WHERE owner_id='owner'")
-        ).map((v) => ({ ...v, rule: parse(v.rule) })),
+        rules: await Promise.all(
+          (await rows(e, "SELECT * FROM alert_rules WHERE owner_id='owner'")).map(
+            async (v) => ({
+              ...v,
+              rule: parse(v.rule),
+              feeds: await ruleFeedUrls(e, u.origin, v.id),
+            }),
+          ),
+        ),
         deliveries: await rows(
           e,
           "SELECT * FROM alert_deliveries ORDER BY created_at DESC LIMIT 200",
         ),
-        channels: { in_app: true, external: "not configured" },
+        channels: {
+          in_app: true,
+          feeds: true,
+          web_push: pushKeys(e) ? "configured" : "not configured",
+        },
       });
     if (r.method === "POST") {
       const b = (await r.json()) as any;
@@ -2707,6 +3107,47 @@ async function routes(r: Request, e: Env) {
         JSON.stringify(b.rule),
       ).run();
       return json({ id, version: (old?.version ?? 0) + 1 });
+    }
+  }
+  if (p === "/api/push") {
+    const keys = pushKeys(e);
+    if (r.method === "GET")
+      return json({
+        configured: !!keys,
+        public_key: keys?.publicKey ?? null,
+        subscriptions:
+          (await stmt(e, "SELECT count(*) AS n FROM push_subscriptions WHERE owner_id='owner'").first<any>())?.n ?? 0,
+      });
+    const b = (await r.json()) as any;
+    if (r.method === "DELETE") {
+      const id = await hash(new URL(b.endpoint).href);
+      await measuredBatch(e, [
+        stmt(e, "DELETE FROM push_outbox WHERE subscription_id=?", id),
+        stmt(e, "DELETE FROM push_subscriptions WHERE id=? AND owner_id='owner'", id),
+      ]);
+      return json({ unsubscribed: true });
+    }
+    if (r.method === "POST") {
+      if (!keys) return json({ error: "push_not_configured" }, 409);
+      const endpoint = new URL(b.endpoint);
+      if (
+        endpoint.protocol !== "https:" ||
+        endpoint.username ||
+        endpoint.password ||
+        fromBase64url(String(b.keys?.p256dh)).length !== 65 ||
+        fromBase64url(String(b.keys?.auth)).length !== 16
+      )
+        throw Error("invalid_push_subscription");
+      await stmt(
+        e,
+        "INSERT INTO push_subscriptions(id,owner_id,endpoint,p256dh,auth,created_at) VALUES(?,'owner',?,?,?,?) ON CONFLICT(id) DO UPDATE SET p256dh=excluded.p256dh,auth=excluded.auth",
+        await hash(endpoint.href),
+        endpoint.href,
+        b.keys.p256dh,
+        b.keys.auth,
+        now(),
+      ).run();
+      return json({ subscribed: true });
     }
   }
   if (p === "/api/notes" && r.method === "POST") {
@@ -2859,7 +3300,7 @@ async function routes(r: Request, e: Env) {
   return json({ error: "not_found" }, 404);
 }
 export default {
-  async fetch(r: Request, e: Env) {
+  async fetch(r: Request, e: Env, ctx?: { waitUntil(p: Promise<unknown>): void }) {
     e = { ...e, _metrics: { read: 0, written: 0, queries: 0, unknown: 0 } };
     try {
       if (
@@ -2877,6 +3318,11 @@ export default {
         return json({ error: "body_too_large" }, 413);
       const upstream = await routes(r, e);
       if (r.method !== "GET" && upstream.ok) readMemo.delete(e.DB);
+      if (e._pushQueued) {
+        const pushes = dispatchPush(e);
+        if (ctx) ctx.waitUntil(pushes);
+        else await pushes;
+      }
       const response = new Response(upstream.body, upstream);
       if (e._metrics && !e._metrics.unknown) {
         response.headers.set("x-ew-rows-read", String(e._metrics.read));
@@ -2926,6 +3372,8 @@ export default {
       e,
       "DELETE FROM outbox WHERE created_at<strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days')",
     ).run();
+    // Retries pushes a failed or interrupted dispatch left queued.
+    await dispatchPush(e);
     ctx.waitUntil(
       import("../collector/index")
         .then((m) =>

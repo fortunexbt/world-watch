@@ -1,5 +1,6 @@
 import type { ObservationInput, SourceRecord } from "../../shared/contracts.js";
 import { countryAt } from "../../shared/borders.js";
+import { buildFootprint } from "../../shared/footprint.js";
 
 /** Complete past-day ComCat summary; M4.5 is the global completeness level, smaller events are mostly US-network only. */
 export const USGS_FEED_URL =
@@ -72,6 +73,8 @@ export function parseUsgs(
               pager_alert: alert,
               tsunami_flag: p.tsunami === 1,
               review_status: text(p.status) || null,
+              // The contributing network ComCat prefers for this event, such as us for NEIC or ak for Alaska.
+              preferred_network: text(p.net) || null,
               network_ids: text(p.ids).split(",").filter(Boolean),
               notice:
                 "U.S. Geological Survey earthquake record. The point is the epicentre, not the shaking footprint. Any country is derived from the epicentre and the map's Natural Earth boundaries, and is left empty offshore or near a coast or border. A PAGER alert is a modelled estimate of fatalities and losses, not observed harm, and null means none was issued. The tsunami flag marks a large oceanic event and does not mean a tsunami occurred.",
@@ -100,4 +103,45 @@ export function parseUsgs(
       },
     ];
   });
+}
+
+/** ShakeMap contours are read for quakes with a PAGER alert or at least this magnitude. */
+export const SHAKEMAP_MAGNITUDE = 6;
+/** The event's detail GeoJSON when its ShakeMap is worth a read, otherwise null. */
+export function shakeMapDetailURL(o: ObservationInput) {
+  const event = JSON.parse(
+    o.excerpts.find((e) => e.id === "usgs-event")?.text ?? "{}",
+  );
+  return event.pager_alert || event.magnitude >= SHAKEMAP_MAGNITUDE
+    ? "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/" +
+        encodeURIComponent(o.native_id) +
+        ".geojson"
+    : null;
+}
+/** The preferred ShakeMap's MMI contour file named by an event detail, or null when it has none. */
+export function shakeMapContoursURL(detail: any): string | null {
+  // ComCat lists each product type's preferred version first.
+  const url =
+    detail?.properties?.products?.shakemap?.[0]?.contents?.[
+      "download/cont_mmi.json"
+    ]?.url;
+  return typeof url === "string" ? url : null;
+}
+/** ShakeMap cont_mmi.json: one MultiLineString of estimated shaking per MMI value. Contours stay lines; no area is inferred from them. */
+export function parseShakeMapContours(payload: unknown, url: string) {
+  const data = payload as any;
+  if (data?.type !== "FeatureCollection" || !Array.isArray(data.features))
+    throw Error("invalid_shakemap_contours");
+  return buildFootprint(
+    "shaking_intensity",
+    url,
+    data.features
+      .filter(
+        (f: any) =>
+          f?.properties?.units === "mmi" &&
+          Number.isFinite(f.properties.value) &&
+          ["LineString", "MultiLineString"].includes(f.geometry?.type),
+      )
+      .map((f: any) => ({ geometry: f.geometry, level: f.properties.value })),
+  );
 }

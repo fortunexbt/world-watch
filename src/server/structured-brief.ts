@@ -1,4 +1,7 @@
 import type { IncidentView } from "../shared/contracts";
+import { situations, type Situation } from "../shared/fusion";
+import type { NewsCategory, NewsSignal } from "../shared/news";
+import { WINDOW_HOURS } from "./news";
 
 /** The headline budget of the model brief contract. */
 const WORDS = 30;
@@ -25,6 +28,23 @@ const list = (items: string[]) =>
     ? items.slice(0, -1).join(", ") + " and " + items.at(-1)
     : (items[0] ?? "");
 
+const COVERAGE: Record<NewsCategory, string> = {
+  protest: "protests",
+  strike: "strikes",
+  armed_conflict: "armed conflict",
+  attack: "attacks and explosions",
+  coup: "coup plotting",
+  displacement: "displacement",
+  evacuation: "evacuations",
+  emergency_measures: "curfews and emergency measures",
+  disaster: "disasters",
+};
+/** "Lima, Lima, Peru" reads as "Lima, Peru". */
+const placeName = (name: string) => {
+  const parts = name.split(", ");
+  return parts.length > 1 ? `${parts[0]}, ${parts.at(-1)}` : name;
+};
+
 /** Structured adapters store the issuer's record as a JSON excerpt. */
 function issuer(view: IncidentView): Record<string, any> {
   try {
@@ -36,11 +56,13 @@ function issuer(view: IncidentView): Record<string, any> {
     return {};
   }
 }
-/** NWS and ECCC warning records, recognised by their own fields, are counted per issuer, hazard and country. */
+/** NWS, ECCC and issuer CAP warning records, recognised by their own fields, are counted per issuer, hazard and country. */
 function warningIssuer(record: Record<string, any>) {
   if (typeof record.vtec === "string") return "NWS";
   if (typeof record.alert === "string" && "risk_colour" in record)
     return "ECCC";
+  if (typeof record.cap_identifier === "string" && typeof record.issuer === "string")
+    return record.issuer;
   return null;
 }
 function countries(codes: unknown) {
@@ -63,32 +85,53 @@ function countries(codes: unknown) {
 
 /**
  * A model-free headline from issuer fields alone: one statement per issuer alert, one per
- * activity for the rest, each citing the incidents it counts. Statements follow their most
- * important incident and stop at the first that would exceed the word budget.
+ * activity for the rest, each citing the incidents it counts. A fused situation counts once and
+ * cites every record in it. Statements follow their most important incident and stop at the
+ * first that would exceed the word budget. A news signal is stated after them only once it has
+ * a baseline and has risen well above it, citing the signal rather than any incident.
  */
 export function structuredBrief(
   views: IncidentView[],
   hours: number,
   clock = Date.now(),
+  signals: NewsSignal[] = [],
 ) {
-  const live = views
-    .filter(
+  const live = situations(
+    views.filter(
       (v) =>
         !v.analyzed_at &&
-        v.evidence_status === "official_advisory" &&
+        // Self-reported records, such as transponder codes, publish unverified.
+        (v.evidence_status === "official_advisory" ||
+          v.evidence_status === "unverified") &&
         !v.cancelled &&
         !v.superseded_by &&
         !(v.expires_at && Date.parse(v.expires_at) <= clock),
-    )
-    .sort(order);
-  if (!live.length) return null;
-  const statements: { text: string; incidents: IncidentView[] }[] = [],
-    groups = new Map<string, IncidentView[]>();
+    ),
+  ).sort(order);
+  const rising = signals.filter((s) => s.rising).slice(0, 2);
+  if (!live.length && !rising.length) return null;
+  const statements: {
+      text: string;
+      incidents: Situation[];
+      signals?: NewsSignal[];
+    }[] = [],
+    groups = new Map<string, Situation[]>();
   for (const v of live) {
-    const record = issuer(v),
+    const records = (v.members ?? [v]).map(issuer),
+      record =
+        records.find((r) => typeof r.alert_level === "string") ?? records[0],
       hazard = v.activity.replaceAll("_", " ");
     if (typeof record.alert_level === "string") {
-      const name = typeof record.event_name === "string" ? record.event_name : "",
+      // A fused earthquake alert names the magnitude its measuring record states.
+      const magnitude = records
+          .map((r) => r.magnitude)
+          .find((m) => Number.isFinite(m)),
+        name =
+          typeof record.event_name === "string" && record.event_name
+            ? record.event_name
+            : v.activity === "earthquake" && magnitude !== undefined
+              ? `M${magnitude.toFixed(1)}`
+              : "",
         affected = countries(record.affected_countries),
         area = typeof record.countries === "string" ? record.countries : "";
       statements.push({
@@ -99,9 +142,12 @@ export function structuredBrief(
       const warning = warningIssuer(record);
       const key = warning
         ? `warning|${warning}|${v.activity}|${v.location?.country ?? ""}`
-        : v.activity === "earthquake" && Number.isFinite(record.magnitude)
-          ? "magnitude"
-          : v.activity;
+        : typeof record.squawk === "string" &&
+            typeof record.squawk_meaning === "string"
+          ? `squawk|${record.squawk}|${record.squawk_meaning}`
+          : v.activity === "earthquake" && Number.isFinite(record.magnitude)
+            ? "magnitude"
+            : v.activity;
       groups.set(key, [...(groups.get(key) ?? []), v]);
     }
   }
@@ -112,6 +158,59 @@ export function structuredBrief(
         where = countries([country]);
       statements.push({
         text: `${n} ${by} ${activity.replaceAll("_", " ")} ${n === 1 ? "warning" : "warnings"}${where ? " in " + where : ""}.`,
+        incidents,
+      });
+      continue;
+    }
+    if (key.startsWith("squawk|")) {
+      const [, code, meaning] = key.split("|");
+      statements.push({
+        text: `${incidents.length} aircraft reported squawking ${code} (${meaning}).`,
+        incidents,
+      });
+      continue;
+    }
+    // Ash SIGMETs are named by volcano, as the issuing offices write them, and conflict zone bulletins by country.
+    if (key === "volcanic_ash") {
+      const names: string[] = [
+          ...new Set(
+            incidents
+              .map((v) => issuer(v).volcano)
+              .filter((name) => typeof name === "string"),
+          ),
+        ].map((name) =>
+          name
+            .toLowerCase()
+            .replace(/(?<=^|[\s/(-])\S/g, (c: string) => c.toUpperCase()),
+        ),
+        near = list(
+          names.length > 3
+            ? [...names.slice(0, 2), `${names.length - 2} other volcanoes`]
+            : names,
+        ),
+        n = incidents.length;
+      statements.push({
+        text: `${n} volcanic ash ${n === 1 ? "SIGMET" : "SIGMETs"} for aircraft${near ? " near " + near : ""}.`,
+        incidents,
+      });
+      continue;
+    }
+    if (key === "conflict_zone_advisory") {
+      const where = countries(
+          incidents.flatMap((v) => issuer(v).country_codes ?? []),
+        ),
+        n = incidents.length;
+      statements.push({
+        text: `${n} EASA conflict zone ${n === 1 ? "bulletin" : "bulletins"} in force${where ? " for " + where : ""}.`,
+        incidents,
+      });
+      continue;
+    }
+    // World Watch's own routing drop detections, named by the countries they cover.
+    if (key === "connectivity_disruption") {
+      const where = countries(incidents.map((v) => v.location?.country));
+      statements.push({
+        text: `Internet connectivity ${incidents.length === 1 ? "drop" : "drops"} measured${where ? " in " + where : ""}.`,
         incidents,
       });
       continue;
@@ -138,24 +237,38 @@ export function structuredBrief(
     });
   }
   statements.sort((a, b) => order(a.incidents[0], b.incidents[0]));
+  statements.push(
+    ...rising.map((s) => ({
+      text: `News coverage of ${COVERAGE[s.category]} in ${placeName(s.place.name)} rose sharply in the last ${WINDOW_HOURS} hours.`,
+      incidents: [],
+      signals: [s],
+    })),
+  );
   const cited = statements.slice(0, 1);
   for (const s of statements.slice(1)) {
     if (words([...cited, s].map((c) => c.text).join(" ")) > WORDS) break;
     cited.push(s);
   }
-  const incidents = cited.flatMap((s) => s.incidents);
+  const incidents = cited.flatMap((s) => s.incidents),
+    records = (list: Situation[]) => list.flatMap((v) => v.members ?? [v]),
+    news = cited.flatMap((s) => s.signals ?? []);
   return {
     kind: "structured" as const,
     id: "structured:" + iso(clock),
     headline: cited.map((s) => s.text).join(" "),
     statements: cited.map((s) => ({
       text: s.text,
-      incident_ids: s.incidents.map((v) => v.id),
+      incident_ids: records(s.incidents).map((v) => v.id),
+      ...(s.signals ? { signal_ids: s.signals.map((v) => v.id) } : {}),
     })),
-    references: incidents.map((v) => ({
+    references: records(incidents).map((v) => ({
       incident_id: v.id,
       headline: v.headline,
       version: v.version,
+    })),
+    signals: news.map((s) => ({
+      signal_id: s.id,
+      headline: cited.find((c) => c.signals?.includes(s))!.text,
     })),
     pins: incidents
       .filter((v) => (RANK[v.impact] ?? 0) >= RANK.significant)

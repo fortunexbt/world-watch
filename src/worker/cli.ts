@@ -4,8 +4,10 @@ import path from "node:path";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { CODEX, command, sandboxDoctor } from "./adapter.js";
+import { CODEX, analyze, command, sandboxDoctor } from "./adapter.js";
 import { DailyBudget } from "./budget.js";
+import { chatProviders, configuredBackend } from "./chat.js";
+import { triageHeadlines } from "./triage.js";
 import { RemoteWorker } from "./worker.js";
 import {
   installSupervisor,
@@ -39,8 +41,26 @@ async function trackedPid() {
   }
 }
 const cmd = process.argv[2] || "status";
+const chat = process.env.EW_ANALYSIS_BACKEND === "chat";
+const spool = path.join(state, "spool");
 await mkdir(state, { recursive: true, mode: 0o700 });
-if (cmd === "doctor") {
+if (cmd === "doctor" && chat) {
+  console.log(
+    JSON.stringify(
+      {
+        backend: "chat",
+        providers: (await chatProviders(spool)).map(
+          ({ key, budget, ...p }) => ({ ...p, key_present: !!key }),
+        ),
+        budget: await new DailyBudget(
+          path.join(spool, "daily-budget.json"),
+        ).summary(),
+      },
+      null,
+      2,
+    ),
+  );
+} else if (cmd === "doctor") {
   const version = await command(CODEX, ["--version"], "", 10000);
   const auth = await command(CODEX, ["login", "status"], "", 10000);
   console.log(
@@ -56,7 +76,7 @@ if (cmd === "doctor") {
         requested_tier: "fast",
         actual_tier: null,
         budget: await new DailyBudget(
-          path.join(state, "spool", "daily-budget.json"),
+          path.join(spool, "daily-budget.json"),
         ).summary(),
       },
       null,
@@ -124,8 +144,32 @@ if (cmd === "doctor") {
   );
   p.unref();
   console.log(JSON.stringify({ started: true, pid: p.pid }));
+} else if (cmd === "triage") {
+  // Headline records, one JSON object per line, from the file named next or stdin.
+  const file = process.argv[3];
+  const text = file
+    ? await readFile(file, "utf8")
+    : await new Response(process.stdin as any).text();
+  if (!chat) await sandboxDoctor();
+  console.log(
+    JSON.stringify(
+      await triageHeadlines(
+        text
+          .split("\n")
+          .filter((line) => line.trim())
+          .map((line) => JSON.parse(line)),
+        {
+          backend: await configuredBackend(spool),
+          budget: new DailyBudget(path.join(spool, "daily-budget.json")),
+        },
+      ),
+      null,
+      2,
+    ),
+  );
 } else if (cmd === "once" || cmd === "run" || cmd === "brief-once") {
-  await sandboxDoctor();
+  if (!chat) await sandboxDoctor();
+  const backend = await configuredBackend(spool);
   const worker = new RemoteWorker({
     base: process.env.EW_API_URL || "http://127.0.0.1:4310",
     token:
@@ -133,8 +177,11 @@ if (cmd === "doctor") {
       process.env.EUROPE_WATCH_WORKER_TOKEN ||
       "",
     id: process.env.EW_WORKER_ID || hostname(),
-    spool: path.join(state, "spool"),
+    spool,
+    analyzer: (inputs, options) => analyze(inputs, { ...options, backend }),
+    briefs: !chat,
   });
+  if (cmd === "brief-once" && chat) throw Error("briefs_require_codex_backend");
   if (cmd === "brief-once")
     console.log(JSON.stringify(await worker.briefOnce()));
   else if (cmd === "once")
@@ -154,5 +201,5 @@ if (cmd === "doctor") {
   }
 } else
   throw Error(
-    "Usage: worker doctor|once|brief-once|run|start|stop|status|install",
+    "Usage: worker doctor|once|brief-once|run|start|stop|status|install|triage [file.jsonl]",
   );

@@ -8,9 +8,15 @@ import type { SourceRecord } from "../shared/contracts.js";
 import { CATALUNYA_BOMBERS_QUERY } from "./adapters/catalunya-bombers.js";
 import { ZWAAILICHT_URL } from "./adapters/zwaailicht.js";
 import { USGS_FEED_URL } from "./adapters/usgs.js";
+import { EMSC_QUERY_URL } from "./adapters/emsc.js";
 import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "./adapters/nws.js";
 import { ECCC_ALERTS_URL } from "./adapters/eccc.js";
+import { ADSBLOL_SQUAWK_URL } from "./adapters/adsblol.js";
+import { AWC_SIGMET_URL } from "./adapters/awc.js";
+import { EASA_CZIB_URL } from "./adapters/easa.js";
+import { RIPESTAT_ROUTING_URL } from "./adapters/ripestat.js";
+import { GDELT_STREAMS } from "./adapters/gdelt.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
 const rights = (
   basis: string,
@@ -141,7 +147,7 @@ const meteo = Object.entries(METEO_COUNTRIES).map(
       display: false,
       redistribute: false,
       basis:
-        "Live Atom feed declares CC BY 4.0 equivalent AND additional redistributor Terms and Conditions. Additional requirements not yet verified; no operational ingestion until reviewed.",
+        'MeteoAlarm Terms and Conditions (last updated 15 March 2024, read 23 October 2026): information "may be used and redistributed under terms equivalent to the Creative Commons Attribution 4.0 International License (CC BY 4.0), along with the following additional requirements": modified information must be accompanied by the unmodified original; the source is shown as "EUMETNET – MeteoAlarm", or the participating service for one country; the time of issue is included; internet applications link www.meteoalarm.org and show its time-delay disclaimer; and "Any Information being operationally redistributed must always be made available to users in real-time, with the delay between the publishing on the MeteoAlarm Website and the redistributor\'s website being on average less than five minutes and never longer than ten minutes." https://meteoalarm.org/en/live/page/terms-and-conditions . Not integrated: see unresolved_permission.',
       attribution: "MeteoAlarm / originating national meteorological service",
       retention_days: 0,
     },
@@ -149,6 +155,8 @@ const meteo = Object.entries(METEO_COUNTRIES).map(
       format: "atom_cap",
       validation:
         "HTTP 200 valid Atom on 2026-10-21; weather only, NOT demonstration coverage",
+      unresolved_permission:
+        "The delay clause rules out the public demo, which is rebuilt every ten minutes on a schedule that drifts. The private collector reads sources in turn under one shared request budget and backs off after failures, so it can't promise the ten-minute ceiling either. Warnings name their areas only by EMMA_ID or NUTS geocodes, so mapping them also needs MeteoAlarm's separately distributed geocode boundary file.",
     },
   }),
 );
@@ -225,6 +233,47 @@ const fcdo = Object.entries(FCDO_COUNTRIES).map(
       operational_role: "country_advisory_context_not_local_osint",
       admission_policy:
         "source-admission-3: low-priority context; explicit safety/protest retained, routine administrative changes tracked as excluded",
+    },
+  }),
+);
+const gdelt = (["english", "translingual"] as const).map(
+  (stream): SourceRecord => ({
+    ...base,
+    id: "global-gdelt-news-" + stream,
+    name:
+      "GDELT — news coverage signals worldwide, " +
+      (stream === "english" ? "English-language" : "translated") +
+      " stream",
+    owner: "The GDELT Project",
+    url: GDELT_STREAMS[stream].lastupdate,
+    docs: "https://blog.gdeltproject.org/gdelt-2-0-our-global-world-in-realtime/",
+    countries: ["*"],
+    languages: stream === "english" ? ["en"] : ["*"],
+    categories: ["news_signal", "public_order", "armed_conflict", "displacement", "disaster"],
+    family: "gdelt",
+    verified_at: "2026-10-22T23:40:00Z",
+    rights: {
+      ...rights(
+        "GDELT terms of use: all GDELT datasets are available for unlimited and unrestricted academic, commercial or governmental use without fee, and may be redistributed with a citation to the GDELT Project and a link to https://www.gdeltproject.org/ . https://www.gdeltproject.org/about.html#termsofuse . Only article URLs, headlines and GDELT-derived metadata (place, themes, tone, language) are stored; no article text is fetched or stored. Discovery does not settle publisher rights in the linked articles, so headlines are not sent to a model and not redistributed.",
+        "The GDELT Project, https://www.gdeltproject.org/ . Machine-geocoded mentions in news coverage, not verified events; headlines and links belong to their publishers.",
+        false,
+      ),
+      redistribute: false,
+      retention_days: 8,
+    },
+    config: {
+      format: "gdelt_gkg",
+      stream,
+      accept: "text/plain",
+      max_files: 2,
+      // Measured 22 October 2026: English files 5 to 7.5 MB, translated files up to 14 MB.
+      max_bytes: 32 * 1024 * 1024,
+      operational_role: "news_signal_discovery",
+      declared_refresh_seconds: 900,
+      unresolved_permission:
+        "Publisher rights for model use and redistribution of the linked articles and headlines are not established.",
+      coverage:
+        "GKG 2.1 records whose GDELT themes (protest, strike, armed conflict, attacks and explosions, coup plotters, refugees and displacement, evacuation, curfews and states of emergency, disasters) fall within 150 characters of a GDELT-geocoded city or landmark, counted by place. Country and province mentions are not mapped. Geocoding, theme tagging and translation are GDELT's machine output and are often wrong; a signal says coverage rose, not that anything happened.",
     },
   }),
 );
@@ -402,7 +451,32 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "structured_natural_hazard",
       declared_refresh_seconds: 60,
       coverage:
-        "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points only; no shaking footprint. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. Preferred event IDs can change when the authoritative network changes.",
+        "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points; for a quake with a PAGER alert or at M6+, the preferred ShakeMap's estimated MMI contour lines from the event's detail product, up to four events per poll and only when the event changed. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. Preferred event IDs can change when the authoritative network changes.",
+    },
+  },
+  {
+    ...base,
+    id: "global-emsc-earthquakes",
+    name: "EMSC — earthquakes M4.5+ worldwide, past day",
+    owner: "European-Mediterranean Seismological Centre (EMSC-CSEM)",
+    url: EMSC_QUERY_URL,
+    docs: "https://www.seismicportal.eu/fdsn-wsevent.html",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["natural_hazard", "earthquake"],
+    family: "rss",
+    verified_at: "2026-10-23T11:05:00Z",
+    rights: rights(
+      "SeismicPortal terms: datasets and products downloaded from the data services are CC BY 4.0, which permits reuse, including commercial use, with attribution; the website, services and databases as such are not covered, and mirroring or bulk-copying a database in whole or substantial part needs prior written permission. https://www.seismicportal.eu/terms.html . The FDSN event service states the same licence. https://www.seismicportal.eu/fdsn-wsevent.html . Provided without warranty of completeness, accuracy or timeliness. Felt reports are not collected. Deterministic structured publication; no model analysis.",
+      "Credit: EMSC-CSEM SeismicPortal, https://www.seismicportal.eu (CC BY 4.0). Each record names the agency that authored its solution. Impact labels and countries are World Watch derivations, not EMSC assessments.",
+      false,
+    ),
+    config: {
+      format: "emsc_json",
+      max_bytes: 2 * 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Past-day EMSC event list at M4.5+ worldwide, the USGS feed's floor, in one request of up to 500 events. Epicentre points only; no shaking footprint. Each record names its solution author: EMSC's own solution or a contributing agency's, including NEIC for solutions taken from USGS. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. An event EMSC later deletes or merges is not withdrawn; the last record read stays.",
     },
   },
   {
@@ -438,9 +512,11 @@ export const sourceRegistry: SourceRecord[] = [
       format: "gdacs_geojson",
       max_bytes: 2 * 1024 * 1024,
       max_pages: 3,
+      // Six reads on 23 October 2026 took 1.6 to 74.9 s (median 33 s), all server time before the first byte.
+      timeout_ms: 90000,
       operational_role: "structured_natural_hazard",
       coverage:
-        "Current Orange and Red events for EQ, TC, FL, VO, DR and WF, read in pages of 100 and live while GDACS lists them as current. Green events are excluded: on 22 October 2026 they added over 300 current events, mostly small wildfires, at impact minor. Points are GDACS centroids, not impact footprints; country only when GDACS lists exactly one affected country.",
+        "Current Orange and Red events for EQ, TC, FL, VO, DR and WF, read in pages of 100 and live while GDACS lists them as current. Green events are excluded: on 22 October 2026 they added over 300 current events, mostly small wildfires, at impact minor. Points are GDACS centroids, not impact footprints. A cyclone episode also gets GDACS's modelled 60, 90 and 120 km/h wind buffers from its getgeometry endpoint, read only when the episode changed; other hazards keep the centroid. Country only when GDACS lists exactly one affected country.",
     },
   },
   {
@@ -466,7 +542,7 @@ export const sourceRegistry: SourceRecord[] = [
       max_bytes: 4 * 1024 * 1024,
       operational_role: "structured_natural_hazard",
       coverage:
-        "Active tornado, severe thunderstorm, flash flood, flood, extreme wind, snow squall and dust storm warnings that carry an NWS polygon. Watches, advisories, statements and zone-only warnings (winter, heat, tropical, marine) are not collected. Points are polygon bounding-box centres with a radius to the farthest vertex.",
+        "Active tornado, severe thunderstorm, flash flood, flood, extreme wind, snow squall and dust storm warnings that carry an NWS polygon. Watches, advisories, statements and zone-only warnings (winter, heat, tropical, marine) are not collected. Points are polygon bounding-box centres with a radius to the farthest vertex; the polygon itself is kept as the warning's advisory area, simplified to the tolerance stored with it.",
     },
   },
   {
@@ -489,10 +565,183 @@ export const sourceRegistry: SourceRecord[] = [
     ),
     config: {
       format: "eccc_geojson",
-      max_bytes: 2 * 1024 * 1024,
+      // One page holds up to 500 features. Three reads on 23 October 2026 returned 295 warnings in
+      // 2,240,665 bytes each, 70% of it region polygons, so 500 at that size need 3.8 MB.
+      max_bytes: 6 * 1024 * 1024,
       operational_role: "structured_natural_hazard",
       coverage:
-        "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex.",
+        "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex; the region polygon is kept as the warning's advisory area, simplified to the tolerance stored with it.",
+    },
+  },
+  {
+    ...base,
+    id: "ph-pagasa-warnings",
+    name: "PAGASA: public weather warnings, Philippines",
+    owner:
+      "Philippine Atmospheric, Geophysical and Astronomical Services Administration (PAGASA-DOST)",
+    url: "https://publicalert.pagasa.dost.gov.ph/feeds/",
+    docs: "https://publicalert.pagasa.dost.gov.ph/feeds/",
+    countries: ["PH"],
+    languages: ["en"],
+    categories: ["natural_hazard", "severe_weather", "flood", "tropical_cyclone"],
+    family: "cap",
+    verified_at: "2026-10-23T15:45:00Z",
+    rights: rights(
+      'PAGASA\'s public alert feed states: "Copyright, Philippine Atmospheric Geophysical and Astronomical Services Administration. Licensed under CC BY 4.0." https://publicalert.pagasa.dost.gov.ph/feeds/ (read 23 October 2026); no separate terms page was found. https://creativecommons.org/licenses/by/4.0/ . Warning text is reproduced unchanged; derived labels are World Watch\'s. Deterministic structured publication; no model analysis.',
+      "PAGASA-DOST, Philippine Atmospheric, Geophysical and Astronomical Services Administration, CC BY 4.0. Warning text unchanged; impact labels, map points and simplified areas are World Watch derivations, not PAGASA products.",
+      false,
+    ),
+    config: {
+      format: "cap_index",
+      document_path: "^/output/[a-z]+/[0-9a-f-]{36}\\.cap$",
+      issuer_label: "PAGASA",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Every CAP message PAGASA's public alert feed lists: general flood advisories with province polygons and tropical cyclone wind signal warnings, one message per province. Wind signal warnings name their province only by PSGC code, so they are stored but not mapped. Each document is read once; points are bounding-box centres of the warned provinces with a radius to the farthest vertex, and the polygons are kept as advisory areas, simplified to the tolerance stored with them.",
+    },
+  },
+  {
+    ...base,
+    id: "br-inmet-warnings",
+    name: "INMET: severe weather warnings, Brazil",
+    owner: "Instituto Nacional de Meteorologia (INMET)",
+    url: "https://apiprevmet3.inmet.gov.br/avisos/rss",
+    docs: "https://avisos.inmet.gov.br/",
+    countries: ["BR"],
+    languages: ["pt"],
+    categories: ["natural_hazard", "severe_weather"],
+    family: "cap",
+    verified_at: "2026-10-23T15:45:00Z",
+    rights: rights(
+      'INMET\'s warning feed and warnings site state: "O conteudo deste site, podera ser reproduzido desde que citada a fonte, excetuando os casos especificados em contrario e os conteudos replicados de outras fontes." https://apiprevmet3.inmet.gov.br/avisos/rss ; https://avisos.inmet.gov.br/ (read 23 October 2026). Reproduction is permitted with the source cited; the feed\'s "public domain" copyright element is generic and not relied on. Modification is not addressed, so warning text is kept unchanged. INMET accepts no liability for content hosted by third parties. Deterministic structured publication; no model analysis.',
+      "Fonte: Instituto Nacional de Meteorologia (INMET), https://avisos.inmet.gov.br . Warning text unchanged; impact labels, map points and simplified areas are World Watch derivations, not INMET products.",
+      false,
+    ),
+    config: {
+      format: "cap_index",
+      document_path: "^/avisos/rss/\\d+$",
+      issuer_label: "INMET",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Every CAP message INMET's warning feed lists, each with its own polygon: storms, heavy rain, accumulated rain, coastal winds, frost and low humidity. The feed also lists cancellations of warnings it no longer lists; a cancellation of a warning World Watch never read publishes nothing. Each document is read once; points are bounding-box centres with a radius to the farthest vertex, and the polygons are kept as advisory areas, simplified to the tolerance stored with them.",
+    },
+  },
+  ...gdelt,
+  {
+    ...base,
+    id: "global-adsblol-emergency-squawks",
+    name: "ADSB.lol: aircraft squawking emergency codes worldwide",
+    owner: "ADSB.lol volunteer ADS-B receiver network",
+    url: ADSBLOL_SQUAWK_URL,
+    docs: "https://api.adsb.lol/docs",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["aviation", "aviation_emergency"],
+    family: "rss",
+    verified_at: "2026-10-22T23:40:00Z",
+    rights: rights(
+      "Open Database License (ODbL) 1.0, stated for the API and all data ADSB.lol makes public. https://api.adsb.lol/docs ; https://opendatacommons.org/licenses/odbl/1-0/ . Publicly used output needs a notice that it contains ADSB.lol information under the ODbL (4.3); extracted records are a derivative database offered under the ODbL, and this adapter is the published method of making it (4.4, 4.6). The API is free, ADSB.lol asks production users to contact it first and may later require a feeder key, and it limits clients to 500 requests a day. Data provided as is (https://www.adsb.lol/docs/privacy-license). Registrations, owners and Privacy ICAO Address or LADD aircraft are not stored. Deterministic structured publication; no model analysis.",
+      "Contains information from ADSB.lol (https://adsb.lol), made available under the Open Database License (ODbL) 1.0: https://opendatacommons.org/licenses/odbl/1-0/ . Squawk codes are self-reported by flight crews and unconfirmed; impact labels and episodes are World Watch derivations.",
+      false,
+    ),
+    config: {
+      format: "adsblol_squawks",
+      max_bytes: 512 * 1024,
+      operational_role: "self_reported_aviation_signal",
+      unresolved_permission:
+        "ADSB.lol asks production users to contact it first and may require a feeder key; a public deployment waits for that.",
+      coverage:
+        "Aircraft that volunteer receivers hear squawking 7500, 7600 or 7700, one record per aircraft and code while ADSB.lol lists it. Receiver coverage is dense over Europe and North America and thin or absent over oceans, polar routes and much of Africa and Asia. Aircraft without a received position are kept for continuity but not mapped.",
+    },
+  },
+  {
+    ...base,
+    id: "global-awc-volcanic-ash-sigmets",
+    name: "AWC: volcanic ash SIGMETs worldwide",
+    owner:
+      "NOAA National Weather Service Aviation Weather Center, relaying the issuing meteorological watch offices",
+    url: AWC_SIGMET_URL,
+    docs: "https://aviationweather.gov/data/api/",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["aviation", "volcanic_ash"],
+    family: "rss",
+    verified_at: "2026-10-23T11:20:00Z",
+    rights: {
+      ...rights(
+        "NWS information is U.S. public domain and may be used for any lawful purpose, provided it is not claimed as one's own, does not imply NOAA/NWS endorsement and is not modified and then presented as official material; third-party information is used under licence by its provider, who must be asked about further use. https://www.weather.gov/disclaimer . SIGMETs from the NWS watch offices KKCI, PAWU and PHFO are NWS products. Most ash SIGMETs are issued by other states' meteorological watch offices and relayed by AWC as ICAO Annex 3 requires; no reuse grant covering them was found from AWC, ICAO or the WMO Unified Data Policy, so they are shown only in the signed-in view and are not redistributed. Data API: at most 100 requests a minute, a custom User-Agent, no CORS. https://aviationweather.gov/data/api/ . SIGMET text reproduced unchanged. Deterministic structured publication; no model analysis.",
+        "SIGMET issued by the meteorological watch office named in the record and relayed by the NOAA National Weather Service Aviation Weather Center. Text unchanged; impact labels and map areas are World Watch derivations, not NWS or issuer products.",
+        false,
+      ),
+      redistribute: false,
+    },
+    config: {
+      format: "awc_sigmet_json",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_aviation_advisory",
+      unresolved_permission:
+        "Ash SIGMETs from meteorological watch offices outside the United States are third-party information under the NWS disclaimer; public display waits for each issuing state's terms.",
+      coverage:
+        "Current volcanic ash SIGMETs from every meteorological watch office whose SIGMETs AWC decodes, one record per SIGMET with its observed and forecast clouds. Thunderstorm, turbulence, icing and tropical cyclone SIGMETs are not collected. Points are the centre of the warned areas with a radius to their farthest vertex. Early cancellations are not in the feed, so a cancelled SIGMET stays until its stated end.",
+    },
+  },
+  {
+    ...base,
+    id: "global-easa-conflict-zone-bulletins",
+    name: "EASA: Conflict Zone Information Bulletins",
+    owner: "European Union Aviation Safety Agency",
+    url: EASA_CZIB_URL,
+    docs: "https://www.easa.europa.eu/en/domains/air-operations/czibs",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["aviation", "conflict_zone_advisory"],
+    family: "rss",
+    poll_seconds: 3600,
+    verified_at: "2026-10-23T11:20:00Z",
+    rights: rights(
+      "Copyright European Union Aviation Safety Agency: reproduction is authorised, provided the source is acknowledged, save where otherwise stated; the CZIB pages state nothing otherwise. https://www.easa.europa.eu/en/copyright-disclaimer . Website material is not necessarily comprehensive, complete, accurate or up to date. Bulletin text reproduced unchanged. Deterministic structured publication; no model analysis.",
+      "Source: European Union Aviation Safety Agency (EASA), Conflict Zone Information Bulletins, https://www.easa.europa.eu/en/domains/air-operations/czibs . Text unchanged; impact labels and map areas are World Watch derivations, not EASA assessments.",
+      false,
+    ),
+    config: {
+      format: "easa_czib_json",
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_aviation_advisory",
+      coverage:
+        "Every bulletin EASA lists, active or withdrawn, read hourly from its JSON and CSV exports. Areas are whole affected countries, never EASA's FIR portions or routes, which stay in the text. A bulletin whose affected country is not stated, or not recognised, is kept but not mapped.",
+    },
+  },
+  {
+    ...base,
+    id: "global-ripestat-routing",
+    name: "RIPEstat: national Internet routing visibility drops",
+    owner: "RIPE NCC (RIPEstat and the RIPE Routing Information Service)",
+    url: RIPESTAT_ROUTING_URL,
+    docs: "https://stat.ripe.net/docs/data-api/api-endpoints/country-resource-stats/",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["internet_connectivity"],
+    family: "rss",
+    verified_at: "2026-10-23T01:30:00Z",
+    rights: {
+      ...rights(
+        "RIPEstat Service Terms and Conditions: provided for network analysis, monitoring, debugging and research (3.1); RIPEstat Data may not be re-packaged, compiled or re-distributed (3.3); data-specific terms prevail (4.3). https://www.ripe.net/about-us/legal/ripestat-service-terms-and-conditions/ . RIS Commercial Use Terms and Conditions: revocable default permission to provide reports or other derivatives based on RIS data to third parties, crediting the RIPE NCC and RIS with the RIPE NCC logo, a link to https://www.ripe.net/ris and the RIS boilerplate. https://www.ripe.net/analyse/internet-measurements/routing-information-service-ris/commercial-use/ . The RIPE NCC asks to be contacted at comms@ripe.net before its logo is used on a website, so the logo is not shown yet. World Watch publishes its own drop detections with their baseline and lowest counts, never the series, and does not redistribute them in exports. Data API rules: register the sourceapp with stat@ripe.net above 1,000 requests a day; at most 8 concurrent requests. https://stat.ripe.net/docs/data-api/ripestat-data-api/ . Deterministic structured publication; no model analysis.",
+        "Drop detected by World Watch from RIPE NCC RIPEstat country routing statistics, based on RIPE RIS data: https://www.ripe.net/ris . The RIPE Routing Information Service (RIS) is a RIPE NCC service. With the help of network operators all over the world, RIS employs a globally distributed set of Remote Route Collectors (RRCs), typically located at Internet Exchange Points, to collect and store Internet routing data. Volunteers peer with the RRCs using the BGP protocol and RIS stores the update and withdraw messages. RIS data can be accessed via: RIPEstat, the “one-stop shop” for all available information about Internet number resources. RIPEstat uses individual widgets to display routing and other information; RIS Live, a real time BGP streaming API allowing server-side filtering of BGP messages by prefix or autonomous system; RIS Raw Data, available for each route collector, with state dumps and batches of updates made available periodically; RISwhois, that searches the latest RIS data for details of an IP address using a plaintext “whois”-style interface. It is useful when querying RIS data using scripts.",
+        false,
+      ),
+      redistribute: false,
+    },
+    config: {
+      format: "ripestat_country_routing",
+      countries_per_poll: 3,
+      max_bytes: 1024 * 1024,
+      operational_role: "structured_measurement",
+      unresolved_permission:
+        "The RIS terms ask for the RIPE NCC logo on reports shown to others, and the RIPE NCC asks to agree before its logo appears on a website; public display waits for that.",
+      coverage:
+        "Every country on the map, three per five-minute poll, so each is read about every five hours and stays under RIPEstat's 1,000 unregistered requests a day. Each read takes 14 days of hourly IPv4 prefix and origin network counts and reports drops against the median of the preceding seven days. Countries below 50 visible prefixes are not evaluated. The circle is the whole country.",
     },
   },
   {
@@ -692,11 +941,6 @@ export const gatedFamilies = [
     family: "reliefweb",
     status: "approval_required",
     reason: "Documented approved appname required.",
-  },
-  {
-    family: "gdelt",
-    status: "discovery_only",
-    reason: "Candidate links only; publisher rights independently required.",
   },
   {
     family: "meta_tiktok",

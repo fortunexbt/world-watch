@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import server, { type Env } from "../src/server/index";
+import { parseUsgs } from "../src/collector/adapters/usgs";
+import { parseGdacs } from "../src/collector/adapters/gdacs";
+import { sourceRegistry } from "../src/collector/registry";
 import type {
   IncidentView,
   SourceRecord,
@@ -129,7 +132,7 @@ function seedNotice(s: ReturnType<typeof fixtureStore>, priorEligible = true) {
     )
     .run(view.id, 1, JSON.stringify(view), view.updated_at);
   s.db
-    .prepare("INSERT INTO incident_revisions VALUES(?,?,?,?,?)")
+    .prepare("INSERT INTO incident_revisions(incident_id,version,view,known_at,reason) VALUES(?,?,?,?,?)")
     .run(
       view.id,
       1,
@@ -270,7 +273,7 @@ test("material comparison uses the last eligible revision across an intervening 
       .prepare("UPDATE incidents SET version=2,view=? WHERE id=?")
       .run(JSON.stringify(second), first.id);
     s.db
-      .prepare("INSERT INTO incident_revisions VALUES(?,?,?,?,?)")
+      .prepare("INSERT INTO incident_revisions(incident_id,version,view,known_at,reason) VALUES(?,?,?,?,?)")
       .run(
         first.id,
         2,
@@ -515,6 +518,116 @@ test("revoked worker completion cannot publish a correction receipt without its 
         .get()?.n,
       1,
     );
+  } finally {
+    s.db.close();
+  }
+});
+
+const usgsSource = sourceRegistry.find((s) => s.id === "global-usgs-earthquakes")!;
+const gdacsSource = sourceRegistry.find((s) => s.id === "global-gdacs-alerts")!;
+const usgsFeed = JSON.parse(readFileSync("tests/fixtures/usgs-summary.json", "utf8"));
+const gdacsFeed = JSON.parse(readFileSync("tests/fixtures/gdacs-events.json", "utf8"));
+/** A recent PAGER-orange USGS quake and the GDACS Red alert republishing its NEIC solution. */
+function nagqu(origin: number, lon = 93.73) {
+  const quake = structuredClone(usgsFeed.features[0]);
+  Object.assign(quake, { id: "us7000r1qz" });
+  Object.assign(quake.properties, {
+    mag: 7,
+    alert: "orange",
+    time: origin,
+    updated: origin + 60000,
+    place: "191 km ENE of Nagqu, China",
+    title: "M 7.0 - 191 km ENE of Nagqu, China",
+    ids: ",us7000r1qz,",
+  });
+  quake.geometry.coordinates = [lon, 32.18, 10];
+  return parseUsgs(usgsSource, { ...usgsFeed, metadata: { ...usgsFeed.metadata, count: 1 }, features: [quake] })[0];
+}
+function china(origin: number, { lon = 93.73, modified = origin } = {}) {
+  const alert = structuredClone(gdacsFeed.features.find((f: any) => f.properties.eventtype === "EQ"));
+  const utc = (t: number) => new Date(t).toISOString().slice(0, 19);
+  Object.assign(alert.properties, {
+    eventid: 1573141,
+    name: "Earthquake in China",
+    alertlevel: "Red",
+    fromdate: utc(origin),
+    todate: utc(origin),
+    datemodified: utc(modified),
+    affectedcountries: [{ iso2: "CN", iso3: "CHN", countryname: "China" }],
+    severitydata: { severity: 7, severitytext: "Magnitude 7M, Depth:18km", severityunit: "M" },
+  });
+  alert.geometry.coordinates = [lon, 32.18];
+  return parseGdacs(gdacsSource, { ...gdacsFeed, features: [alert] })[0];
+}
+
+test("one occurrence notifies a rule once, while material changes and corrections still reach its recipient", async () => {
+  const s = fixtureStore();
+  try {
+    assert.equal((await s.api("/api/sources", { sources: [usgsSource, gdacsSource] }, "fixture-collector")).status, 200);
+    await s.api("/api/alert-rules", { id: "severe", rule: { impacts: ["severe"], cooldown_minutes: 0 } });
+    const ingest = async (row: ReturnType<typeof nagqu>) =>
+      assert.equal((await s.api("/api/ingest", { observations: [row] }, "fixture-collector")).status, 200);
+    const deliveries = () =>
+      s.db
+        .prepare(
+          "SELECT i.view,d.incident_version AS version,d.state,d.reason FROM alert_deliveries d JOIN incidents i ON i.id=d.incident_id WHERE d.rule_id='severe' ORDER BY d.rowid",
+        )
+        .all()
+        .map((d: any) => ({
+          record: JSON.parse(d.view).reports[0].source_id,
+          version: d.version,
+          state: d.state,
+          reason: d.reason,
+        }));
+    const origin = Date.now() - 600000;
+    await ingest(nagqu(origin));
+    await ingest(china(origin));
+    const quake = (s.db.prepare("SELECT id FROM incidents WHERE json_extract(view,'$.reports[0].source_id')=?").get(usgsSource.id) as { id: string }).id;
+    assert.deepEqual(deliveries(), [
+      { record: usgsSource.id, version: 1, state: "eligible_ui", reason: "currently_actionable_supported_claim" },
+      {
+        record: gdacsSource.id,
+        version: 1,
+        state: "suppressed",
+        reason: `same_situation_notified: linked incident ${quake} already notified this rule`,
+      },
+    ]);
+    // A new GDACS revision with nothing material changed stays covered.
+    await ingest(china(origin, { modified: origin + 300000 }));
+    assert.equal(deliveries().at(-1)?.reason.startsWith("same_situation_notified"), true);
+    assert.equal(deliveries().at(-1)?.version, 2);
+    // A material change in the covered record notifies, and from then on it has its own notices.
+    await ingest(china(origin, { lon: 93.8, modified: origin + 400000 }));
+    assert.deepEqual(deliveries().at(-1), {
+      record: gdacsSource.id,
+      version: 3,
+      state: "eligible_ui",
+      reason: `material change since covered by linked incident ${quake}; broad_area_notice; location uncertainty overlaps watch area`,
+    });
+    // A material change in the record that notified first still notifies. Its version also
+    // counts the link revisions the GDACS updates wrote.
+    await ingest(nagqu(origin, 93.75));
+    const version = () =>
+      (s.db.prepare("SELECT version FROM incidents WHERE id=?").get(quake) as { version: number }).version;
+    assert.deepEqual(deliveries().at(-1), {
+      record: usgsSource.id,
+      version: version(),
+      state: "eligible_ui",
+      reason: "currently_actionable_supported_claim",
+    });
+    // Its retraction reaches the prior recipient through PR 0's correction routing.
+    const view = JSON.parse((s.db.prepare("SELECT view FROM incidents WHERE id=?").get(quake) as { view: string }).view) as IncidentView;
+    assert.equal(
+      (await s.api("/api/corrections", { incident_id: quake, expected_version: view.version, patch: { cancelled: true }, reason: "Issuer deleted the event" })).status,
+      200,
+    );
+    assert.deepEqual(deliveries().at(-1), {
+      record: usgsSource.id,
+      version: view.version + 1,
+      state: "eligible_ui",
+      reason: "correction_or_retraction; notify prior eligible recipient (withdrawn or retracted)",
+    });
+    assert.equal(deliveries().filter((d) => d.state === "eligible_ui").length, 4);
   } finally {
     s.db.close();
   }

@@ -1,10 +1,23 @@
 import MediaPanel from "./MediaPanel";
 import RollingBrief from "./RollingBrief";
 import GeospatialPanel from "./GeospatialPanel";
-import type {GeospatialCatalog} from "../shared/geospatial";
+import { ImageryControl, RecentImagery, type ImageryView } from "./SatelliteImagery";
+import { GnssLegend, GnssPanel, gnssHealth, loadGnss, type Gnss } from "./Gnss";
+import PublicBanner from "./PublicBanner";
+import { CountryCoverage, CoverageChip, CoverageView, freshness, sourceStatus } from "./Coverage";
+import PublicFeeds from "./PublicFeeds";
+import Notifications from "./Notifications";
+import TimeBar, { formatKnown } from "./TimeBar";
+import { readView, writeView, type LinkLayer } from "./permalink";
+import { publicRequest } from "./public-data";
+import type {GeoFeature,GeospatialCatalog} from "../shared/geospatial";
+import { thermalTileUrl } from "./thermal-tiles";
+import type {NewsSignalCatalog} from "../shared/news";
+import { NEWS_COLOR, NewsCoverageNote, NewsGlyph, NewsSignalPanel, NewsSignalRow } from "./NewsSignals";
 import type {PublicCameraCatalog} from "../shared/media";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { independence, memberLinks, situations, type Situation } from "../shared/fusion";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   VolumeX,
@@ -20,6 +33,7 @@ import {
   MapPin,
   Download,
   History,
+  Link,
   ChevronDown,
   Command,
   Check,
@@ -38,7 +52,14 @@ import {
 } from "./time";
 import { validBounds } from "./bounds";
 import WorldMap, { colors } from "./Map";
-import { glyphs, HAZARDS, isHazard, type Hazard } from "./hazards";
+import {
+  glyphs,
+  GLYPH_ACTIVITIES,
+  hasGlyph,
+  isHazard,
+  MMI_COLORS,
+  type GlyphActivity,
+} from "./hazards";
 import countryRegistry from "../shared/countries.json";
 import type { IncidentView, JobInput } from "../shared/contracts";
 type Snapshot = {
@@ -48,8 +69,10 @@ type Snapshot = {
   cursor: string;
   sources: any[];
   limited?: boolean;
+  historical_at?: string | null;
+  history_from?: string | null;
 };
-type Surface = "geospatial" | "media" | "feed" | "health" | "search" | "watches" | "replay" | "country";
+type Surface = "geospatial" | "gnss" | "media" | "news" | "feed" | "health" | "search" | "watches" | "country";
 const txt = {
   en: {
     feed: "Observed activity",
@@ -114,6 +137,7 @@ function quotaResponse(body: string) {
   return true;
 }
 async function api(path: string, options: RequestInit = {}) {
+  if (__PUBLIC_DEMO__) return publicRequest(path);
   if (apiQuotaBlocked) throw Error(QUOTA_MESSAGE);
   const r = await fetch(path, {
     credentials: "same-origin",
@@ -128,8 +152,12 @@ async function api(path: string, options: RequestInit = {}) {
   return r.json();
 }
 export default function App() {
-  const [showCameras,setShowCameras]=useState(new URLSearchParams(location.search).get("layer")==="cameras" || new URLSearchParams(location.search).has("camera")),[density,setDensity]=useState(false),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(new URLSearchParams(location.search).get("camera")),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
-  const [geoLayers,setGeoLayers]=useState<string[]>([]),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
+  // The view a link opened with; the URL then follows every change to it.
+  const [linked] = useState(() => readView(location.search));
+  const [showCameras,setShowCameras]=useState(!__PUBLIC_DEMO__ && (linked.layers.includes("cameras") || linked.camera !== null)),[density,setDensity]=useState(linked.layers.includes("density")),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(linked.camera),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
+  const [news,setNews]=useState<NewsSignalCatalog|null>(null),[newsError,setNewsError]=useState(""),[selectedSignal,setSelectedSignal]=useState<string|null>(null);
+  const [imagery,setImagery]=useState<ImageryView|null>(linked.imagery);
+  const [geoLayers,setGeoLayers]=useState<string[]>(linked.layers.filter(l=>l==="thermal"||l==="emergency_mapping")),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[pickedGeo,setPickedGeo]=useState<GeoFeature|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
   const [clock, setClock] = useState(Date.now);
   const [legendOpen, setLegendOpen] = useState(false);
   const [language, setLanguage] = useState<Language>(() =>
@@ -142,31 +170,26 @@ export default function App() {
       cursor: "0",
       sources: [],
     }),
-    [surface, setSurface] = useState<Surface>(new URLSearchParams(location.search).has("camera") ? "media" : "feed"),
-    [selected, setSelected] = useState<string | null>(
-      new URLSearchParams(location.search).get("incident"),
-    ),
+    [surface, setSurface] = useState<Surface>(!__PUBLIC_DEMO__ && linked.camera !== null ? "media" : "feed"),
+    [selected, setSelected] = useState<string | null>(linked.incident),
     [incoming, setIncoming] = useState(false),
-    [query, setQuery] = useState(
-      new URLSearchParams(location.search).get("q") || "",
-    ),
+    [query, setQuery] = useState(linked.q),
     [filter, setFilter] = useState(
-      new URLSearchParams(location.search).get("filter") || "all",
+      __PUBLIC_DEMO__ && linked.filter === "news" ? "all" : linked.filter,
     ),
-    [sourceFilter, setSourceFilter] = useState(
-      new URLSearchParams(location.search).get("source") || "",
+    [sourceFilter, setSourceFilter] = useState(linked.source),
+    [languageFilter, setLanguageFilter] = useState(linked.language),
+    [evidenceFilter, setEvidenceFilter] = useState(linked.evidence),
+    [windowHours, setWindowHours] = useState(linked.hours),
+    // A private area lives in one browser; elsewhere its link opens the world.
+    [scope, setScope] = useState(() =>
+      linked.scope.startsWith("watch:") &&
+      !(__PUBLIC_DEMO__ ? [] : readLocal<any[]>("ew-watches", [])).some((w) => "watch:" + w.id === linked.scope)
+        ? "World"
+        : linked.scope,
     ),
-    [languageFilter, setLanguageFilter] = useState(
-      new URLSearchParams(location.search).get("language") || "",
-    ),
-    [evidenceFilter, setEvidenceFilter] = useState(
-      new URLSearchParams(location.search).get("evidence") || "",
-    ),
-    [windowHours, setWindowHours] = useState(
-      new URLSearchParams(location.search).get("hours") || "168",
-    ),
-    [scope, setScope] = useState("World"),
     [bbox, setBbox] = useState(""),
+    [mapView, setMapView] = useState(linked.map),
     [ready, setReady] = useState(false),
     [visible, setVisible] = useState(!document.hidden),
     [connection, setConnection] = useState("Connecting"),
@@ -179,10 +202,14 @@ export default function App() {
     [updates, setUpdates] = useState(0),
     [pulse, setPulse] = useState<string[]>([]),
     [sheet, setSheet] = useState(()=>window.matchMedia("(max-width: 760px)").matches ? "compact" : "half"),
-    [at, setAt] = useState(""),
+    // The replay time as an ISO instant; the public demo keeps no history.
+    [at, setAt] = useState(__PUBLIC_DEMO__ ? "" : (linked.at ?? "")),
+    [timeOpen, setTimeOpen] = useState(!__PUBLIC_DEMO__ && !!linked.at),
+    [unknownAt, setUnknownAt] = useState(false),
+    [copied, setCopied] = useState(""),
     [country, setCountry] = useState(""),
     [watches, setWatches] = useState<any[]>(() =>
-      readLocal<any[]>("ew-watches", []),
+      __PUBLIC_DEMO__ ? [] : readLocal<any[]>("ew-watches", []),
     ),
     [savedViews, setSavedViews] = useState<any[]>(readSavedViews),
     [note, setNote] = useState(""),
@@ -206,6 +233,7 @@ export default function App() {
     reading = useRef(false),
     current = useRef(snapshot),
     snapshotReads = useRef(new Map<string, Promise<Snapshot>>()),
+    detailed = useRef<IncidentView | null>(null),
     soundRef = useRef(sound);
   current.current = snapshot;
   soundRef.current = sound;
@@ -217,6 +245,7 @@ export default function App() {
           include_incoming: incoming ? "1" : "0",
           q: query,
           hours: windowHours,
+          view: "list",
         });
         if (scope === "Map area" && bbox) params.set("bbox", bbox);
         if (scope.startsWith("watch:")) {
@@ -226,7 +255,7 @@ export default function App() {
         if (sourceFilter) params.set("source", sourceFilter);
         if (languageFilter) params.set("language", languageFilter);
         if (evidenceFilter) params.set("evidence", evidenceFilter);
-        if (at) params.set("at", new Date(at).toISOString());
+        if (at) params.set("at", at);
         const snapshotUrl = `/api/snapshot?${params}`;
         let request = snapshotReads.current.get(snapshotUrl);
         if (!request) {
@@ -236,7 +265,17 @@ export default function App() {
             .finally(() => snapshotReads.current.delete(snapshotUrl))
             .catch(() => {});
         }
-        const s = await request;
+        // List views omit summaries and evidence text; keep the detail read for the open incident.
+        const listed = await request,
+          full = detailed.current;
+        const s = full
+          ? {
+              ...listed,
+              incidents: listed.incidents.map((i: IncidentView) =>
+                i.id === full.id && i.version === full.version ? full : i,
+              ),
+            }
+          : listed;
         setAuth(false);
         setError("");
         for (const i of s.incidents as IncidentView[])
@@ -297,28 +336,46 @@ export default function App() {
     load(true);
   }, [load]);
   useEffect(()=>{if(surface!=="feed"&&window.matchMedia("(max-width: 760px)").matches)setSheet("half");},[surface]);
-  useEffect(()=>{if(!ready||!showCameras)return;const controller=new AbortController();const timer=window.setInterval(()=>{if(document.hidden)return;fetch("/api/cameras",{credentials:"same-origin",signal:controller.signal}).then(async r=>{if(!r.ok)throw Error("Context source unavailable ("+r.status+")");return r.json();}).then(v=>{setCameraCatalog(v);setMediaError("");}).catch(e=>{if(!controller.signal.aborted)setMediaError(String(e));});},600000);return()=>{controller.abort();window.clearInterval(timer);};},[ready,showCameras]);
-  const geoActive=geoLayers.length>0;
+  useEffect(()=>{if(__PUBLIC_DEMO__||!ready||!showCameras)return;const controller=new AbortController();const timer=window.setInterval(()=>{if(document.hidden)return;fetch("/api/cameras",{credentials:"same-origin",signal:controller.signal}).then(async r=>{if(!r.ok)throw Error("Context source unavailable ("+r.status+")");return r.json();}).then(v=>{setCameraCatalog(v);setMediaError("");}).catch(e=>{if(!controller.signal.aborted)setMediaError(String(e));});},600000);return()=>{controller.abort();window.clearInterval(timer);};},[ready,showCameras]);
+  // GDELT news signals are not in the public snapshot (docs/DEPLOY-DEMO.md).
+  // News signals keep no history, so a replay leaves them out and says so.
+  const newsActive=!__PUBLIC_DEMO__&&filter==="news"&&!at;
+  // News signals are read only while their filter is on; the server answers from a one-minute memo.
+  useEffect(()=>{if(__PUBLIC_DEMO__||!newsActive||!ready)return;let active=true;const load=()=>{if(document.hidden)return;api("/api/news-signals"+(scope==="Map area"&&bbox?"?"+new URLSearchParams({bbox}):"")).then(value=>{if(active){setNews(value);setNewsError("");}}).catch(e=>{if(active)setNewsError(String(e));});};load();const timer=window.setInterval(load,300000);return()=>{active=false;window.clearInterval(timer);};},[newsActive,ready,scope,scope==="Map area"?bbox:""]);
+  // Thermal detections and mapping areas are read live, so a replay hides them.
+  const geoActive=geoLayers.length>0&&!at;
+  const [showGnss,setShowGnss]=useState(!__PUBLIC_DEMO__&&linked.layers.includes("gnss")),[gnss,setGnss]=useState<Gnss|null>(null),[gnssCell,setGnssCell]=useState<number|null>(null),[gnssError,setGnssError]=useState("");
+  // A daily product: read once when the layer is first turned on.
+  useEffect(()=>{if(__PUBLIC_DEMO__||!showGnss||gnss||at)return;const controller=new AbortController();setGnssError("");loadGnss(AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])).then(setGnss).catch(e=>{if(!controller.signal.aborted)setGnssError(e instanceof Error?e.message:String(e));});return()=>controller.abort();},[showGnss,gnss,at]);
+  const coverageCatalog=useMemo<GeospatialCatalog|null>(()=>gnss?{bbox:geoCatalog?.bbox??[-180,-90,180,90],features:[],thermal_version:geoCatalog?.thermal_version??null,sources:[...(geoCatalog?.sources??[]),gnssHealth(gnss)]}:geoCatalog,[geoCatalog,gnss]);
   // One request per settled viewport: rapid successive moves cancel the pending and in-flight read, and the server answers every bbox from its ten-minute upstream cache.
-  useEffect(()=>{if(!geoActive||!ready)return;const controller=new AbortController();const load=()=>{if(document.hidden)return;setGeoLoading(true);fetch("/api/geospatial"+(bbox?"?"+new URLSearchParams({bbox}):""),{credentials:"same-origin",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])}).then(async r=>{if(!r.ok)throw Error("Geospatial context unavailable ("+r.status+")");return r.json();}).then(value=>{setGeoCatalog(value);setGeoError("");setGeoLoading(false);}).catch(e=>{if(controller.signal.aborted)return;setGeoError(String(e));setGeoLoading(false);});};const settle=window.setTimeout(load,400),timer=window.setInterval(load,600000);return()=>{controller.abort();window.clearTimeout(settle);window.clearInterval(timer);};},[geoActive,ready,bbox]);
-  useEffect(()=>{if(!showCameras||!ready||cameraCatalog)return;let active=true;setMediaLoading(true);setMediaError("");fetch("/api/cameras",{credentials:"same-origin",signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("Public camera catalog unavailable ("+r.status+")");return r.json();}).then(value=>{if(active){setCameraCatalog(value);setMediaLoading(false);}}).catch(e=>{if(active){setMediaError(String(e));setMediaLoading(false);}});return()=>{active=false;};},[showCameras,ready,cameraCatalog]);
+  useEffect(()=>{if(!geoActive||!ready)return;const controller=new AbortController();const load=()=>{if(document.hidden)return;setGeoLoading(true);(__PUBLIC_DEMO__?publicRequest("/api/geospatial"):fetch("/api/geospatial"+(bbox?"?"+new URLSearchParams({bbox}):""),{credentials:"same-origin",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])}).then(async r=>{if(!r.ok)throw Error("Geospatial context unavailable ("+r.status+")");return r.json();})).then(value=>{setGeoCatalog(value);setGeoError("");setGeoLoading(false);}).catch(e=>{if(controller.signal.aborted)return;setGeoError(String(e));setGeoLoading(false);});};const settle=window.setTimeout(load,400),timer=window.setInterval(load,600000);return()=>{controller.abort();window.clearTimeout(settle);window.clearInterval(timer);};},[geoActive,ready,bbox]);
+  useEffect(()=>{if(__PUBLIC_DEMO__||!showCameras||!ready||cameraCatalog)return;let active=true;setMediaLoading(true);setMediaError("");fetch("/api/cameras",{credentials:"same-origin",signal:AbortSignal.timeout(30000)}).then(async r=>{if(!r.ok)throw Error("Public camera catalog unavailable ("+r.status+")");return r.json();}).then(value=>{if(active){setCameraCatalog(value);setMediaLoading(false);}}).catch(e=>{if(active){setMediaError(String(e));setMediaLoading(false);}});return()=>{active=false;};},[showCameras,ready,cameraCatalog]);
   useEffect(() => {
-    const u = new URL(location.href);
-    query ? u.searchParams.set("q", query) : u.searchParams.delete("q");
-    u.searchParams.set("hours", windowHours);
-    for (const [key, value] of Object.entries({
-      filter,
-      source: sourceFilter,
-      language: languageFilter,
-      evidence: evidenceFilter,
-      incident: selected ?? "",
-      layer: showCameras ? "cameras" : "",
-      camera: surface === "media" ? selectedCamera ?? "" : "",
-    })) {
-      if (value) u.searchParams.set(key, value);
-      else u.searchParams.delete(key);
-    }
-    history.replaceState(null, "", u);
+    history.replaceState(
+      null,
+      "",
+      writeView(new URL(location.href), {
+        q: query,
+        hours: windowHours,
+        filter,
+        source: sourceFilter,
+        language: languageFilter,
+        evidence: evidenceFilter,
+        incident: selected,
+        camera: surface === "media" ? selectedCamera : null,
+        at: at || null,
+        scope,
+        map: mapView,
+        layers: [
+          ...geoLayers,
+          ...(showCameras ? ["cameras"] : []),
+          ...(density ? ["density"] : []),
+          ...(showGnss ? ["gnss"] : []),
+        ] as LinkLayer[],
+        imagery,
+      }),
+    );
   }, [
     query,
     windowHours,
@@ -330,6 +387,13 @@ export default function App() {
     showCameras,
     selectedCamera,
     surface,
+    at,
+    scope,
+    mapView,
+    geoLayers,
+    density,
+    showGnss,
+    imagery,
   ]);
   useEffect(() => {
     document.documentElement.lang = language;
@@ -367,7 +431,9 @@ export default function App() {
     [volume, at],
   );
   useEffect(() => {
+    // The public snapshot has no live stream; the minute poll below re-reads its manifest.
     if (
+      __PUBLIC_DEMO__ ||
       auth ||
       !ready ||
       quotaPaused ||
@@ -490,7 +556,12 @@ export default function App() {
       const announce =
         material && !catchup && !announced.current.has(notificationKey);
       if (announce) announced.current.add(notificationKey);
-      void api("/api/incidents/" + encodeURIComponent(id) + "?compact=1")
+      // Live changes carry their rights-checked view; others are read back.
+      void (
+        d.incident
+          ? Promise.resolve(d.incident)
+          : api("/api/incidents/" + encodeURIComponent(id) + "?compact=1")
+      )
         .then((i: IncidentView) => {
           if (
             !active ||
@@ -580,10 +651,11 @@ export default function App() {
     visible,
   ]);
   useEffect(() => {
+    // A replayed view does not change by the minute; only the clock moves.
     const timer = setInterval(() => {
       if (!document.hidden) {
         setClock(Date.now());
-        void load(false);
+        if (!at) void load(false);
       }
     }, 60000);
     const visibility = () => {
@@ -604,7 +676,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("map-manual", manual);
     };
-  }, [load]);
+  }, [load, at]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -633,35 +705,85 @@ export default function App() {
     localStorage.setItem("ew-last-seen", new Date().toISOString());
   }, []);
   useEffect(() => {
-    if (!selected || at || document.hidden) return;
+    setUnknownAt(false);
+    if (!selected || document.hidden) return;
     let active = true;
-    api("/api/incidents/" + selected)
+    // A replay reads the revision held then, with only the history known by then.
+    api("/api/incidents/" + selected + (at ? "?" + new URLSearchParams({ at }) : ""))
       .then((detail) => {
-        if (active)
-          setSnapshot((s) => ({
-            ...s,
-            incidents: s.incidents.some((i) => i.id === selected)
-              ? s.incidents.map((i) => (i.id === selected ? detail : i))
-              : [detail, ...s.incidents],
-          }));
+        if (!active) return;
+        detailed.current = detail;
+        setSnapshot((s) => ({
+          ...s,
+          incidents: s.incidents.some((i) => i.id === selected)
+            ? s.incidents.map((i) => (i.id === selected ? detail : i))
+            : [detail, ...s.incidents],
+        }));
       })
-      .catch((e) => setError(String(e)));
+      .catch((e) => {
+        if (active && at && /^Error: 404:/.test(String(e))) setUnknownAt(true);
+        else if (active) setError(String(e));
+      });
     return () => {
       active = false;
     };
   }, [selected, at, visible]);
-  const incidents = snapshot.incidents.filter((i) =>
-    filter === "all" || filter === "demonstrations"
-      ? filter === "all" ||
-        i.activity.includes("demonstration") ||
-        i.activity === "gathering"
-      : filter === "disruptions"
-        ? ["disruption", "strike"].includes(i.activity)
-        : filter === "hazards"
-          ? isHazard(i.activity)
-          : ["severe", "critical"].includes(i.impact),
+  // Stable between unrelated renders, so the map re-sends a source only when its own data changes.
+  const fused = useMemo(() => situations(snapshot.incidents), [snapshot.incidents]);
+  const incidents = useMemo(
+    () =>
+      fused.filter((i) =>
+        filter === "news" ? false : filter === "all" || filter === "demonstrations"
+          ? filter === "all" ||
+            i.activity.includes("demonstration") ||
+            i.activity === "gathering"
+          : filter === "disruptions"
+            ? ["disruption", "strike", "connectivity_disruption"].includes(
+                i.activity,
+              )
+            : filter === "hazards"
+              ? isHazard(i.activity)
+              : ["severe", "critical"].includes(i.impact),
+      ),
+    [fused, filter],
   );
-  const incident = snapshot.incidents.find((i) => i.id === selected);
+  // The legend names only the footprint kinds the map is drawing.
+  const footprintRoles = useMemo(
+    () =>
+      new Set(
+        incidents.flatMap((i) =>
+          (i.members ?? [i]).flatMap((m) => (m.footprint ? [m.footprint.role] : [])),
+        ),
+      ),
+    [incidents],
+  );
+  const geoFeatures = useMemo(
+    () => (geoActive ? (geoCatalog?.features ?? []).filter((f) => geoLayers.includes(f.layer)) : []),
+    [geoCatalog, geoLayers, geoActive],
+  );
+  const thermalTiles =
+    geoActive && geoLayers.includes("thermal") && geoCatalog?.thermal_version
+      ? thermalTileUrl(geoCatalog.thermal_version)
+      : null;
+  const cameras = useMemo(
+    () => (showCameras && !at ? (cameraCatalog?.cameras ?? []) : []),
+    [showCameras, cameraCatalog, at],
+  );
+  // Layers read live, which a replay cannot show as they were.
+  const liveOnly = [
+    filter === "news" && "News signals",
+    geoLayers.includes("thermal") && "Satellite thermal detections",
+    geoLayers.includes("emergency_mapping") && "Copernicus mapping areas",
+    showCameras && "Public cameras",
+    showGnss && "GNSS interference from aircraft reports",
+  ].filter((v): v is string => !!v);
+  const newsSignals = useMemo(
+    () => (newsActive ? (news?.signals ?? []) : []),
+    [newsActive, news],
+  );
+  const incident = fused.find(
+    (i) => i.id === selected || i.members?.some((m) => m.id === selected),
+  );
   const countryCode =
     countryRegistry.find(
       (c) =>
@@ -669,12 +791,17 @@ export default function App() {
         c.country === country ||
         c.aliases.includes(country),
     )?.country ?? country;
+  const sourceFreshness = useMemo(
+    () => freshness(snapshot.sources, clock),
+    [snapshot.sources, clock],
+  );
   const changedSince = lastSeen
     ? snapshot.incidents.filter(
         (i) => Date.parse(i.updated_at) > Date.parse(lastSeen),
       )
     : [];
-  const select = (id: string) => {
+  // Stable, so memoised feed rows skip renders that leave their incident unchanged.
+  const select = useCallback((id: string) => {
     returnFocus.current = id;
     setFollow(false);
     setSelected(id);
@@ -685,8 +812,15 @@ export default function App() {
     requestAnimationFrame(() =>
       document.querySelector<HTMLElement>(".detail h1")?.focus(),
     );
+  }, []);
+  const selectSignal = (id: string) => {
+    setFilter("news");
+    setSelected(null);
+    setSelectedSignal(id);
+    setSurface("news");
   };
   const back = () => {
+    setSelectedSignal(null);
     if(surface==="geospatial"&&selectedGeo){setSelectedGeo(null);return;}
     setSelectedGeo(null);
     if(surface==="media"&&selectedCamera){setSelectedCamera(null);return;}
@@ -736,6 +870,15 @@ export default function App() {
     setSavedViews(next);
     localStorage.setItem("ew-views", JSON.stringify(next));
   };
+  const copyLink = () => {
+    const done = (message: string) => {
+      setCopied(message);
+      setTimeout(() => setCopied(""), 4000);
+    };
+    navigator.clipboard
+      .writeText(location.href)
+      .then(() => done("Link copied"), () => done("Copy this page's address to share the view"));
+  };
   const exportData = async (format: string) => {
     try {
       if (apiQuotaBlocked) throw Error(QUOTA_MESSAGE);
@@ -747,7 +890,7 @@ export default function App() {
       if (sourceFilter) params.set("source", sourceFilter);
       if (languageFilter) params.set("language", languageFilter);
       if (evidenceFilter) params.set("evidence", evidenceFilter);
-      if (at) params.set("at", new Date(at).toISOString());
+      if (at) params.set("at", at);
       if (scope === "Map area" && bbox) params.set("bbox", bbox);
       if (scope.startsWith("watch:")) {
         const area = watches.find((w) => w.id === scope.slice(6));
@@ -771,15 +914,28 @@ export default function App() {
     }
   };
   return (
-    <main className={`app sheet-${sheet}${selected||surface!=="feed" ? " panel-open" : ""}`}>
+    <main className={`app sheet-${sheet}${selected||surface!=="feed" ? " panel-open" : ""}${__PUBLIC_DEMO__ ? " public-demo" : ""}${timeOpen ? " time-open" : ""}${at ? " as-of" : ""}`}>
       <a className="skip-link" href="#activity">
         {tr("Skip to activity")}
       </a>
+      {__PUBLIC_DEMO__ && (
+        <PublicBanner
+          language={language}
+          onSources={() => {
+            setSurface("health");
+            setSelected(null);
+          }}
+        />
+      )}
       <WorldMap
         incidents={incidents}
-        selected={selected}
+        selected={incident?.id ?? selected}
         onSelect={select}
-        onBounds={setBbox}
+        onBounds={(b, view) => {
+          setBbox(b);
+          setMapView(view);
+        }}
+        initialView={linked.map}
         onCountry={(n) => {
           setCountry(n);
           setSelected(null);
@@ -787,15 +943,22 @@ export default function App() {
         }}
         follow={follow}
         pulse={pulse}
-        geoFeatures={(geoCatalog?.features??[]).filter(f=>geoLayers.includes(f.layer))}
-        onGeo={id=>{setSelected(null);setSelectedCamera(null);setSelectedGeo(id);setSurface("geospatial");}}
-        cameras={showCameras ? cameraCatalog?.cameras ?? [] : []}
+        geoFeatures={geoFeatures}
+        thermalTiles={thermalTiles}
+        onGeo={(id,feature)=>{setSelected(null);setSelectedCamera(null);setSelectedGeo(id);setPickedGeo(feature??null);setSurface("geospatial");}}
+        gnss={showGnss&&!at?(gnss?.grid??null):null}
+        onGnss={cell=>{setSelected(null);setSelectedCamera(null);setGnssCell(cell);setSurface("gnss");}}
+        cameras={cameras}
         density={density}
         selectedCamera={selectedCamera}
         onCamera={id=>{setSelected(null);setSelectedCamera(id);setSurface("media");}}
+        newsSignals={newsSignals}
+        selectedSignal={selectedSignal}
+        onSignal={selectSignal}
+        imagery={imagery?.day ? { layer: imagery.layer, day: imagery.day } : null}
       />
       <header className="topbar">
-        <a className="brand" href="/" aria-label={tr("World Watch home")}>
+        <a className="brand" href={import.meta.env.BASE_URL} aria-label={tr("World Watch home")}>
           <span className="brand-symbol">
             <Globe2 size={21} />
           </span>
@@ -838,6 +1001,12 @@ export default function App() {
           >
             {tr("Hazards")}
           </button>
+          {!__PUBLIC_DEMO__ && <button
+            aria-pressed={filter === "news"}
+            onClick={() => setFilter("news")}
+          >
+            {tr("News signals")}
+          </button>}
         </div>
         <label className="time-control">
           <Clock3 size={15} />
@@ -852,7 +1021,18 @@ export default function App() {
             <option value="0">{tr("All observed")}</option>
           </select>
         </label>
-        <button
+        {!__PUBLIC_DEMO__ && <button
+          className="icon-button"
+          aria-label={tr("Earlier time")}
+          aria-pressed={timeOpen}
+          onClick={() => {
+            if (timeOpen) setAt("");
+            setTimeOpen(!timeOpen);
+          }}
+        >
+          <History size={18} />
+        </button>}
+        {!__PUBLIC_DEMO__ && <button
           className="icon-button"
           aria-label={sound ? t.sound : t.mute}
           aria-pressed={sound}
@@ -865,7 +1045,7 @@ export default function App() {
           }}
         >
           {sound ? <Volume2 size={18} /> : <VolumeX size={18} />}
-        </button>
+        </button>}
         <button
           className="icon-button"
           aria-label={tr("Contextual controls")}
@@ -877,7 +1057,26 @@ export default function App() {
           <SlidersHorizontal size={18} />
         </button>
       </header>
-      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select}/>
+      <RollingBrief ready={ready&&!auth} at={at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select} onSignal={selectSignal}/>
+      {!__PUBLIC_DEMO__ && timeOpen && (
+        <TimeBar
+          at={at}
+          from={snapshot.history_from ?? null}
+          now={clock}
+          loaded={(snapshot.historical_at ?? "") === at}
+          language={language}
+          copied={copied}
+          onChange={(value) => {
+            setAt(value);
+            setPulse([]);
+          }}
+          onCopy={copyLink}
+          onClose={() => {
+            setAt("");
+            setTimeOpen(false);
+          }}
+        />
+      )}
       <aside
         id="activity"
         tabIndex={-1}
@@ -931,7 +1130,7 @@ export default function App() {
             </button>
           </div>
         )}
-        {auth ? (
+        {!__PUBLIC_DEMO__ && auth ? (
           <section className="panel-content">
             <div className="eyebrow">{tr("Private owner access")}</div>
             <h1>World Watch</h1>
@@ -977,6 +1176,7 @@ export default function App() {
                 {symbols[incident.impact]} {tr(incident.impact)}
               </span>
               <span>{tr(incident.evidence_status)}</span>
+              {incident.members && <span>{sourceCount(incident, tr)}</span>}
             </div>
             <h1 tabIndex={-1}>{incident.headline}</h1>
             {incident.analyzed_at === null && (
@@ -1068,6 +1268,21 @@ export default function App() {
                 <p key={note}>{note}</p>
               ))}
             </div>
+            <LinkedRecords
+              situation={incident}
+              situations={fused}
+              language={language}
+              readOnly={!!at}
+              onSelect={select}
+              onSaved={() => load(true)}
+            />
+            <RecentImagery
+              key={incident.id}
+              incident={incident}
+              language={language}
+              now={at ? Date.parse(at) : clock}
+              onShowDay={(day) => setImagery((v) => ({ layer: v?.layer ?? "viirs-true-colour", day }))}
+            />
             <h2>{tr("Claims & evidence")}</h2>
             {incident.claims.map((c) => (
               <article className="claim" key={c.id}>
@@ -1122,6 +1337,7 @@ export default function App() {
                   <ArrowUpRight size={14} />
                 </a>
               ))}
+              {!__PUBLIC_DEMO__ && <>
               <p className="caution">
                 {tr("Export current view")}.{" "}
                 {tr(
@@ -1135,6 +1351,7 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              </>}
             </details>
             <h2>{tr("Source records")}</h2>
             {incident.reports.map((r: any, n: number) => (
@@ -1189,6 +1406,7 @@ export default function App() {
                 </div>
               ))}
             </details>
+            {!__PUBLIC_DEMO__ && <>
             <details>
               <summary>{tr("Private notes & corrections")}</summary>
               <label htmlFor="note">
@@ -1239,30 +1457,45 @@ export default function App() {
                 />
               )}
             </details>
+            </>}
           </section>
         ) : surface === "geospatial" ? (
-          <GeospatialPanel language={language} catalog={geoCatalog} selected={selectedGeo} onSelect={setSelectedGeo} error={geoError} loading={geoLoading}/>
-        ) : surface === "media" ? (
+          <GeospatialPanel language={language} catalog={geoCatalog} selected={selectedGeo} picked={pickedGeo} onSelect={setSelectedGeo} error={geoError} loading={geoLoading}/>
+        ) : !__PUBLIC_DEMO__ && surface === "gnss" ? (
+          <GnssPanel gnss={gnss} cell={gnssCell} error={gnssError} loading={showGnss&&!gnss&&!gnssError} language={language}/>
+        ) : !__PUBLIC_DEMO__ && surface === "news" ? (
+          <NewsSignalPanel catalog={news} selected={selectedSignal} language={language}/>
+        ) : !__PUBLIC_DEMO__ && surface === "media" ? (
           <MediaPanel catalog={cameraCatalog} selected={selectedCamera} onSelect={setSelectedCamera} language={language} error={mediaError} loading={mediaLoading}/>
         ) : surface === "health" ? (
           <section className="panel-content">
             <h1>{t.health}</h1>
             <p>
               {tr(
-                "Connection status and source freshness are separate. A connected map can still have delayed analysis.",
+                __PUBLIC_DEMO__
+                  ? "This public snapshot is rebuilt from the sources below about every ten minutes. No model analysis runs in it."
+                  : "Connection status and source freshness are separate. A connected map can still have delayed analysis.",
               )}
             </p>
             <dl className="times">
-              {Object.entries(snapshot.status)
-                .filter(([, v]) => typeof v !== "object")
-                .map(([k, v]) => (
-                  <ReactFragment
-                    key={k}
-                    label={tr(k)}
-                    value={tr(String(v ?? "unknown"))}
-                  />
-                ))}
+              {__PUBLIC_DEMO__ ? (
+                <ReactFragment
+                  label={tr("Snapshot generated")}
+                  value={when(snapshot.status.generated_at)}
+                />
+              ) : (
+                Object.entries(snapshot.status)
+                  .filter(([, v]) => typeof v !== "object")
+                  .map(([k, v]) => (
+                    <ReactFragment
+                      key={k}
+                      label={tr(k)}
+                      value={tr(String(v ?? "unknown"))}
+                    />
+                  ))
+              )}
             </dl>
+            {!__PUBLIC_DEMO__ && <>
             <h2>{tr("Processing queue")}</h2>
             <QueueReports
               reports={snapshot.incoming.filter((r: any) =>
@@ -1278,6 +1511,7 @@ export default function App() {
               historical={!!at}
               onRetried={() => load(true)}
             />
+            </>}
             <h2>{tr("Monitored sources")}</h2>
             {snapshot.sources.map((s: any) => (
               <article className="source" key={s.id}>
@@ -1286,7 +1520,7 @@ export default function App() {
                   <ArrowUpRight size={14} />
                 </a>
                 <small>
-                  {tr(s.status)} ·{" "}
+                  <CoverageChip status={sourceStatus(s, clock)} language={language} /> ·{" "}
                   {s.countries?.includes("*")
                     ? tr("worldwide")
                     : s.countries?.join(", ")}
@@ -1307,11 +1541,13 @@ export default function App() {
                 "These are observed reports from monitored sources. Coverage is incomplete and varies by country.",
               )}
             </p>
+            {__PUBLIC_DEMO__ && <PublicFeeds language={language} />}
           </section>
         ) : surface === "search" ? (
           <section className="panel-content">
             <h1>{tr("Explore & focus")}</h1>
-            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}<label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button><label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
+            <div className="context-section"><h2>{tr("Map layers")}</h2>{[["thermal","Satellite thermal detections"],["emergency_mapping","Copernicus mapping areas"]].map(([id,label])=><label className="check-row" key={id}><input type="checkbox" checked={geoLayers.includes(id)} onChange={e=>setGeoLayers(old=>e.target.checked?[...old,id]:old.filter(v=>v!==id))}/>{tr(label)}</label>)}{geoLayers.length>0&&<button onClick={()=>{setSelected(null);setSelectedGeo(null);setSurface("geospatial");}}>{tr("Explore geospatial context")}</button>}<ImageryControl value={imagery} onChange={setImagery} language={language} now={at ? Date.parse(at) : clock}/>{!__PUBLIC_DEMO__&&<><label className="check-row"><input type="checkbox" checked={showCameras} onChange={e=>setShowCameras(e.target.checked)}/>{tr("Public cameras")}</label><button onClick={()=>{setShowCameras(true);setSurface("media");setSelectedCamera(null);}}>{tr("Browse public cameras")}</button><label className="check-row"><input type="checkbox" checked={showGnss} onChange={e=>setShowGnss(e.target.checked)}/>{tr("GNSS interference from aircraft reports")}</label>{showGnss&&<button onClick={()=>{setGnssCell(null);setSurface("gnss");}}>{tr("Explore GNSS interference")}</button>}</>}<label className="check-row"><input type="checkbox" checked={density} onChange={e=>setDensity(e.target.checked)}/>{tr("Observed incident density")}</label>{density&&<p className="caution">{tr("Density represents geolocated incidents, not measured crowd size or population movement.")}</p>}</div>
+            <CoverageView sources={snapshot.sources} incidents={snapshot.incidents} catalog={coverageCatalog} now={clock} language={language} />
 
             <label htmlFor="query">{tr("Search reports and incidents")}</label>
             <input
@@ -1383,18 +1619,30 @@ export default function App() {
                 <Bookmark size={16} />
                 {tr("Save this view")}
               </button>
+              {!__PUBLIC_DEMO__ && <>
               <button onClick={() => setSurface("watches")}>
                 <MapPin size={16} />
                 {tr("Private areas")}
               </button>
-              <button onClick={() => setSurface("replay")}>
+              <button
+                onClick={() => {
+                  setTimeOpen(true);
+                  setSurface("feed");
+                }}
+              >
                 <History size={16} />
                 {tr("Replay")}
               </button>
+              </>}
               <button onClick={() => setSurface("health")}>
                 <Activity size={16} />
                 {tr("Source health")}
               </button>
+              <button onClick={copyLink}>
+                <Link size={16} />
+                {tr("Copy link")}
+              </button>
+              {!__PUBLIC_DEMO__ && <>
               <button onClick={() => exportData("geojson")}>
                 <Download size={16} />
                 GeoJSON
@@ -1407,7 +1655,14 @@ export default function App() {
                 <Download size={16} />
                 JSON
               </button>
+              </>}
             </div>
+            {copied && <p className="sound-status" role="status">{tr(copied)}</p>}
+            {__PUBLIC_DEMO__ && (
+              <p className="caution">
+                {tr("The public demo keeps no history, so it cannot show an earlier time. Links to it open on the latest snapshot.")}
+              </p>
+            )}
             <h2>{tr("Changes since your last visit")}</h2>
             <p>
               {lastSeen
@@ -1456,6 +1711,7 @@ export default function App() {
               <option value="en">{tr("English")}</option>
               <option value="it">Italiano</option>
             </select>
+            {!__PUBLIC_DEMO__ && <>
             <label htmlFor="volume">{tr("Sound volume (ceiling 20%)")}</label>
             <input
               id="volume"
@@ -1480,11 +1736,12 @@ export default function App() {
                 Intl.DateTimeFormat().resolvedOptions().timeZone,
               )}
             </p>
+            </>}
             <button aria-pressed={follow} onClick={() => setFollow(!follow)}>
               {tr("Follow live")}: {tr(follow ? "on" : "off")}
             </button>
           </section>
-        ) : surface === "watches" ? (
+        ) : !__PUBLIC_DEMO__ && surface === "watches" ? (
           <section className="panel-content">
             <h1>{tr("Private watch areas")}</h1>
             <p>
@@ -1567,57 +1824,10 @@ export default function App() {
             ))}
             <p className="caution">
               {tr(
-                "Local watch areas do not enable remote push or email. Configure a permitted notification channel before remote delivery.",
+                "Areas saved in this browser only cue this page. Delivery outside the app follows the server's watch rules below.",
               )}
             </p>
-          </section>
-        ) : surface === "replay" ? (
-          <section className="panel-content">
-            <h1>{tr("Replay observed history")}</h1>
-            <p>
-              {tr(
-                "View what the system knew at a chosen time. Later revisions are excluded. Replay never emits live alerts.",
-              )}
-            </p>
-            <label htmlFor="replay-at">
-              {tr("Historical time (local browser time)")}
-            </label>
-            <input
-              id="replay-at"
-              type="datetime-local"
-              value={at}
-              onChange={(e) => {
-                setAt(e.target.value);
-                setPulse([]);
-              }}
-            />
-            <button
-              className="primary"
-              onClick={() => {
-                setAt("");
-                setPulse([]);
-                setSurface("feed");
-                void load(true);
-              }}
-            >
-              {tr("Return to live")}
-            </button>
-            {at && (
-              <div className="historical">
-                {tr("Historical view")} · {when(at)}
-              </div>
-            )}
-            <div className="results">
-              {incidents.map((i) => (
-                <button
-                  className="saved-view"
-                  key={i.id}
-                  onClick={() => select(i.id)}
-                >
-                  {i.headline}
-                </button>
-              ))}
-            </div>
+            <Notifications language={language} />
           </section>
         ) : surface === "country" ? (
           <section className="panel-content">
@@ -1629,7 +1839,7 @@ export default function App() {
                 : country}
             </h1>
             <p>{tr("Observed activity and source coverage")}</p>
-            {snapshot.incidents
+            {fused
               .filter(
                 (i) =>
                   i.location?.country === countryCode ||
@@ -1645,26 +1855,13 @@ export default function App() {
                 </button>
               ))}
             <h2>{tr("Coverage")}</h2>
-            <p>
-              {
-                snapshot.sources.filter(
-                  (s) =>
-                    s.status === "enabled" &&
-                    (s.countries?.includes(countryCode) ||
-                      s.countries?.includes("*")) &&
-                    s.health?.last_success_at,
-                ).length
-              }{" "}
-              {tr(
-                "monitored endpoints have a verified successful retrieval for this destination.",
-              )}
-            </p>
+            <CountryCoverage sources={snapshot.sources} country={countryCode} now={clock} language={language} />
             <p>
               {tr(
-                "Source scope does not establish complete local coverage. Open source health for monitored endpoints and current gaps.",
+                "Source scope does not establish complete local coverage. Open the coverage view for every source's status and what silence means.",
               )}
             </p>
-            <button onClick={() => setSurface("health")}>
+            <button onClick={() => setSurface("search")}>
               {tr("Inspect coverage")}
             </button>
           </section>
@@ -1672,16 +1869,16 @@ export default function App() {
           <>
             <div className="feed-heading">
               <div>
-                <h1>{incoming ? t.reports : tr("Live reports")}<small className="feed-peek-count">{incoming ? snapshot.incoming.length : incidents.length}</small></h1>
+                <h1>{incoming ? t.reports : newsActive ? tr("News signals") : tr(at ? "Reports as known then" : "Live reports")}<small className="feed-peek-count">{incoming ? snapshot.incoming.length : newsActive ? news?.signals.length ?? 0 : incidents.length}</small></h1>
               </div>
-              <button
+              {!__PUBLIC_DEMO__ && <button
                 className="icon-button"
                 aria-label={tr("Switch incoming reports and incidents")}
                 aria-pressed={incoming}
                 onClick={() => setIncoming(!incoming)}
               >
                 <Layers size={18} />
-              </button>
+              </button>}
             </div>
             <div className="feed-context">
               <label>
@@ -1703,15 +1900,21 @@ export default function App() {
               <span>
                 {ready ? (
                   <>
-                    {incoming ? snapshot.incoming.length : incidents.length}{" "}
-                    {tr("observed")} {tr(incoming ? "reports" : "incidents")}
+                    {incoming ? snapshot.incoming.length : newsActive ? news?.signals.length ?? 0 : incidents.length}{" "}
+                    {newsActive && !incoming ? tr("news signals") : <>{tr("observed")} {tr(incoming ? "reports" : "incidents")}</>}
                   </>
                 ) : (
                   "—"
                 )}
               </span>
             </div>
-            {ready && !incoming && (
+            {ready && !incoming && newsActive && news && (
+              <NewsCoverageNote catalog={news} language={language} />
+            )}
+            {newsError && newsActive && !incoming && (
+              <p className="error" role="status">{newsError}</p>
+            )}
+            {ready && !incoming && !newsActive && (
               <p className="map-coverage-note">
                 <MapPin size={12} />
                 {incidents.filter((i) => i.location).length} {tr("on map")}
@@ -1721,10 +1924,25 @@ export default function App() {
               </p>
             )}
             {at && (
-              <div className="historical">
-                {tr("Historical")} · {when(at)}
-                <button onClick={() => setAt("")}>{tr("Live")}</button>
+              <div className="historical" role="status">
+                <p>
+                  <strong>
+                    {tr("As known at")} {formatKnown(Date.parse(at), language)}
+                  </strong>
+                  <button onClick={() => setAt("")}>{tr("Return to live")}</button>
+                </p>
+                <p>
+                  {tr("Incidents appear as World Watch held them then. Event times can be earlier or later.")}{" "}
+                  {liveOnly.length > 0 && `${tr("Not kept as history, so hidden")}: ${liveOnly.map(tr).join(", ")}. `}
+                  {tr("Source health shows the present.")}
+                </p>
+                {unknownAt && <p>{tr("The selected incident was not yet known at this time.")}</p>}
               </div>
+            )}
+            {__PUBLIC_DEMO__ && linked.at && (
+              <p className="scope-notice">
+                {tr("This link asks for {time}. The public demo keeps no history, so it shows the latest snapshot.").replace("{time}", formatKnown(Date.parse(linked.at), language))}
+              </p>
             )}
             {updates > 0 && (
               <button className="new-updates" onClick={accept}>
@@ -1810,74 +2028,43 @@ export default function App() {
                         </a>
                       </li>
                     ))
+                  : newsActive
+                    ? (news?.signals ?? []).map((signal) => (
+                        <li key={signal.id}>
+                          <NewsSignalRow signal={signal} language={language} onSelect={selectSignal} />
+                        </li>
+                      ))
                   : incidents.map((i) => (
-                      <li key={i.id}>
-                        <button
-                          className="feed-item"
-                          data-incident-id={i.id}
-                          onClick={() => select(i.id)}
-                          aria-label={`${i.headline}, ${isHazard(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}`}
-                        >
-                          <div
-                            className="incident-symbol"
-                            style={{ color: colors[i.impact] }}
-                          >
-                            {isHazard(i.activity) ? (
-                              <HazardGlyph hazard={i.activity} size={16} />
-                            ) : (
-                              symbols[i.impact]
-                            )}
-                          </div>
-                          <div className="feed-item-body">
-                            <span className="report-meta">
-                              {i.location?.name || tr("Location unresolved")}
-                              <time>{age(i.updated_at)}</time>
-                            </span>
-                            <h2>{i.reports.length===1&&i.reports[0].source_id==="de-demos-assemblies" ? i.reports[0].title : i.headline}</h2>
-                            <p>
-                              {when(i.event_start || i.published_at)}
-                              {!i.event_start ? " · " + tr("publication") : ""}
-                            </p>
-                            <span className="item-label">
-                              <span
-                                className="impact-label"
-                                style={{ color: colors[i.impact] }}
-                              >
-                                {tr(
-                                  i.impact === "unknown"
-                                    ? "Impact unknown"
-                                    : i.impact,
-                                )}
-                              </span>
-                              <span className="evidence-state">
-                                {tr(i.evidence_status)}
-                                {i.analyzed_at === null
-                                  ? " · " +
-                                    tr(
-                                      structuredOnly(i)
-                                        ? "structured source"
-                                        : "AI pending",
-                                    )
-                                  : ""}
-                              </span>
-                            </span>
-                          </div>
-                        </button>
-                      </li>
+                      <FeedItem
+                        key={i.id}
+                        incident={i}
+                        language={language}
+                        clock={clock}
+                        onSelect={select}
+                      />
                     ))}
               </ol>
-              {ready &&
+              {ready && newsActive && !incoming && news?.signals.length === 0 && (
+                <div className="empty">
+                  <Radio size={24} />
+                  <h2>{tr("No news signals in the last six hours")}</h2>
+                  <p>{tr("GDELT coverage is counted as the collector reads each 15-minute file.")}</p>
+                </div>
+              )}
+              {ready && !newsActive &&
                 (incoming ? snapshot.incoming.length : incidents.length) ===
                   0 && (
                   <div className="empty">
                     <Radio size={24} />
                     <h2>{incoming ? tr("No incoming reports") : t.empty}</h2>
+                    {!__PUBLIC_DEMO__ && <>
                     <p>{t.emptySub}</p>
                     <button onClick={() => setIncoming(!incoming)}>
                       {incoming
                         ? tr("Show analyzed incidents")
                         : tr("View incoming reports")}
                     </button>
+                    </>}
                   </div>
                 )}
             </div>
@@ -1936,17 +2123,49 @@ export default function App() {
           ))}
         </div>
         <div className="legend-row">
-          {HAZARDS.map((h) => (
-            <span key={h}>
-              <HazardGlyph hazard={h} />
-              {tr(h)}
+          {GLYPH_ACTIVITIES.map((a) => (
+            <span key={a}>
+              <ActivityGlyph activity={a} />
+              {tr(a)}
             </span>
           ))}
           <span>
             <i className="area-swatch" />
             {tr("approximate area")}
           </span>
+          {footprintRoles.has("advisory_area") && (
+            <span title={tr("The area an NWS, ECCC or SIGMET warning applies to, as the issuer drew it, simplified for the map")}>
+              <i className="footprint-swatch" />
+              {tr("issuer warning area")}
+            </span>
+          )}
+          {footprintRoles.has("inferred_affected_area") && (
+            <span title={tr("GDACS models where a cyclone's winds reach 60, 90 and 120 km/h along its past and forecast track")}>
+              <i className="footprint-swatch modelled" />
+              {tr("modelled wind area")}
+            </span>
+          )}
+          {footprintRoles.has("shaking_intensity") && (
+            <span title={tr("USGS ShakeMap estimated shaking intensity (MMI) contours, not observed damage")}>
+              <i
+                className="footprint-swatch contours"
+                style={{
+                  background: `linear-gradient(90deg, ${MMI_COLORS.map(([, c]) => c).join(", ")})`,
+                }}
+              />
+              {tr("estimated shaking (MMI)")}
+            </span>
+          )}
+          {newsActive && (
+            <span>
+              <span style={{ color: NEWS_COLOR, display: "inline-flex" }}>
+                <NewsGlyph size={13} />
+              </span>
+              {tr("news coverage, not an event")}
+            </span>
+          )}
         </div>
+        {showGnss && gnss && !at && <GnssLegend language={language} />}
       </div>
       <button
         className="health-pill"
@@ -1955,26 +2174,50 @@ export default function App() {
           setSelected(null);
         }}
       >
-        <span
-          className={`connection-dot ${connection === "Connected" ? "" : "offline"}`}
-        />
-        <span>
-          {quotaPaused
-            ? language === "it"
-              ? "Aggiornamenti sospesi"
-              : "Updates paused"
-            : tr(connection)}
-        </span>
-        <span className="health-divider" />
-        <span title={when(snapshot.status.worker_last_seen)}>
-          {tr("AI")}: {tr(snapshot.status.worker_state ?? "Awaiting status")}
-        </span>
-        <span className="health-divider" />
-        <Activity size={13} />
-        <span>
-          {snapshot.status.pending_count ?? snapshot.status.pending ?? "—"}{" "}
-          {tr("pending")}
-        </span>
+        {__PUBLIC_DEMO__ ? (
+          <>
+            <span
+              className={`connection-dot ${clock - Date.parse(snapshot.status.generated_at) < 1800000 ? "" : "offline"}`}
+            />
+            <span>{tr("Public snapshot")}</span>
+            <span className="health-divider" />
+            <span title={when(snapshot.status.generated_at)}>
+              {tr("Updated")} {age(snapshot.status.generated_at)}
+            </span>
+          </>
+        ) : (
+          <>
+            <span
+              className={`connection-dot ${connection === "Connected" ? "" : "offline"}`}
+            />
+            <span>
+              {quotaPaused
+                ? language === "it"
+                  ? "Aggiornamenti sospesi"
+                  : "Updates paused"
+                : tr(connection)}
+            </span>
+            <span className="health-divider" />
+            <span title={when(snapshot.status.worker_last_seen)}>
+              {tr("AI")}: {tr(snapshot.status.worker_state ?? "Awaiting status")}
+            </span>
+            <span className="health-divider" />
+            <Activity size={13} />
+            <span>
+              {snapshot.status.pending_count ?? snapshot.status.pending ?? "—"}{" "}
+              {tr("pending")}
+            </span>
+          </>
+        )}
+        {sourceFreshness.read > 0 && (
+          <>
+            <span className="health-divider" />
+            <span className={`coverage-dot ${sourceFreshness.worst}`} />
+            <span title={tr("Sources read successfully on schedule")}>
+              {sourceFreshness.fresh}/{sourceFreshness.read} {tr("sources fresh")}
+            </span>
+          </>
+        )}
         <ArrowUpRight size={13} />
       </button>
       <div className="sr-only" role="status" aria-live="polite">
@@ -2284,6 +2527,165 @@ function ReconstructionEditor({
     </>
   );
 }
+/** How many records a situation fuses, and whether they corroborate each other or share one origin. */
+function sourceCount(situation: Situation, tr: (v: string) => string) {
+  const members = situation.members ?? [situation],
+    sources = new Set(members.map((m) => m.reports[0]?.source_id)).size,
+    origin = independence(situation);
+  return `${members.length} ${tr(sources === members.length ? "sources" : "records")} · ${tr(
+    origin === "same_origin"
+      ? "one origin"
+      : origin === "independent"
+        ? "independent origins"
+        : "origin unknown",
+  )}`;
+}
+function LinkedRecords({
+  situation,
+  situations,
+  language,
+  readOnly,
+  onSelect,
+  onSaved,
+}: {
+  situation: Situation;
+  situations: Situation[];
+  language: Language;
+  readOnly: boolean;
+  onSelect: (id: string) => void;
+  onSaved: () => Promise<unknown>;
+}) {
+  const tr = (v: string) => translate(language, v);
+  const members = situation.members ?? [situation],
+    ids = new Set(members.map((m) => m.id));
+  const source = (v: IncidentView) =>
+    v.reports[0]?.source_name ?? v.reports[0]?.source_id ?? v.headline;
+  const outside = [
+    ...new Map(
+      members.flatMap((m) =>
+        (m.links ?? [])
+          .filter((l) => l.type !== "same_event" && !ids.has(l.incident_id))
+          .map((l) => [l.type + l.incident_id, { from: m, link: l }] as const),
+      ),
+    ).values(),
+  ];
+  if (members.length < 2 && !outside.length) return null;
+  const origin = independence(situation);
+  return (
+    <div className="linked-records">
+      {members.length > 1 && (
+        <>
+          <h2>{tr("One event from linked records")}</h2>
+          <p>
+            {tr(
+              origin === "same_origin"
+                ? "These records republish one upstream measurement. They are one origin, not independent corroboration."
+                : origin === "independent"
+                  ? "These records come from independent origins and corroborate each other."
+                  : "A record states no upstream origin, so independence is unknown.",
+            )}
+          </p>
+          {memberLinks(situation).map(({ from, link }) => {
+            const to = members.find((m) => m.id === link.incident_id)!;
+            return (
+              <div key={from.id + to.id}>
+                <p>
+                  <strong>
+                    {source(from)} · {source(to)}
+                  </strong>{" "}
+                  {link.reason}
+                </p>
+                {!__PUBLIC_DEMO__ && !readOnly && (
+                  <LinkForm ids={[from.id, to.id]} linked={false} language={language} onSaved={onSaved} />
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+      {outside.map(({ from, link }) => {
+        const other = situations.find(
+          (s) => s.id === link.incident_id || s.members?.some((m) => m.id === link.incident_id),
+        );
+        return (
+          <div key={link.type + link.incident_id}>
+            <p>
+              {tr(
+                link.type === "split_from"
+                  ? "Separated by an operator from"
+                  : "Possibly the same event as",
+              )}{" "}
+              {other ? (
+                <button className="saved-view" onClick={() => onSelect(link.incident_id)}>
+                  {other.headline}
+                </button>
+              ) : (
+                tr("a record outside this view")
+              )}
+              : {link.reason}
+            </p>
+            {link.type === "split_from" && !__PUBLIC_DEMO__ && !readOnly && (
+              <LinkForm ids={[from.id, link.incident_id]} linked language={language} onSaved={onSaved} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+/** Separates two linked records, or hands a separated pair back to the same-event rule. */
+function LinkForm({
+  ids,
+  linked,
+  language,
+  onSaved,
+}: {
+  ids: string[];
+  linked: boolean;
+  language: Language;
+  onSaved: () => Promise<unknown>;
+}) {
+  const tr = (v: string) => translate(language, v);
+  const [busy, setBusy] = useState(false),
+    [message, setMessage] = useState("");
+  const field = "link-reason-" + ids.join("-");
+  return (
+    <details>
+      <summary>{tr(linked ? "Let the rule decide again" : "Separate these records")}</summary>
+      <form
+        className="context-form"
+        action="/api/incidents/link"
+        method="post"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const reason = String(new FormData(e.currentTarget).get("reason") ?? "").trim();
+          setBusy(true);
+          setMessage("");
+          try {
+            await api("/api/incidents/link", {
+              method: "POST",
+              body: JSON.stringify({ ids, linked, reason }),
+            });
+            await onSaved();
+          } catch {
+            setMessage(tr("Request failed. Please retry."));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label htmlFor={field}>{tr("Audit reason and source URL")}</label>
+        <textarea id={field} name="reason" required minLength={5} maxLength={1000} />
+        <button type="submit" disabled={busy}>
+          {tr(busy ? "Saving…" : linked ? "Restore the rule decision" : "Separate with audit reason")}
+        </button>
+        <p role="status" aria-live="polite">
+          {message}
+        </p>
+      </form>
+    </details>
+  );
+}
 function RetryReport({
   report,
   language,
@@ -2366,7 +2768,13 @@ function QueueReports({
   );
 }
 
-function HazardGlyph({ hazard, size = 13 }: { hazard: Hazard; size?: number }) {
+function ActivityGlyph({
+  activity,
+  size = 13,
+}: {
+  activity: GlyphActivity;
+  size?: number;
+}) {
   return (
     <svg
       width={size}
@@ -2379,10 +2787,71 @@ function HazardGlyph({ hazard, size = 13 }: { hazard: Hazard; size?: number }) {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d={glyphs[hazard]} />
+      <path d={glyphs[activity]} />
     </svg>
   );
 }
+/**
+ * One feed row. Memoised on its incident object, so an SSE patch or an unrelated render re-renders
+ * only the rows whose incident changed instead of every row in the list. `clock` refreshes the age.
+ */
+const FeedItem = memo(function FeedItem({
+  incident: i,
+  language,
+  clock,
+  onSelect,
+}: {
+  incident: Situation;
+  language: Language;
+  clock: number;
+  onSelect: (id: string) => void;
+}) {
+  const tr = (value: string) => translate(language, value);
+  return (
+    <li>
+      <button
+        className="feed-item"
+        data-incident-id={i.id}
+        onClick={() => onSelect(i.id)}
+        aria-label={`${i.headline}, ${hasGlyph(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}${i.members ? ", " + sourceCount(i, tr) : ""}`}
+      >
+        <div className="incident-symbol" style={{ color: colors[i.impact] }}>
+          {hasGlyph(i.activity) ? (
+            <ActivityGlyph activity={i.activity} size={16} />
+          ) : (
+            symbols[i.impact]
+          )}
+        </div>
+        <div className="feed-item-body">
+          <span className="report-meta">
+            {i.location?.name || tr("Location unresolved")}
+            <time>{formatAge(i.updated_at, language, clock)}</time>
+          </span>
+          <h2>{i.reports.length===1&&i.reports[0].source_id==="de-demos-assemblies" ? i.reports[0].title : i.headline}</h2>
+          <p>
+            {formatWhen(i.event_start || i.published_at, language)}
+            {!i.event_start ? " · " + tr("publication") : ""}
+          </p>
+          <span className="item-label">
+            <span className="impact-label" style={{ color: colors[i.impact] }}>
+              {tr(i.impact === "unknown" ? "Impact unknown" : i.impact)}
+            </span>
+            <span className="evidence-state">
+              {tr(i.evidence_status)}
+              {i.analyzed_at === null
+                ? " · " +
+                  tr(structuredOnly(i) ? "structured source" : "AI pending")
+                : ""}
+            </span>
+            {i.members && (
+              <span className="evidence-state">{sourceCount(i, tr)}</span>
+            )}
+          </span>
+        </div>
+      </button>
+    </li>
+  );
+});
 /** Structured adapters store their record as JSON; show its fields instead of raw text. */
 function EvidenceText({
   text,

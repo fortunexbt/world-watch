@@ -1,0 +1,646 @@
+{
+  "note": "Synthetic headlines written for World Watch triage evaluation; not real reports.",
+  "labelled": [
+    {
+      "id": "h01",
+      "title": "Thousands march in Nairobi against tax hikes",
+      "relevant": true,
+      "categories": ["ongoing_demonstration"],
+      "country": "KE"
+    },
+    {
+      "id": "h02",
+      "title": "Rail strike halts trains across Belgium",
+      "relevant": true,
+      "categories": ["strike", "disruption"],
+      "country": "BE"
+    },
+    {
+      "id": "h03",
+      "title": "Magnitude 6.1 earthquake strikes off coast of Japan's Hokkaido",
+      "relevant": true,
+      "categories": ["earthquake"],
+      "country": "JP"
+    },
+    {
+      "id": "h04",
+      "title": "Magnitude 5.2 earthquake strikes off coast of Japan's Hokkaido",
+      "relevant": true,
+      "categories": ["earthquake"],
+      "country": "JP"
+    },
+    {
+      "id": "h05",
+      "title": "Floods force 20,000 from their homes in northern Bangladesh",
+      "relevant": true,
+      "categories": ["flood", "displacement"],
+      "country": "BD"
+    },
+    {
+      "id": "h06",
+      "title": "Wildfire near Patras forces evacuation of villages",
+      "relevant": true,
+      "categories": ["wildfire", "displacement", "official_advisory"],
+      "country": "GR"
+    },
+    {
+      "id": "h07",
+      "title": "Missile strike on Kharkiv apartment block kills four",
+      "relevant": true,
+      "categories": ["reported_violence"],
+      "country": "UA"
+    },
+    {
+      "id": "h08",
+      "title": "Clashes between police and protesters in Dhaka leave dozens injured",
+      "relevant": true,
+      "categories": ["confrontation", "reported_violence"],
+      "country": "BD"
+    },
+    {
+      "id": "h09",
+      "title": "Typhoon Haikui makes landfall in southern Taiwan",
+      "relevant": true,
+      "categories": ["tropical_cyclone"],
+      "country": "TW"
+    },
+    {
+      "id": "h10",
+      "title": "Volcano erupts on Iceland's Reykjanes peninsula",
+      "relevant": true,
+      "categories": ["volcanic_eruption"],
+      "country": "IS"
+    },
+    {
+      "id": "h11",
+      "title": "Authorities order evacuations as river rises in Porto Alegre",
+      "relevant": true,
+      "categories": ["official_advisory", "flood", "displacement"],
+      "country": "BR"
+    },
+    {
+      "id": "h12",
+      "title": "Junior doctors to strike across England next week",
+      "relevant": true,
+      "categories": ["strike"],
+      "country": "GB"
+    },
+    {
+      "id": "h13",
+      "title": "Power outage leaves 500,000 without electricity in Buenos Aires",
+      "relevant": true,
+      "categories": ["disruption"],
+      "country": "AR"
+    },
+    {
+      "id": "h14",
+      "title": "Gunmen attack village in Plateau state, Nigeria, killing 12",
+      "relevant": true,
+      "categories": ["reported_violence"],
+      "country": "NG"
+    },
+    {
+      "id": "h15",
+      "title": "Heat warning issued for Seville as temperatures near 45C",
+      "relevant": true,
+      "categories": ["official_advisory", "severe_weather"],
+      "country": "ES"
+    },
+    {
+      "id": "h16",
+      "title": "Explosion at chemical plant in Gujarat injures 12 workers",
+      "relevant": true,
+      "categories": ["property_damage_fire"],
+      "country": "IN"
+    },
+    {
+      "id": "h17",
+      "title": "Farmers block motorways near Lyon with tractors",
+      "relevant": true,
+      "categories": ["disruption", "ongoing_demonstration"],
+      "country": "FR"
+    },
+    {
+      "id": "h18",
+      "title": "Fighting in North Kivu displaces 50,000 people",
+      "relevant": true,
+      "categories": ["displacement"],
+      "country": "CD"
+    },
+    {
+      "id": "h19",
+      "title": "Thousands flee El Fasher after renewed attacks",
+      "relevant": true,
+      "categories": ["displacement", "reported_violence"],
+      "country": "SD"
+    },
+    {
+      "id": "h20",
+      "title": "Grève des contrôleurs aériens : des centaines de vols annulés à Paris",
+      "relevant": true,
+      "categories": ["strike", "disruption"],
+      "country": "FR"
+    },
+    {
+      "id": "h21",
+      "title": "Manifestation contre la réforme des retraites prévue samedi à Marseille",
+      "relevant": true,
+      "categories": ["planned_demonstration"],
+      "country": "FR"
+    },
+    {
+      "id": "h22",
+      "title": "Incendie dans un immeuble à Bruxelles : trois blessés",
+      "relevant": true,
+      "categories": ["property_damage_fire"],
+      "country": "BE"
+    },
+    {
+      "id": "h23",
+      "title": "Inondations dans le Gard : plusieurs routes coupées",
+      "relevant": true,
+      "categories": ["flood", "disruption"],
+      "country": "FR"
+    },
+    {
+      "id": "h24",
+      "title": "Tausende demonstrieren in Berlin gegen Rechtsextremismus",
+      "relevant": true,
+      "categories": ["ongoing_demonstration"],
+      "country": "DE"
+    },
+    {
+      "id": "h25",
+      "title": "Bahnstreik: Fernverkehr in ganz Deutschland eingestellt",
+      "relevant": true,
+      "categories": ["strike", "disruption"],
+      "country": "DE"
+    },
+    {
+      "id": "h26",
+      "title": "Unwetterwarnung für Bayern: Starkregen und Hagel erwartet",
+      "relevant": true,
+      "categories": ["official_advisory", "severe_weather"],
+      "country": "DE"
+    },
+    {
+      "id": "h27",
+      "title": "Hochwasser in Niederösterreich: Evakuierungen angeordnet",
+      "relevant": true,
+      "categories": ["flood", "official_advisory", "displacement"],
+      "country": "AT"
+    },
+    {
+      "id": "h28",
+      "title": "Miles de personas se manifiestan en Valencia por la vivienda",
+      "relevant": true,
+      "categories": ["ongoing_demonstration"],
+      "country": "ES"
+    },
+    {
+      "id": "h29",
+      "title": "Huelga de transporte paraliza Bogotá",
+      "relevant": true,
+      "categories": ["strike", "disruption"],
+      "country": "CO"
+    },
+    {
+      "id": "h30",
+      "title": "Terremoto de magnitud 5,8 sacude el sur de México",
+      "relevant": true,
+      "categories": ["earthquake"],
+      "country": "MX"
+    },
+    {
+      "id": "h31",
+      "title": "Incendio forestal obliga a evacuar a 3.000 vecinos en Tenerife",
+      "relevant": true,
+      "categories": ["wildfire", "displacement"],
+      "country": "ES"
+    },
+    {
+      "id": "h32",
+      "title": "Sciopero generale dei trasporti venerdì a Milano",
+      "relevant": true,
+      "categories": ["strike"],
+      "country": "IT"
+    },
+    {
+      "id": "h33",
+      "title": "Alluvione in Emilia-Romagna, migliaia di sfollati",
+      "relevant": true,
+      "categories": ["flood", "displacement"],
+      "country": "IT"
+    },
+    {
+      "id": "h34",
+      "title": "Corteo pro Palestina a Roma, scontri con la polizia",
+      "relevant": true,
+      "categories": ["confrontation", "ongoing_demonstration"],
+      "country": "IT"
+    },
+    {
+      "id": "h35",
+      "title": "Protesto de professores fecha avenida em São Paulo",
+      "relevant": true,
+      "categories": ["ongoing_demonstration", "disruption"],
+      "country": "BR"
+    },
+    {
+      "id": "h36",
+      "title": "Chuvas fortes deixam 30 mortos no Rio Grande do Sul",
+      "relevant": true,
+      "categories": ["flood", "severe_weather"],
+      "country": "BR"
+    },
+    {
+      "id": "h37",
+      "title": "Rolnicy protestują w Warszawie",
+      "relevant": true,
+      "categories": ["ongoing_demonstration"],
+      "country": "PL"
+    },
+    {
+      "id": "h38",
+      "title": "Powódź na Dolnym Śląsku, trwa ewakuacja mieszkańców",
+      "relevant": true,
+      "categories": ["flood", "displacement"],
+      "country": "PL"
+    },
+    {
+      "id": "h39",
+      "title": "Boeren blokkeren snelwegen in Gelderland",
+      "relevant": true,
+      "categories": ["disruption", "ongoing_demonstration"],
+      "country": "NL"
+    },
+    {
+      "id": "h40",
+      "title": "Обстріл Харкова: є загиблі та поранені",
+      "relevant": true,
+      "categories": ["reported_violence"],
+      "country": "UA"
+    },
+    {
+      "id": "h41",
+      "title": "Землетрясение магнитудой 5,5 произошло в Казахстане",
+      "relevant": true,
+      "categories": ["earthquake"],
+      "country": "KZ"
+    },
+    {
+      "id": "h42",
+      "title": "مظاهرات في بغداد احتجاجاً على انقطاع الكهرباء",
+      "relevant": true,
+      "categories": ["ongoing_demonstration"],
+      "country": "IQ"
+    },
+    {
+      "id": "h43",
+      "title": "İstanbul'da metro grevi: seferler durdu",
+      "relevant": true,
+      "categories": ["strike", "disruption"],
+      "country": "TR"
+    },
+    {
+      "id": "h44",
+      "title": "台風10号、九州に上陸",
+      "relevant": true,
+      "categories": ["tropical_cyclone"],
+      "country": "JP"
+    },
+    {
+      "id": "n01",
+      "title": "Central bank holds interest rates steady",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n02",
+      "title": "Parliament approves next year's budget",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n03",
+      "title": "Foreign minister meets EU counterparts in Brussels",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n04",
+      "title": "Opposition attacks government's budget plan in parliament",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n05",
+      "title": "Storm of criticism after minister's remarks on pensions",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n06",
+      "title": "Le gouvernement présente son plan pour l'école",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n07",
+      "title": "Bundesregierung beschließt neues Klimagesetz",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n08",
+      "title": "Il presidente incontra il papa in Vaticano",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n09",
+      "title": "Twenty years on, tsunami survivors remember the day the sea rose",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n10",
+      "title": "Opinion: why street protests will not change Iran",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n11",
+      "title": "Messi strike seals Champions League win",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n12",
+      "title": "Liverpool beat Chelsea 2-1 in Premier League thriller",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n13",
+      "title": "Le PSG écrase Lyon 4-0",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n14",
+      "title": "Bayern stürmt an die Tabellenspitze",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n15",
+      "title": "Il Napoli travolge la Juventus",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n16",
+      "title": "Lakers storm back to beat Celtics",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n17",
+      "title": "Box office: disaster film 'Wildfire' tops the charts",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n18",
+      "title": "Tech stocks rally after Fed decision",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n19",
+      "title": "Retailer launches fire sale as losses mount",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n20",
+      "title": "Netflix releases trailer for new war drama",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n21",
+      "title": "Taylor Swift album breaks streaming record",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n22",
+      "title": "Startup shares explode on market debut",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    },
+    {
+      "id": "n23",
+      "title": "Real Madrid ficha a un delantero brasileño",
+      "relevant": false,
+      "categories": [],
+      "country": null
+    }
+  ],
+  "syndicated": [
+    {
+      "id": "s01",
+      "of": "h01",
+      "title": "Thousands march in Nairobi against tax hikes - Reuters"
+    },
+    {
+      "id": "s02",
+      "of": "h01",
+      "title": "Thousands march in Nairobi against tax hikes | AP News"
+    },
+    {
+      "id": "s03",
+      "of": "h01",
+      "title": "UPDATE 1-Thousands march in Nairobi against tax hikes"
+    },
+    {
+      "id": "s04",
+      "of": "h02",
+      "title": "Rail strike halts trains across Belgium - The Brussels Times"
+    },
+    {
+      "id": "s05",
+      "of": "h02",
+      "title": "RAIL STRIKE HALTS TRAINS ACROSS BELGIUM"
+    },
+    {
+      "id": "s06",
+      "of": "h03",
+      "title": "Magnitude 6.1 earthquake strikes off coast of Japan's Hokkaido - NHK World"
+    },
+    {
+      "id": "s07",
+      "of": "h05",
+      "title": "Floods force 20,000 from their homes in northern Bangladesh - Al Jazeera"
+    },
+    {
+      "id": "s08",
+      "of": "h05",
+      "title": "Floods force 20,000 from homes in northern Bangladesh"
+    },
+    {
+      "id": "s09",
+      "of": "h07",
+      "title": "Missile strike on Kharkiv apartment block kills four - Kyiv Independent"
+    },
+    {
+      "id": "s10",
+      "of": "h07",
+      "title": "Missile strike on Kharkiv apartment block kills four people"
+    },
+    {
+      "id": "s11",
+      "of": "h09",
+      "title": "Typhoon Haikui makes landfall in southern Taiwan - Focus Taiwan"
+    },
+    {
+      "id": "s12",
+      "of": "h12",
+      "title": "Junior doctors to strike across England next week - BBC News"
+    },
+    {
+      "id": "s13",
+      "of": "h14",
+      "title": "Gunmen attack village in Plateau state, Nigeria, killing 12 - Premium Times"
+    },
+    {
+      "id": "s14",
+      "of": "h18",
+      "title": "Fighting in North Kivu displaces 50,000 people - UN News"
+    },
+    {
+      "id": "s15",
+      "of": "h20",
+      "title": "Grève des contrôleurs aériens : des centaines de vols annulés à Paris - Le Monde"
+    },
+    {
+      "id": "s16",
+      "of": "h20",
+      "title": "Grève des contrôleurs aériens: des centaines de vols annulés à Paris"
+    },
+    {
+      "id": "s17",
+      "of": "h21",
+      "title": "Manifestation contre la réforme des retraites prévue samedi à Marseille - La Provence"
+    },
+    {
+      "id": "s18",
+      "of": "h24",
+      "title": "Tausende demonstrieren in Berlin gegen Rechtsextremismus - tagesschau.de"
+    },
+    {
+      "id": "s19",
+      "of": "h24",
+      "title": "Tausende demonstrieren in Berlin gegen Rechtsextremismus | ZDFheute"
+    },
+    {
+      "id": "s20",
+      "of": "h25",
+      "title": "Bahnstreik: Fernverkehr in ganz Deutschland eingestellt - SPIEGEL"
+    },
+    {
+      "id": "s21",
+      "of": "h28",
+      "title": "Miles de personas se manifiestan en Valencia por la vivienda - EL PAÍS"
+    },
+    {
+      "id": "s22",
+      "of": "h30",
+      "title": "Terremoto de magnitud 5,8 sacude el sur de México - El Universal"
+    },
+    {
+      "id": "s23",
+      "of": "h32",
+      "title": "Sciopero generale dei trasporti venerdì a Milano - Corriere della Sera"
+    },
+    {
+      "id": "s24",
+      "of": "h33",
+      "title": "Alluvione in Emilia-Romagna, migliaia di sfollati - ANSA"
+    },
+    {
+      "id": "s25",
+      "of": "h36",
+      "title": "Chuvas fortes deixam 30 mortos no Rio Grande do Sul - g1"
+    },
+    {
+      "id": "s26",
+      "of": "h37",
+      "title": "Rolnicy protestują w Warszawie - TVN24"
+    },
+    {
+      "id": "s27",
+      "of": "n01",
+      "title": "Central bank holds interest rates steady - Bloomberg"
+    },
+    {
+      "id": "s28",
+      "of": "n01",
+      "title": "Central bank holds interest rates steady | Financial Times"
+    },
+    {
+      "id": "s29",
+      "of": "n12",
+      "title": "Liverpool beat Chelsea 2-1 in Premier League thriller - BBC Sport"
+    },
+    {
+      "id": "s30",
+      "of": "n12",
+      "title": "Liverpool beat Chelsea 2-1 in Premier League thriller | Sky Sports"
+    },
+    {
+      "id": "s31",
+      "of": "n18",
+      "title": "Tech stocks rally after Fed decision - CNBC"
+    },
+    {
+      "id": "s32",
+      "of": "n11",
+      "title": "Messi strike seals Champions League win - ESPN"
+    },
+    {
+      "id": "s33",
+      "of": "n21",
+      "title": "Taylor Swift album breaks streaming record - Billboard"
+    },
+    {
+      "id": "s34",
+      "of": "h44",
+      "title": "台風10号、九州に上陸"
+    }
+  ]
+}

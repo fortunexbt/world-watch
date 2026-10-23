@@ -1,5 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {parseFeed,parseTfl,parseXML,parseBbk,parseSiri,parseDpcArticle} from '../src/collector/parsers.js';
+import {parseFeed,parseTfl,parseXML,parseSiri,parseDpcArticle} from '../src/collector/parsers.js';
+import {parseBbk} from '../src/collector/adapters/cap.js';
 import {checkedURL,fetchSource,isPublicAddress} from '../src/collector/fetch.js';
 import {collectSources} from '../src/collector/index.js';
 import {sourceRegistry,configuredRegistry} from '../src/collector/registry.js';
