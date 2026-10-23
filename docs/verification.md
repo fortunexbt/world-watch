@@ -219,7 +219,7 @@ Worker handler CPU from `npm run perf:load` on the synthetic 200,000 detections 
 | --- | --- | --- |
 | Geospatial world, cold (parses FIRMS) | 833 ms | 630 ms |
 | Geospatial world, warm | 66 ms, 1,662,612 bytes, 2,000 detections | 0.9 ms, 1,713 bytes, counts only |
-| First tile of a refresh (indexes every detection) | | 110 ms (93 to 161) |
+| First tile of a refresh (indexed it at the time) | | 110 ms (93 to 161) |
 | Any other tile, first request | | median 0.1 to 3.9 ms by zoom, at most 9.2 ms |
 | Same tile again | | at most 1.9 ms |
 
@@ -242,13 +242,17 @@ The public build, served with the real archive by a local server that honours `R
 
 Frame pacing held at one display frame in both builds at 1x and 4x CPU, so the frames don't separate them; the map worker did less work with tiles, because the sample was re-read and re-tiled on every settled view. The reference client scene (`npm run perf:client`, 1,000 incidents and all 200,000 synthetic detections) panned at p99 16.8 ms with no long animation frames in a single run at load 10. This is desktop Chromium; no claim here covers iPhone smoothness.
 
+Two follow-ups, each alternated with the commit before it:
+
+- The catalogue load now builds the tile index, so the first tile request after a refresh only encodes its tile. In process with the 200,000 synthetic detections, nine runs each at a load average of 10 to 17, the first zoom 0 tile fell from a median of 104 ms (57 to 124) of handler CPU to 15 ms (7 to 22), and the cold catalogue request rose from 648 ms (421 to 778) to 755 ms (589 to 952). Encoding the world tile still aggregates every detection.
+- MapLibre asks for a tile once for each world copy on screen, all at once, and neither it nor the browser cache merges those requests. Owner and public tiles now load through one `thermal` protocol (`src/client/thermal-tiles.ts`) that shares one read between them. On the real-day client scene above, re-downloaded on 23 October 2026 (three alternating runs, load average 10 to 23), turning the layer on sent 2 requests (4.7 kB) instead of 4 (12.6 kB), the session 80 to 83 instead of 84 to 87 (288 to 291 kB instead of 305 to 308 kB), and the largest single request's handler CPU fell from 74 to 108 ms to 11 to 14 ms with the index change. Frame p99 stayed 16.7 to 16.8 ms. The shared reads are not aborted when a tile leaves the view.
+
 ### Remaining costs, largest first
 
 - Snapshot handler CPU. A list-view world snapshot still parses 1,000 full views from D1 (26 to 30 ms of handler CPU), above Workers Free's 10 ms. Trimming in SQL, or storing a list projection beside each view, would cut the parse.
 - Search reads every match before ranking (14,876 rows for "earthquake"), and all-time area views read every row in their cells (10,337 for Fiji).
 - Each three-record ingest still reads about 500 rows, mostly the alert delivery ledger, and the store grows to 4.7 GB at 100,000 incidents, 1.24 million rows of it alert deliveries from 20 rules, which needs checking against D1's per-database size limit.
-- The first geospatial request in an isolate parses about 30 MB of FIRMS text, and the first thermal tile after it indexes every detection (about 110 ms of CPU).
-- MapLibre requests the same world-view tile once per visible world copy before the browser cache holds it, so a zoom 0 view costs the Worker up to three requests for one tile.
+- The first geospatial request in an isolate parses about 30 MB of FIRMS text and indexes every detection, 0.6 to 0.95 s of CPU on the synthetic day.
 - No phone was measured. iPhone claims need Safari Web Inspector timelines on a physical device with the same scene.
 
 ## Unproven
