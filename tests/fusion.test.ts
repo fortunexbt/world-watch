@@ -4,6 +4,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { parseUsgs } from "../src/collector/adapters/usgs.js";
 import { parseGdacs } from "../src/collector/adapters/gdacs.js";
+import { parseEmsc } from "../src/collector/adapters/emsc.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import { fusionCandidates, sameEvent } from "../src/server/fusion.js";
 import { structuredBrief } from "../src/server/structured-brief.js";
@@ -13,8 +14,10 @@ import type { IncidentView, ObservationInput } from "../src/shared/contracts.js"
 
 const usgsSource = sourceRegistry.find((s) => s.id === "global-usgs-earthquakes")!;
 const gdacsSource = sourceRegistry.find((s) => s.id === "global-gdacs-alerts")!;
+const emscSource = sourceRegistry.find((s) => s.id === "global-emsc-earthquakes")!;
 const usgsFixture = JSON.parse(readFileSync("tests/fixtures/usgs-summary.json", "utf8"));
 const gdacsFixture = JSON.parse(readFileSync("tests/fixtures/gdacs-events.json", "utf8"));
+const emscFixture = JSON.parse(readFileSync("tests/fixtures/emsc-events.json", "utf8"));
 const usgsTemplate = usgsFixture.features[0];
 const gdacsQuakeTemplate = gdacsFixture.features.find(
   (f: any) => f.properties.eventid === 1572968,
@@ -196,6 +199,91 @@ test("the real fixture pair fuses: GDACS's Vanuatu quake is the USGS record it n
   });
   for (const other of parseGdacs(gdacsSource, gdacsFixture).filter((r) => r.native_id !== alert.native_id))
     assert.equal(verdict(vanuatu, other), null, other.native_id);
+});
+
+// The real EMSC list for the USGS fixture's day: one record per quake, each naming its solution's author.
+const emscRows = () => parseEmsc(emscSource, emscFixture);
+const usgsRow = (id: string) => parseUsgs(usgsSource, usgsFixture).find((r) => r.native_id === id)!;
+/** A fixture record with some properties changed; a new point moves the geometry, as EMSC draws it. */
+const emscRow = (id: string, properties: Record<string, unknown> = {}, point?: [number, number]) => {
+  const f = structuredClone(emscFixture.features.find((x: any) => x.id === id));
+  Object.assign(f.properties, properties);
+  if (point) f.geometry.coordinates = [...point, f.geometry.coordinates[2]];
+  return parseEmsc(emscSource, { ...emscFixture, metadata: { count: 1 }, features: [f] })[0];
+};
+
+test("EMSC's own solution of a USGS quake is the same event from an independent origin", () => {
+  assert.deepEqual(verdict(usgsRow("us6000u3t6"), emscRow("20261021_0000121")), {
+    type: "same_event",
+    independence: "independent",
+    basis: "fusion-1",
+    reason:
+      "origin times 0 s apart, epicentres 6 km apart (limit 25 km), magnitudes 0.0 apart; measured by NEIC and EMSC",
+  });
+  for (const [quake, solution] of [
+    ["us6000u3r3", "20261020_0000346"],
+    ["us6000u3p1", "20261020_0000263"],
+  ])
+    assert.equal(verdict(usgsRow(quake), emscRow(solution))!.independence, "independent", quake);
+  // GDACS's Japan alert repeats NEIC; EMSC measured the quake itself.
+  const japan = parseGdacs(gdacsSource, gdacsFixture).find((r) => r.native_id === "EQ-1572939")!;
+  const hokkaido = verdict(japan, emscRow("20261021_0000205"))!;
+  assert.equal(hokkaido.type, "same_event");
+  assert.equal(hokkaido.independence, "independent");
+  assert.match(hokkaido.reason, /measured by NEIC and EMSC$/);
+  const agency = verdict(usgsRow("us6000u3t6"), emscRow("20261021_0000121", { auth: "PHIVOLCS" }))!;
+  assert.equal(agency.independence, "independent", "another agency's solution corroborates too");
+  assert.match(agency.reason, /measured by NEIC and PHIVOLCS$/);
+  const unstated = verdict(usgsRow("us6000u3t6"), emscRow("20261021_0000121", { auth: "" }))!;
+  assert.equal(unstated.type, "same_event");
+  assert.equal(unstated.independence, "unknown", "an unstated author settles nothing about independence");
+});
+
+test("EMSC republishing the NEIC solution, or a US regional network's, is one origin and not corroboration", () => {
+  const link = verdict(usgsRow("us6000u3uk"), emscRow("20261021_0000241"))!;
+  assert.deepEqual(link, {
+    type: "same_event",
+    independence: "same_origin",
+    basis: "fusion-1",
+    reason:
+      "origin times 0 s apart, epicentres 0 km apart (limit 25 km), magnitudes 0.0 apart; both measurements come from NEIC",
+  });
+  const alert = parseGdacs(gdacsSource, gdacsFixture).find((r) => r.native_id === "EQ-1572968")!;
+  assert.equal(verdict(alert, emscRow("20261021_0000241"))!.independence, "same_origin");
+  // ComCat can prefer a regional network's solution, which EMSC credits under the same code.
+  const feature = usgsQuake("ak2026ux1", 4.6, "2026-10-21T12:03:56.100Z", -163.5558, 53.4426, "Unimak");
+  feature.properties.net = "ak";
+  const [alaska] = usgs(feature);
+  const ak = (auth: string) => verdict(alaska, emscRow("20261021_0000195", { auth }))!;
+  assert.equal(ak("AK").independence, "same_origin");
+  assert.match(ak("AK").reason, /both measurements come from AK$/);
+  assert.equal(ak("NEIC").independence, "same_origin");
+  assert.equal(ak("EMSC").independence, "independent");
+  // GDACS taking its quake from EMSC repeats whichever solution EMSC carries.
+  assert.equal(
+    verdict(china({ source: "EMSC" }), emscRow("20261021_0000121", { auth: "INGV", time: MAIN, mag: 7.0 }, [93.73, 32.18]))!
+      .independence,
+    "same_origin",
+  );
+});
+
+test("an EMSC magnitude beyond tolerance keeps the pair possible, and EMSC's distinct events stay apart", () => {
+  const quake = usgsRow("us6000u3t6");
+  const off = (mag: number) => verdict(quake, emscRow("20261021_0000121", { mag }));
+  assert.equal(off(5.7)!.type, "same_event");
+  const possible = off(6.0)!;
+  assert.equal(possible.type, "possible_same_event");
+  assert.equal(possible.independence, undefined);
+  assert.match(possible.reason, /magnitudes 0\.8 apart; measured by NEIC and EMSC$/);
+  assert.equal(off(6.4), null);
+  // Three EMSC Vanuatu events within eleven hours are separate quakes, and only one is the USGS record.
+  const vanuatu = emscRows().filter((r) => JSON.parse(r.excerpts[0].text).place === "VANUATU");
+  assert.equal(vanuatu.length, 5);
+  for (const a of vanuatu) for (const b of vanuatu) if (a !== b) assert.equal(verdict(a, b), null);
+  assert.deepEqual(
+    vanuatu.filter((r) => verdict(usgsRow("us6000u3uk"), r)).map((r) => r.native_id),
+    ["20261021_0000241"],
+  );
 });
 
 test("two distinct nearby quakes stay apart, and a record between them is only possibly either", () => {
@@ -416,6 +504,46 @@ for (const order of ["USGS first", "GDACS first"])
       s.db.close();
     }
   });
+
+test("ingesting EMSC beside USGS and GDACS fuses each quake once, keeps EMSC-only quakes alone and counts every quake once", async () => {
+  const s = fixtureServer();
+  try {
+    assert.equal(
+      (await s.api("/api/sources", { sources: [usgsSource, gdacsSource, emscSource] }, "fixture-collector")).status,
+      200,
+    );
+    await s.ingest([...emscRows(), ...fixtureRows()]);
+    const incidents = await s.incidents();
+    const fused = situations(incidents);
+    const sources = (v: (typeof fused)[number]) => (v.members ?? [v]).map((m) => m.reports[0].source_id).sort();
+    const groups = fused.filter((v) => v.members);
+    assert.deepEqual(
+      groups.map((v) => [sources(v).join(" "), independence(v)]).sort(),
+      [
+        // Fiji, Azores and the Philippines: EMSC measured each itself.
+        ["global-emsc-earthquakes global-usgs-earthquakes", "independent"],
+        ["global-emsc-earthquakes global-usgs-earthquakes", "independent"],
+        ["global-emsc-earthquakes global-usgs-earthquakes", "independent"],
+        // Hokkaido: GDACS repeats NEIC, EMSC measured it.
+        ["global-emsc-earthquakes global-gdacs-alerts", "independent"],
+        // Vanuatu: all three carry the NEIC solution.
+        ["global-emsc-earthquakes global-gdacs-alerts global-usgs-earthquakes", "same_origin"],
+      ].sort(),
+    );
+    const alone = fused.filter((v) => !v.members && v.reports[0].source_id === emscSource.id);
+    assert.equal(alone.length, 14, "EMSC's other quakes publish alone");
+    assert(alone.every((v) => !v.links), "and are linked to nothing");
+    assert.equal(fused.length, incidents.length - 6);
+    const brief = (await s.api("/api/brief?hours=0")).body.current;
+    assert.equal(
+      brief.headline,
+      "Green earthquake alert for M4.9 in Vanuatu Islands. Green earthquake alert for M4.7 affecting Japan. 19 earthquakes M3.8+, largest M5.2 (68 km NE of Cabatuan, Philippines).",
+    );
+    assert.deepEqual(brief.counts, { reports: 27, incidents: 21, pending: 0, omitted: 0 }, "27 records of 21 quakes");
+  } finally {
+    s.db.close();
+  }
+});
 
 test("candidate reads seek the cell and window index and return only rows inside the space and time window", async () => {
   const s = fixtureServer();

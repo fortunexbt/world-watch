@@ -20,6 +20,7 @@ export const APPROVED_HOSTS = new Set([
   "api.demonstrations.org",
   "data.humdata.org",
   "earthquake.usgs.gov",
+  "www.seismicportal.eu",
   "www.gdacs.org",
   "api.weather.gov",
   "api.weather.gc.ca",

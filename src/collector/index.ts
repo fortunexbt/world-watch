@@ -17,6 +17,7 @@ import {
 import { configuredRegistry } from "./registry.js";
 import { parseCatalunyaBombers } from "./adapters/catalunya-bombers.js";
 import { parseUsgs } from "./adapters/usgs.js";
+import { emscQueryURL, parseEmsc } from "./adapters/emsc.js";
 import { GDACS_PAGE_SIZE, parseGdacs } from "./adapters/gdacs.js";
 import { parseNws } from "./adapters/nws.js";
 import { parseEccc } from "./adapters/eccc.js";
@@ -223,13 +224,17 @@ export async function collectSources(
       const requestURL =
         source.config.format === "zwaailicht_incidents"
           ? zwaailichtQueryURL(now())
-          : countries.length
-            ? routingURL(countries[0], now())
-            : source.url;
+          : source.config.format === "emsc_json"
+            ? emscQueryURL(now())
+            : countries.length
+              ? routingURL(countries[0], now())
+              : source.url;
       const response = await fetchSource(requestURL, before, {
         ...options,
         fetch: fetcher,
         demosQuery: source.config.format === "demos_json",
+        // EMSC answers an empty query with 204 No Content.
+        allowNoContent: source.config.format === "emsc_json",
         accept:
           typeof source.config.accept === "string"
             ? source.config.accept
@@ -271,6 +276,11 @@ export async function collectSources(
           break;
         case "usgs_geojson":
           observations = parseUsgs(source, JSON.parse(response.text));
+          break;
+        case "emsc_json":
+          observations = response.text
+            ? parseEmsc(source, JSON.parse(response.text))
+            : [];
           break;
         case "gdacs_geojson": {
           const pages = [JSON.parse(response.text)];

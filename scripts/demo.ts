@@ -1,5 +1,5 @@
 // Local-only showcase: a throwaway database fed by the worldwide structured
-// sources (USGS, GDACS, NWS, ECCC, ADSB.lol), World Watch's routing drop
+// sources (USGS, EMSC, GDACS, NWS, ECCC, ADSB.lol), World Watch's routing drop
 // detector on RIPEstat and GDELT news coverage signals. No model runs and no
 // private file is read.
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
@@ -15,6 +15,7 @@ import { configuredRegistry } from "../src/collector/registry.js";
 
 const DEMO_SOURCES = [
   "global-usgs-earthquakes",
+  "global-emsc-earthquakes",
   "global-gdacs-alerts",
   "us-nws-warnings",
   "ca-eccc-warnings",
@@ -141,7 +142,7 @@ try {
   await waitFor(`http://127.0.0.1:${PREVIEW_PORT}/api/health`);
   console.log(
     `\nWorld Watch demo: http://127.0.0.1:${PREVIEW_PORT}/?hours=168\n` +
-      "Live USGS earthquakes, GDACS alerts, NWS and ECCC warnings, ADSB.lol emergency squawks, Internet routing drops and GDELT news signals, refreshed every 5 minutes. " +
+      "Live USGS and EMSC earthquakes, GDACS alerts, NWS and ECCC warnings, ADSB.lol emergency squawks, Internet routing drops and GDELT news signals, refreshed every 5 minutes. " +
       "Toggle the thermal layer for NASA FIRMS detections. Ctrl-C stops everything and deletes the demo data.",
   );
   setInterval(() => void collect().catch((e) => console.error(String(e))), REFRESH_MS);

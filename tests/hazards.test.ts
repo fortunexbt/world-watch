@@ -8,6 +8,12 @@ import {
   USGS_FEED_URL,
 } from "../src/collector/adapters/usgs.js";
 import {
+  emscQueryURL,
+  parseEmsc,
+  EMSC_LIMIT,
+  EMSC_QUERY_URL,
+} from "../src/collector/adapters/emsc.js";
+import {
   parseGdacs,
   GDACS_IMPACT,
   GDACS_EVENTS_URL,
@@ -58,6 +64,10 @@ const usgs = JSON.parse(
 const gdacs = JSON.parse(
   readFileSync("tests/fixtures/gdacs-events.json", "utf8"),
 );
+// The real EMSC answer of 23 October 2026 for M4.5+ from 2026-10-20T17:38 to 2026-10-21T17:38,
+// the USGS fixture's day, kept whole.
+const emsc = JSON.parse(readFileSync("tests/fixtures/emsc-events.json", "utf8"));
+const emscSource = sourceRegistry.find((s) => s.id === "global-emsc-earthquakes")!;
 // Trimmed from api.weather.gov on 2026-10-22: the active storm-based warnings query, the past
 // week's tornado and severe thunderstorm messages for their cancellations, and one test message,
 // zone-only watch and unlinked statement from the unfiltered active list.
@@ -182,6 +192,139 @@ test("USGS non-earthquake types, missing points and truncated or invalid feeds n
     }),
     [],
   );
+});
+
+test("EMSC events keep the unid, revision clock, origin ID, magnitude type, depth, region and solution author with no invented impact", () => {
+  const rows = parseEmsc(emscSource, emsc);
+  assert.equal(rows.length, 19);
+  const vanuatu = byId(rows, "20261021_0000241");
+  assert.equal(vanuatu.source_event_id, "20261021_0000241");
+  assert.equal(vanuatu.title, "M 4.9 - VANUATU");
+  assert.equal(
+    vanuatu.canonical_url,
+    "https://www.seismicportal.eu/eventdetails.html?unid=20261021_0000241",
+  );
+  assert.equal(vanuatu.published_at, null);
+  assert.equal(vanuatu.source_updated_at, "2026-10-21T17:00:56.957Z");
+  assert.equal(vanuatu.official?.effective_at, "2026-10-21T15:22:33.566Z");
+  assert.equal(vanuatu.official?.activity, "earthquake");
+  assert.equal(vanuatu.official?.impact, "unknown");
+  assert.equal(vanuatu.official?.issuer, "European-Mediterranean Seismological Centre");
+  assert.deepEqual(vanuatu.source_geo, {
+    lon: 165.3793,
+    lat: -14.1338,
+    name: "VANUATU",
+    accuracy: "point",
+    country: null,
+  });
+  assert.deepEqual(record(vanuatu), {
+    magnitude: 4.9,
+    magnitude_type: "mb",
+    place: "VANUATU",
+    origin_time: "2026-10-21T15:22:33.566Z",
+    source_updated_at: "2026-10-21T17:00:56.957Z",
+    depth_km: 10,
+    event_type: "known earthquake",
+    author: "NEIC",
+    origin_id: "2078202",
+    catalogue: "EMSC-RTS",
+    notice: record(vanuatu).notice,
+  });
+  assert.match(record(vanuatu).notice, /NEIC is the USGS National Earthquake Information Center/);
+  assert.match(record(vanuatu).notice, /CC BY 4\.0, credit EMSC-CSEM SeismicPortal/);
+  const azores = byId(rows, "20261020_0000263");
+  assert.equal(record(azores).author, "EMSC");
+  assert.equal(record(azores).magnitude_type, "mw");
+  // Depth is positive kilometres, as in EMSC's properties, not the negative third coordinate.
+  assert.equal(record(byId(rows, "20261020_0000346")).depth_km, 519.4);
+  assert.equal(record(byId(rows, "20261021_0000146")).author, "UNA");
+  // EMSC names a region, not a country; the country comes from the map's boundaries, as for USGS.
+  assert.equal(byId(rows, "20261021_0000012").source_geo?.country, "JP");
+  assert.equal(byId(rows, "20261021_0000205").source_geo?.country, null, "Hokkaido's offshore epicentre keeps no country");
+  assert.equal(
+    rows.filter((r) => record(r).author === "NEIC").length,
+    4,
+    "four of the day's solutions are NEIC's, republished",
+  );
+});
+
+test("EMSC non-earthquake types, missing points and truncated or invalid lists never become guessed events", () => {
+  const copy = structuredClone(emsc);
+  copy.features[0].properties.evtype = "kx";
+  copy.features[1].geometry = null;
+  copy.features[2].properties.evtype = "se";
+  copy.features[3].properties.mag = null;
+  const rows = parseEmsc(emscSource, copy);
+  assert.equal(rows.length, 18);
+  assert(!rows.some((r) => r.native_id === copy.features[0].id));
+  assert.equal(byId(rows, copy.features[1].id).source_geo, undefined);
+  assert.equal(record(byId(rows, copy.features[2].id)).event_type, "suspected earthquake");
+  assert.equal(byId(rows, copy.features[3].id).title, "Earthquake - HOKKAIDO, JAPAN REGION");
+  assert.throws(
+    () => parseEmsc(emscSource, { ...emsc, metadata: { count: 20 } }),
+    /emsc_feed_truncated/,
+  );
+  const full = {
+    ...emsc,
+    metadata: { count: EMSC_LIMIT },
+    features: Array.from({ length: EMSC_LIMIT }, () => emsc.features[0]),
+  };
+  assert.throws(() => parseEmsc(emscSource, full), /emsc_feed_truncated/, "a full page may hide older events");
+  assert.throws(() => parseEmsc(emscSource, { error: 1 }), /invalid_emsc_response/);
+});
+
+test("EMSC is read for the past day from the minute at M4.5 through an approved host, and an empty day is a clean read", async () => {
+  const at = Date.parse("2026-10-21T17:38:42Z");
+  assert.equal(
+    emscQueryURL(at),
+    EMSC_QUERY_URL +
+      "?format=json&starttime=2026-10-20T17%3A38%3A00&minmag=4.5&orderby=time&limit=" +
+      EMSC_LIMIT,
+  );
+  assert.equal(checkedURL(emscQueryURL(at)).hostname, "www.seismicportal.eu");
+  assert.deepEqual(emscSource.countries, ["*"]);
+  assert.equal(emscSource.rights.ai, false);
+  assert.equal(emscSource.config.operational_role, "structured_natural_hazard");
+  assert.match(emscSource.rights.attribution, /^Credit: EMSC-CSEM SeismicPortal, https:\/\/www\.seismicportal\.eu/);
+  for (const [body, received] of [
+    [Response.json(emsc), 19],
+    [new Response(null, { status: 204 }), 0],
+  ] as const) {
+    const requested: string[] = [];
+    const accepted: ObservationInput[] = [];
+    const results = await collectSources(
+      {
+        EW_API_URL: "https://isolated.invalid",
+        EW_COLLECTOR_TOKEN: "isolated-fixture",
+      },
+      {
+        sources: [emscSource],
+        register: async () => {},
+        checkpoint: async () => ({}),
+        recordHealth: async () => {},
+        ingest: async (rows) => {
+          accepted.push(...rows);
+        },
+        fetch: async (url) => {
+          requested.push(String(url));
+          return body.clone();
+        },
+        maxRequests: 40,
+        now: () => at,
+      },
+    );
+    // EMSC is a rolling window like USGS, so nothing is reconciled.
+    assert.deepEqual(requested, [emscQueryURL(at)]);
+    assert.deepEqual(
+      results.map((r) => [r.source_id, r.status, r.received]),
+      [[emscSource.id, "ok", received]],
+    );
+    assert(
+      accepted.every(
+        (x) => x.eligibility?.reason === "structured_natural_hazard_record",
+      ),
+    );
+  }
 });
 
 test("GDACS events keep type plus event ID, episode revision, UTC dates, centroid accuracy and single affected country", () => {

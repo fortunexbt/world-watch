@@ -21,6 +21,7 @@ import {
 } from "../src/public/snapshot.js";
 import { CEMS_URL, FIRMS_SENSORS } from "../src/server/geospatial.js";
 import { USGS_FEED_URL } from "../src/collector/adapters/usgs.js";
+import { EMSC_QUERY_URL } from "../src/collector/adapters/emsc.js";
 import { GDACS_EVENTS_URL } from "../src/collector/adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "../src/collector/adapters/nws.js";
 import { ECCC_ALERTS_URL } from "../src/collector/adapters/eccc.js";
@@ -34,7 +35,8 @@ import type { IncidentView } from "../src/shared/contracts.js";
 import { situations } from "../src/shared/fusion.js";
 
 // Real responses trimmed for the hazard tests; FIRMS and CEMS bodies are synthetic and dated
-// relative to the clock, because both catalogues keep only recent records.
+// relative to the clock, because both catalogues keep only recent records. EMSC is asked for the
+// past day from the clock, so its query is matched without the start time.
 const feeds: Record<string, unknown> = {
   [USGS_FEED_URL]: JSON.parse(
     readFileSync("tests/fixtures/usgs-summary.json", "utf8"),
@@ -49,6 +51,9 @@ const feeds: Record<string, unknown> = {
     readFileSync("tests/fixtures/eccc-alerts.json", "utf8"),
   ),
 };
+const emsc = JSON.parse(
+  readFileSync("tests/fixtures/emsc-events.json", "utf8"),
+);
 const recent = () => {
   const iso = new Date(Date.now() - 3600000).toISOString();
   return [iso.slice(0, 10), iso.slice(11, 13) + iso.slice(14, 16)];
@@ -59,6 +64,7 @@ function upstream(requests: { url: string; method: string }[] = []) {
     requests.push({ url, method: init.method ?? "GET" });
     assert.equal(new Headers(init.headers).has("Authorization"), false);
     if (feeds[url]) return Response.json(feeds[url]);
+    if (url.startsWith(EMSC_QUERY_URL + "?")) return Response.json(emsc);
     const sensor = FIRMS_SENSORS.find((s) => s.url === url);
     if (sensor) {
       const [date, time] = recent();
@@ -111,6 +117,7 @@ function upstream(requests: { url: string; method: string }[] = []) {
 test("public sources are the enabled structured hazard feeds whose rights permit display", () => {
   assert.deepEqual(PUBLIC_SOURCES.map((s) => s.id).sort(), [
     "ca-eccc-warnings",
+    "global-emsc-earthquakes",
     "global-gdacs-alerts",
     "global-usgs-earthquakes",
     "us-nws-warnings",
@@ -164,8 +171,9 @@ test("the snapshot publishes the API's projection, briefs for every window and a
       assert.equal(report.rights.display, true);
     }
   assert(incidents.every((i) => i.analyzed_at === null));
-  // The USGS and GDACS records of the Vanuatu earthquake are linked, so they fuse into one situation.
-  assert.equal(situations(incidents).length, incidents.length - 1);
+  // Linked records fuse: USGS, GDACS and EMSC for Vanuatu, USGS and EMSC for three more quakes,
+  // and GDACS and EMSC for Hokkaido.
+  assert.equal(situations(incidents).length, incidents.length - 6);
   const briefs = JSON.parse(files.get("brief.json")!);
   assert.deepEqual(Object.keys(briefs).sort(), [...BRIEF_WINDOWS].sort());
   assert.equal(briefs["0"].kind, "structured");

@@ -8,6 +8,7 @@ import type { SourceRecord } from "../shared/contracts.js";
 import { CATALUNYA_BOMBERS_QUERY } from "./adapters/catalunya-bombers.js";
 import { ZWAAILICHT_URL } from "./adapters/zwaailicht.js";
 import { USGS_FEED_URL } from "./adapters/usgs.js";
+import { EMSC_QUERY_URL } from "./adapters/emsc.js";
 import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "./adapters/nws.js";
 import { ECCC_ALERTS_URL } from "./adapters/eccc.js";
@@ -445,6 +446,31 @@ export const sourceRegistry: SourceRecord[] = [
       declared_refresh_seconds: 60,
       coverage:
         "Complete past-day ComCat summary at M4.5+, the global completeness level. Epicentre points only; no shaking footprint. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. Preferred event IDs can change when the authoritative network changes.",
+    },
+  },
+  {
+    ...base,
+    id: "global-emsc-earthquakes",
+    name: "EMSC — earthquakes M4.5+ worldwide, past day",
+    owner: "European-Mediterranean Seismological Centre (EMSC-CSEM)",
+    url: EMSC_QUERY_URL,
+    docs: "https://www.seismicportal.eu/fdsn-wsevent.html",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["natural_hazard", "earthquake"],
+    family: "rss",
+    verified_at: "2026-10-23T11:05:00Z",
+    rights: rights(
+      "SeismicPortal terms: datasets and products downloaded from the data services are CC BY 4.0, which permits reuse, including commercial use, with attribution; the website, services and databases as such are not covered, and mirroring or bulk-copying a database in whole or substantial part needs prior written permission. https://www.seismicportal.eu/terms.html . The FDSN event service states the same licence. https://www.seismicportal.eu/fdsn-wsevent.html . Provided without warranty of completeness, accuracy or timeliness. Felt reports are not collected. Deterministic structured publication; no model analysis.",
+      "Credit: EMSC-CSEM SeismicPortal, https://www.seismicportal.eu (CC BY 4.0). Each record names the agency that authored its solution. Impact labels and countries are World Watch derivations, not EMSC assessments.",
+      false,
+    ),
+    config: {
+      format: "emsc_json",
+      max_bytes: 2 * 1024 * 1024,
+      operational_role: "structured_natural_hazard",
+      coverage:
+        "Past-day EMSC event list at M4.5+ worldwide, the USGS feed's floor, in one request of up to 500 events. Epicentre points only; no shaking footprint. Each record names its solution author: EMSC's own solution or a contributing agency's, including NEIC for solutions taken from USGS. Country derived offline from the epicentre, null offshore or within 40 km of a coast or border. An event EMSC later deletes or merges is not withdrawn; the last record read stays.",
     },
   },
   {

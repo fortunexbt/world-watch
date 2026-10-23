@@ -27,9 +27,11 @@ Local snapshot runs took 17 to 60 seconds before GDACS got its own 90-second rea
 
 ## Sources and rights
 
-The demo publishes only enabled sources whose role is `structured_natural_hazard` and whose registry rights allow access, storage and display. Today those are USGS, GDACS, NWS and ECCC. Every record carries its source's attribution and licence basis, the detail panel shows them, and the banner's "Sources and credits" button lists them all. NASA FIRMS and Copernicus EMS carry their credits and licence links in the satellite panel, and the map credits OpenStreetMap, OpenFreeMap and Natural Earth.
+The demo publishes only enabled sources whose role is `structured_natural_hazard` and whose registry rights allow access, storage and display. Today those are USGS, EMSC, GDACS, NWS and ECCC. Every record carries its source's attribution and licence basis, the detail panel shows them, and the banner's "Sources and credits" button lists them all. NASA FIRMS and Copernicus EMS carry their credits and licence links in the satellite panel, and the map credits OpenStreetMap, OpenFreeMap and Natural Earth.
 
 The registry keeps display and redistribution separate, and [sources.md](sources.md) uses `redistribute: false` to mean "not offered in exports". GDACS is the case that matters. The European Commission notice grants CC BY 4.0, but the records name third-party inputs, and GDACS says its alerts are not for decision making without confirmation. The demo shows GDACS records, because display is permitted, and offers no export or download of anything. That is still a judgement, because the static JSON that carries the display is world-readable, so anyone can copy it. CC BY 4.0 allows that with attribution, which each record carries, and the third-party inputs are only named, not included. If you read `redistribute: false` more strictly, drop GDACS from `PUBLIC_SOURCES` in `src/public/snapshot.ts`.
+
+EMSC sets `redistribute: true`. Its [terms](https://www.seismicportal.eu/terms.html) license data downloaded from its services under CC BY 4.0, commercial use included, and each record carries the credit they ask for. The same terms keep the database itself under copyright and need written permission to mirror it or bulk-copy it in whole or in substantial part. The demo publishes one day of M4.5+ events, 19 and 27 records on the two days checked, which World Watch reads as well short of that.
 
 Three source families the private app displays stay out of the public demo, whatever their display permission, because their role isn't on the allowlist:
 
@@ -125,5 +127,5 @@ The first stops new runs at once. The second unpublishes the site. To remove the
 - Each run starts from an empty database, so the demo shows what the sources list now, plus up to an hour of a failed source's last records. It has no history, replay or revision trail, and the 7- and 30-day windows show nearly the same records as the day window.
 - The thermal layer is one worldwide balanced sample of 2,000 detections. Zooming in doesn't add detections the way the private app's per-view read does, and the panel says so.
 - Cameras, exports, watch areas, alerts, notes, corrections, record linking, news signals and the analysis worker are not in the demo.
-- Only USGS and GDACS cover the world; NWS and ECCC cover the United States and Canada.
+- Only USGS, EMSC and GDACS cover the world; NWS and ECCC cover the United States and Canada.
 - Nothing here has run on GitHub. The workflow passes `actionlint`, and its build and snapshot steps were run locally against the live sources, but the Pages deployment itself is unverified until the first run.

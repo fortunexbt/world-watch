@@ -1,5 +1,5 @@
 import type { IncidentView } from "../shared/contracts";
-import { MAGNITUDE_EXCERPT } from "../shared/view";
+import { MAGNITUDE_EXCERPTS } from "../shared/view";
 
 /** Activities under the Hazards filter, in legend order: natural hazards and aviation emergencies. */
 export const HAZARDS = [
@@ -54,11 +54,11 @@ export const markerIcon = (
     ? `hazard-${incident.activity}-${incident.impact}`
     : `impact-${incident.impact}`;
 
-/** The USGS adapter keeps its event record as JSON evidence, so the magnitude is read from there rather than added to the incident contract. */
+/** The USGS and EMSC adapters keep their event records as JSON evidence, so the magnitude is read from there rather than added to the incident contract. */
 export function magnitude(incident: Pick<IncidentView, "reports">) {
   const record = incident.reports
     .flatMap((r) => r.excerpts ?? [])
-    .find((e: { id?: string }) => e.id === MAGNITUDE_EXCERPT);
+    .find((e: { id?: string }) => MAGNITUDE_EXCERPTS.includes(e.id ?? ""));
   if (typeof record?.text !== "string") return null;
   let value: unknown;
   try {

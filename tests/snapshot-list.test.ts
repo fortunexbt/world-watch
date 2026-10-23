@@ -23,3 +23,20 @@ test("list views keep what the feed, map and filters read and drop summaries and
   }
   assert.ok(all.some((v) => magnitude(v) !== null), "the fixture includes quakes");
 });
+
+test("list views keep an EMSC quake's magnitude for its marker and drop its other evidence", () => {
+  const view = {
+    reports: [
+      {
+        source_id: "global-emsc-earthquakes",
+        excerpts: [
+          { id: "emsc-event", text: JSON.stringify({ magnitude: 5.6, author: "EMSC" }) },
+          { id: "other", text: "dropped" },
+        ],
+      },
+    ],
+  } as any;
+  const listed = listView(view) as any;
+  assert.equal(magnitude(listed), 5.6);
+  assert.deepEqual(listed.reports[0].excerpts.map((e: any) => e.id), ["emsc-event"]);
+});

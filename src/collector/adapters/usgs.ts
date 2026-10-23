@@ -72,6 +72,8 @@ export function parseUsgs(
               pager_alert: alert,
               tsunami_flag: p.tsunami === 1,
               review_status: text(p.status) || null,
+              // The contributing network ComCat prefers for this event, such as us for NEIC or ak for Alaska.
+              preferred_network: text(p.net) || null,
               network_ids: text(p.ids).split(",").filter(Boolean),
               notice:
                 "U.S. Geological Survey earthquake record. The point is the epicentre, not the shaking footprint. Any country is derived from the epicentre and the map's Natural Earth boundaries, and is left empty offshore or near a coast or border. A PAGER alert is a modelled estimate of fatalities and losses, not observed harm, and null means none was issued. The tsunami flag marks a large oceanic event and does not mean a tsunami occurred.",

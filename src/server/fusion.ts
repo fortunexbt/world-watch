@@ -34,14 +34,22 @@ type Signature = {
   ids: string[];
   /** Storm name with season, as GDACS writes it, e.g. CHAMPI-26. */
   name: string | null;
-  /** Upstream origin of the measurement; null when the record states none. */
-  origin: string | null;
+  /**
+   * Who measured it: the solution's author first, then the catalogue that republishes it, so a
+   * record copied from that catalogue shares an origin with it. Empty when the record states none.
+   */
+  origins: string[];
 };
-/** NEIC is the USGS National Earthquake Information Center. */
-const ORIGIN_ALIAS: Record<string, string> = { USGS: "NEIC" };
+/** NEIC is the USGS National Earthquake Information Center, network code us in ComCat. */
+const ORIGIN_ALIAS: Record<string, string> = { USGS: "NEIC", US: "NEIC" };
 const originKey = (value: unknown) => {
   const v = typeof value === "string" ? value.trim().toUpperCase() : "";
   return v ? (ORIGIN_ALIAS[v] ?? v) : null;
+};
+/** An author's solution, and the catalogue carrying it if any; nothing when the author is unstated. */
+const carried = (author: unknown, catalogue?: string) => {
+  const key = originKey(author);
+  return key ? [...new Set(catalogue ? [key, catalogue] : [key])] : [];
 };
 const finite = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -72,21 +80,24 @@ function signature(view: IncidentView): Signature | null {
     lon: view.location.lon,
     lat: view.location.lat,
   } as const;
-  if (
-    view.activity === "earthquake" &&
-    typeof record.origin_time === "string" &&
-    Array.isArray(record.network_ids)
-  ) {
-    const time = Date.parse(record.origin_time);
+  if (view.activity === "earthquake" && typeof record.origin_time === "string") {
+    const time = Date.parse(record.origin_time),
+      usgs = Array.isArray(record.network_ids);
     return Number.isFinite(time)
       ? {
           ...base,
           time,
           end: time,
           magnitude: finite(record.magnitude),
-          ids: record.network_ids.filter((v: unknown) => typeof v === "string"),
+          ids: usgs
+            ? record.network_ids.filter((v: unknown) => typeof v === "string")
+            : [],
           name: null,
-          origin: "NEIC",
+          // ComCat carries NEIC's solution or a regional network's, which EMSC credits under the
+          // same code (AK, TX). EMSC names the author of the solution it carries.
+          origins: usgs
+            ? carried(record.preferred_network ?? "us", "NEIC")
+            : carried(record.author, "EMSC"),
         }
       : null;
   }
@@ -98,7 +109,7 @@ function signature(view: IncidentView): Signature | null {
     time,
     end: Number.isFinite(end) ? Math.max(end, time) : time,
     ids: [],
-    origin: originKey(record.hazard_data_source),
+    origins: carried(record.hazard_data_source),
   };
   if (view.activity === "earthquake" && record.hazard_type === "EQ")
     return {
@@ -128,15 +139,17 @@ function kilometres(a: Signature, b: Signature) {
       Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
   return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
+const shared = (a: Signature, b: Signature) =>
+  a.origins.find((o) => b.origins.includes(o));
 function independence(a: Signature, b: Signature) {
-  if (!a.origin || !b.origin) return "unknown" as const;
-  return a.origin === b.origin ? ("same_origin" as const) : ("independent" as const);
+  if (!a.origins.length || !b.origins.length) return "unknown" as const;
+  return shared(a, b) ? ("same_origin" as const) : ("independent" as const);
 }
 const originText = (a: Signature, b: Signature) =>
-  a.origin && b.origin
-    ? a.origin === b.origin
-      ? `; both measurements come from ${a.origin}`
-      : `; measured by ${a.origin} and ${b.origin}`
+  a.origins.length && b.origins.length
+    ? shared(a, b)
+      ? `; both measurements come from ${shared(a, b)}`
+      : `; measured by ${a.origins[0]} and ${b.origins[0]}`
     : "; one record states no upstream origin";
 
 /** The rule's verdict on two records, with its reason, or null when nothing relates them. */
