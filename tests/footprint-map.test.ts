@@ -18,7 +18,13 @@ const instrument = `
     if (data && data.type === "LD") { const id = data.data && data.data.source; window.__loads[id] = (window.__loads[id] || 0) + 1; }
     return post.call(this, data, ...rest);
   };
-  window.EventSource = class { constructor() {} addEventListener() {} close() {} };
+  window.__streams = [];
+  window.EventSource = class {
+    constructor() { this.listeners = {}; window.__streams.push(this); setTimeout(() => this.onopen?.(), 0); }
+    addEventListener(k, v) { (this.listeners[k] ??= []).push(v); }
+    close() {}
+    emit(k, data, cursor) { for (const f of this.listeners[k] ?? []) f(new MessageEvent(k, { data: JSON.stringify(data), lastEventId: String(cursor) })); }
+  };
 `;
 const fixture = (name: string) =>
   JSON.parse(readFileSync("tests/fixtures/" + name, "utf8"));
@@ -199,7 +205,8 @@ test(
       const selected = await loads();
       assert.equal(selected.footprints, 3);
 
-      // Footprints add visible map pixels: compare against the same incidents without them.
+      // Footprints add visible map pixels: compare the same incidents without them against a page
+      // whose footprints arrive afterwards as SSE updates, each patched in by itself.
       const hide =
         ".topbar,.rolling-brief,.panel,.legend,.health-pill,.maplibregl-control-container,.detail{visibility:hidden!important}";
       const shot = async (p: any) => {
@@ -207,8 +214,36 @@ test(
         await p.waitForTimeout(300);
         return (await p.screenshot()).toString("base64");
       };
-      const fresh = await open(listed);
-      const bare = await open(listed.map(({ footprint, ...i }: any) => i));
+      const stripped = listed.map(({ footprint, ...i }: any) => i);
+      const fresh = await open(stripped);
+      const bare = await open(stripped);
+      const patched = await fresh.page.evaluate(
+        () => (window as any).__loads.footprints,
+      );
+      for (const [n, view] of listed.filter((i: any) => i.footprint).entries())
+        await fresh.page.evaluate(
+          ([v, cursor]: any) =>
+            (window as any).__streams
+              .at(-1)
+              .emit(
+                "incident.updated",
+                {
+                  incident_id: v.id,
+                  version: 2,
+                  catchup: false,
+                  incident: { ...v, version: 2 },
+                },
+                cursor,
+              ),
+          [view, n + 2],
+        );
+      await fresh.page.waitForTimeout(1200);
+      assert.equal(
+        (await fresh.page.evaluate(() => (window as any).__loads.footprints)) -
+          patched,
+        3,
+        "one patch per arriving footprint",
+      );
       const [withShot, bareShot] = [
         await shot(fresh.page),
         await shot(bare.page),

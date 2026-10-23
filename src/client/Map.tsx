@@ -219,46 +219,75 @@ export default function WorldMap({
         densityEnabled.current ? "visible" : "none",
       );
   };
-  // Footprints change far less often than incidents, so their source is re-sent only when a
-  // drawn footprint or its detail changes, and selection only restyles it.
-  const footprintKey = useRef("");
+  // Footprints change far less often than incidents. After the first load only the footprints
+  // that appeared, changed or left are patched, so an SSE arrival sends its own parts rather than
+  // every footprint, and selection only restyles the source.
+  const drawnFootprints = useRef<Map<
+      string,
+      { key: string; ids: number[] }
+    > | null>(null),
+    footprintIds = useRef(0);
   const updateFootprints = () => {
     const m = map.current,
       source = m?.getSource("footprints") as GeoJSONSource | undefined;
     if (!m || !source) return;
-    const drawn = data.current.flatMap((s) =>
-      ((s as Situation).members ?? [s]).flatMap((member) =>
-        member.footprint ? [{ lead: s.id, member }] : [],
+    const next = new Map<string, { lead: string; member: IncidentView }>(
+      data.current.flatMap((s) =>
+        ((s as Situation).members ?? [s]).flatMap((member) =>
+          member.footprint
+            ? [[`${s.id}|${member.id}`, { lead: s.id, member }]]
+            : [],
+        ),
       ),
     );
-    const key = drawn
-      .map(({ lead, member }) => `${lead}:${member.id}:${member.version}:${member.footprint!.detail ? 1 : 0}`)
-      .join(",");
-    if (key !== footprintKey.current) {
-      footprintKey.current = key;
-      source.setData({
-        type: "FeatureCollection",
-        features: drawn.flatMap(({ lead, member }) =>
-          footprintShape(member.footprint!).parts.map((part) => ({
-            type: "Feature" as const,
-            geometry: part.geometry,
-            properties: {
-              id: lead,
-              member: member.id,
-              role: member.footprint!.role,
-              color: colors[member.impact],
-              level: part.level ?? 0,
-              // Whole MMI values carry a label; half steps are drawn thinner and unlabelled.
-              label:
-                member.footprint!.role === "shaking_intensity" &&
-                Number.isInteger(part.level)
-                  ? "MMI " + ROMAN[part.level!]
-                  : "",
-            },
-          })),
-        ),
+    const key = (member: IncidentView) =>
+      `${member.version}:${member.footprint!.detail ? 1 : 0}`;
+    const drawn = new Map<string, { key: string; ids: number[] }>();
+    // Short numeric feature ids; incident-based ones made the first load about a third larger.
+    const features = (id: string, lead: string, member: IncidentView) => {
+      const parts = footprintShape(member.footprint!).parts,
+        ids = parts.map(() => footprintIds.current++);
+      drawn.set(id, { key: key(member), ids });
+      return parts.map((part, k) => ({
+        type: "Feature" as const,
+        id: ids[k],
+        geometry: part.geometry,
+        properties: {
+          id: lead,
+          member: member.id,
+          role: member.footprint!.role,
+          color: colors[member.impact],
+          level: part.level ?? 0,
+          // Whole MMI values carry a label; half steps are drawn thinner and unlabelled.
+          label:
+            member.footprint!.role === "shaking_intensity" &&
+            Number.isInteger(part.level)
+              ? "MMI " + ROMAN[part.level!]
+              : "",
+        },
+      }));
+    };
+    const prior = drawnFootprints.current;
+    if (!prior) {
+      if (next.size)
+        source.setData({
+          type: "FeatureCollection",
+          features: [...next].flatMap(([id, x]) =>
+            features(id, x.lead, x.member),
+          ),
+        });
+    } else {
+      const kept = (id: string) =>
+        next.has(id) && prior.get(id)?.key === key(next.get(id)!.member);
+      const remove = [...prior].flatMap(([id, x]) => (kept(id) ? [] : x.ids));
+      const add = [...next].flatMap(([id, x]) => {
+        if (!kept(id)) return features(id, x.lead, x.member);
+        drawn.set(id, prior.get(id)!);
+        return [];
       });
+      if (remove.length || add.length) source.updateData({ remove, add });
     }
+    drawnFootprints.current = drawn;
     const chosen = selectedId.current ?? "";
     m.setFilter("footprint-selected", [
       "any",
@@ -416,7 +445,7 @@ export default function WorldMap({
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
-      footprintKey.current = "";
+      drawnFootprints.current = null;
       m.addLayer(
         {
           id: "footprint-fill",
