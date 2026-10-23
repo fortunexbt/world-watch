@@ -36,6 +36,13 @@
       "when": 1792606828775,
       "tag": "0004_incident_geography",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792713364549,
+      "tag": "0005_news_signals",
+      "breakpoints": true
     }
   ]
 }

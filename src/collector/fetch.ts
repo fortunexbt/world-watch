@@ -25,6 +25,7 @@ export const APPROVED_HOSTS = new Set([
   "api.weather.gc.ca",
   "api.adsb.lol",
   "stat.ripe.net",
+  "data.gdeltproject.org",
 ]);
 function idmcFilestore(u: URL) {
   return (
@@ -73,6 +74,8 @@ export type FetchState = {
   accepted_items?: Record<string, string>;
   /** Rotation through RIPEstat's one-country-per-request routing statistics: the next country's index and every drop still open in any country. */
   routing?: { next: number; ongoing: string[] };
+  /** GDELT file stamps already ingested among the newest listed. */
+  news_files?: string[];
 };
 export type FetchOptions = {
   fetch?: typeof fetch;
@@ -86,6 +89,8 @@ export type FetchOptions = {
   accept?: string;
   /** Only the documented public, read-only Demos event query; never arbitrary POST. */
   demosQuery?: boolean;
+  /** A GDELT ZIP file, returned as bytes rather than text. */
+  binary?: boolean;
 };
 export function isPublicAddress(ip: string) {
   return (
@@ -94,11 +99,19 @@ export function isPublicAddress(ip: string) {
     ) && !ip.includes(":ffff:")
   );
 }
+export type FetchResult = {
+  notModified: boolean;
+  text: string;
+  /** Set only for a binary request. */
+  bytes?: Uint8Array<ArrayBuffer>;
+  contentType: string;
+  state: FetchState;
+};
 export async function fetchSource(
   url: string,
   state: FetchState = {},
   options: FetchOptions = {},
-) {
+): Promise<FetchResult> {
   const fetcher = options.fetch ?? fetch;
   let target = checkedURL(url);
   if (options.demosQuery && target.href !== DEMOS_QUERY_URL)
@@ -188,6 +201,12 @@ export async function fetchSource(
         };
       }
       const mime = r.headers.get("content-type") ?? "";
+      const gdelt = target.hostname === "data.gdeltproject.org";
+      if (
+        options.binary &&
+        !(gdelt && /^application\/zip\b/i.test(mime))
+      )
+        throw Error("unsupported_source_mime");
       const licensedIdmcCsv =
         ((target.hostname === "data.humdata.org" &&
           target.pathname ===
@@ -195,7 +214,9 @@ export async function fetchSource(
           idmcFilestore(target)) &&
         /^text\/csv\b/i.test(mime);
       if (
+        !options.binary &&
         !licensedIdmcCsv &&
+        !(gdelt && /^text\/plain\b/i.test(mime)) &&
         !/(?:xml|json|protobuf)/i.test(mime) &&
         !(options.allowHTML && /^text\/html\b/i.test(mime))
       )
@@ -225,7 +246,8 @@ export async function fetchSource(
       }
       return {
         notModified: false,
-        text: new TextDecoder().decode(data),
+        text: options.binary ? "" : new TextDecoder().decode(data),
+        ...(options.binary ? { bytes: data } : {}),
         contentType: mime,
         state: {
           etag: r.headers.get("etag") ?? undefined,

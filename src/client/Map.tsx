@@ -11,6 +11,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { PublicCamera } from "../shared/media";
 import type { GeoFeature } from "../shared/geospatial";
 import type { IncidentView } from "../shared/contracts";
+import type { NewsSignal } from "../shared/news";
+import { NEWS_COLOR, NEWS_GLYPH } from "./NewsSignals";
 import { viewportBounds } from "./bounds";
 import {
   glyphs,
@@ -119,6 +121,9 @@ export default function WorldMap({
   selectedCamera = null,
   geoFeatures = [],
   onGeo = () => {},
+  newsSignals = [],
+  selectedSignal = null,
+  onSignal = () => {},
 }: {
   incidents: IncidentView[];
   selected: string | null;
@@ -133,6 +138,9 @@ export default function WorldMap({
   selectedCamera?: string | null;
   geoFeatures?: GeoFeature[];
   onGeo?: (id: string) => void;
+  newsSignals?: NewsSignal[];
+  selectedSignal?: string | null;
+  onSignal?: (id: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null),
     map = useRef<GLMap | null>(null),
@@ -148,6 +156,10 @@ export default function WorldMap({
     geoSelect = useRef(onGeo);
   geoData.current = geoFeatures;
   geoSelect.current = onGeo;
+  const newsData = useRef(newsSignals),
+    newsSelect = useRef(onSignal);
+  newsData.current = newsSignals;
+  newsSelect.current = onSignal;
   data.current = incidents;
   select.current = onSelect;
   bounds.current = onBounds;
@@ -206,6 +218,22 @@ export default function WorldMap({
         "visibility",
         densityEnabled.current ? "visible" : "none",
       );
+    (m.getSource("news-signals") as GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: newsData.current.map((s) => ({
+        type: "Feature",
+        id: s.id,
+        geometry: { type: "Point", coordinates: [s.place.lon, s.place.lat] },
+        properties: {
+          id: s.id,
+          icon: s.rising ? "news-signal-rising" : "news-signal",
+          // Breadth of coverage, not impact: the mark grows with distinct sources up to 20.
+          scale: 0.75 + 0.5 * Math.min(1, s.sources_count / 20),
+          rank: s.score,
+          selected: s.id === selectedSignal ? 1 : 0,
+        },
+      })),
+    });
     (m.getSource("geospatial-context") as GeoJSONSource | undefined)?.setData({
       type: "FeatureCollection",
       features: geoData.current.map((f) => ({
@@ -516,6 +544,56 @@ export default function WorldMap({
         },
         "clusters",
       );
+      // A broadcast mark on a rounded square, never an impact shape or colour: coverage is not an event.
+      for (const rising of [false, true])
+        if (!m.hasImage(rising ? "news-signal-rising" : "news-signal"))
+          m.addImage(
+            rising ? "news-signal-rising" : "news-signal",
+            canvasImage(64, (ctx) => {
+              ctx.beginPath();
+              ctx.roundRect(-21, -21, 42, 42, 10);
+              ctx.fillStyle = rising ? NEWS_COLOR : "#0D151C";
+              ctx.strokeStyle = rising ? "#0D151C" : NEWS_COLOR;
+              ctx.lineWidth = 3;
+              ctx.fill();
+              ctx.stroke();
+              ctx.scale(1.35, 1.35);
+              ctx.translate(-12, -12);
+              ctx.lineWidth = 2.3;
+              ctx.lineCap = ctx.lineJoin = "round";
+              ctx.strokeStyle = rising ? "#0D151C" : NEWS_COLOR;
+              ctx.stroke(new Path2D(NEWS_GLYPH));
+            }),
+            { pixelRatio: 2 },
+          );
+      m.addSource("news-signals", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: "GDELT Project",
+      });
+      m.addLayer({
+        id: "news-hit",
+        type: "circle",
+        source: "news-signals",
+        paint: {
+          "circle-radius": ["*", ["get", "scale"], 22],
+          "circle-opacity": 0,
+          "circle-stroke-color": NEWS_COLOR,
+          "circle-stroke-width": ["case", ["==", ["get", "selected"], 1], 2, 0],
+        },
+      });
+      m.addLayer({
+        id: "news-symbols",
+        type: "symbol",
+        source: "news-signals",
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["get", "scale"],
+          "symbol-sort-key": ["-", ["get", "rank"]],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      });
       m.addSource("public-cameras", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -704,6 +782,12 @@ export default function WorldMap({
       ).getClusterExpansionZoom(f.properties.cluster_id);
       m.easeTo({ center: (f.geometry as any).coordinates, zoom: z });
     });
+    m.on("click", "news-hit", (e) => {
+      const id = e.features?.[0]?.properties?.id;
+      if (id) newsSelect.current(id);
+    });
+    m.on("mouseenter", "news-hit", () => (m.getCanvas().style.cursor = "pointer"));
+    m.on("mouseleave", "news-hit", () => (m.getCanvas().style.cursor = ""));
     m.on("click", "camera-points", (e) => {
       const id = e.features?.[0]?.properties?.id;
       if (id) cameraSelect.current(id);
@@ -730,7 +814,7 @@ export default function WorldMap({
       const hits = m.queryRenderedFeatures(event.point);
       if (
         hits.some((f) =>
-          ["points", "clusters", "camera-points", "camera-clusters"].includes(
+          ["points", "clusters", "camera-points", "camera-clusters", "news-hit"].includes(
             f.layer.id,
           ),
         )
@@ -762,6 +846,7 @@ export default function WorldMap({
             "clusters",
             "camera-points",
             "camera-clusters",
+            "news-hit",
             "thermal-hit",
             "thermal-detections",
             "mapping-areas",
@@ -794,6 +879,8 @@ export default function WorldMap({
     density,
     selectedCamera,
     geoFeatures,
+    newsSignals,
+    selectedSignal,
   ]);
   useEffect(() => {
     if (!follow || !pulse.length || document.hidden) return;

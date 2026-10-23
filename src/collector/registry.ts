@@ -13,6 +13,7 @@ import { NWS_ALERTS_URL } from "./adapters/nws.js";
 import { ECCC_ALERTS_URL } from "./adapters/eccc.js";
 import { ADSBLOL_SQUAWK_URL } from "./adapters/adsblol.js";
 import { RIPESTAT_ROUTING_URL } from "./adapters/ripestat.js";
+import { GDELT_STREAMS } from "./adapters/gdelt.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
 const rights = (
   basis: string,
@@ -227,6 +228,45 @@ const fcdo = Object.entries(FCDO_COUNTRIES).map(
       operational_role: "country_advisory_context_not_local_osint",
       admission_policy:
         "source-admission-3: low-priority context; explicit safety/protest retained, routine administrative changes tracked as excluded",
+    },
+  }),
+);
+const gdelt = (["english", "translingual"] as const).map(
+  (stream): SourceRecord => ({
+    ...base,
+    id: "global-gdelt-news-" + stream,
+    name:
+      "GDELT — news coverage signals worldwide, " +
+      (stream === "english" ? "English-language" : "translated") +
+      " stream",
+    owner: "The GDELT Project",
+    url: GDELT_STREAMS[stream].lastupdate,
+    docs: "https://blog.gdeltproject.org/gdelt-2-0-our-global-world-in-realtime/",
+    countries: ["*"],
+    languages: stream === "english" ? ["en"] : ["*"],
+    categories: ["news_signal", "public_order", "armed_conflict", "displacement", "disaster"],
+    family: "gdelt",
+    verified_at: "2026-10-22T23:40:00Z",
+    rights: {
+      ...rights(
+        "GDELT terms of use: all GDELT datasets are available for unlimited and unrestricted academic, commercial or governmental use without fee, and may be redistributed with a citation to the GDELT Project and a link to https://www.gdeltproject.org/ . https://www.gdeltproject.org/about.html#termsofuse . Only article URLs, headlines and GDELT-derived metadata (place, themes, tone, language) are stored; no article text is fetched or stored. Discovery does not settle publisher rights in the linked articles, so headlines are not sent to a model and not redistributed.",
+        "The GDELT Project, https://www.gdeltproject.org/ . Machine-geocoded mentions in news coverage, not verified events; headlines and links belong to their publishers.",
+        false,
+      ),
+      redistribute: false,
+      retention_days: 8,
+    },
+    config: {
+      format: "gdelt_gkg",
+      stream,
+      accept: "text/plain",
+      max_files: 2,
+      // Measured 22 October 2026: English files 5 to 7.5 MB, translated files up to 14 MB.
+      max_bytes: 32 * 1024 * 1024,
+      operational_role: "news_signal_discovery",
+      declared_refresh_seconds: 900,
+      coverage:
+        "GKG 2.1 records whose GDELT themes (protest, strike, armed conflict, attacks and explosions, coup plotters, refugees and displacement, evacuation, curfews and states of emergency, disasters) fall within 150 characters of a GDELT-geocoded city or landmark, counted by place. Country and province mentions are not mapped. Geocoding, theme tagging and translation are GDELT's machine output and are often wrong; a signal says coverage rose, not that anything happened.",
     },
   }),
 );
@@ -499,6 +539,7 @@ export const sourceRegistry: SourceRecord[] = [
         "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex.",
     },
   },
+  ...gdelt,
   {
     ...base,
     id: "global-adsblol-emergency-squawks",
@@ -750,11 +791,6 @@ export const gatedFamilies = [
     family: "reliefweb",
     status: "approval_required",
     reason: "Documented approved appname required.",
-  },
-  {
-    family: "gdelt",
-    status: "discovery_only",
-    reason: "Candidate links only; publisher rights independently required.",
   },
   {
     family: "meta_tiktok",

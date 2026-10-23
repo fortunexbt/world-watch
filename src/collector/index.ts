@@ -26,6 +26,7 @@ import {
   ROUTING_COUNTRIES,
   routingURL,
 } from "./adapters/ripestat.js";
+import { gdeltFiles, gkgBatch, type GdeltStream } from "./adapters/gdelt.js";
 import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
@@ -206,7 +207,8 @@ export async function collectSources(
       results.push({ source_id: source.id, status: "skipped", received: 0 });
       continue;
     }
-    let received = 0;
+    let received = 0,
+      newsFiles: string[] | undefined;
     // RIPEstat answers one country per request, so each poll reads the next few in turn.
     const first = before.routing?.next ?? 0;
     const countries =
@@ -345,6 +347,49 @@ export async function collectSources(
             next: (first + countries.length) % ROUTING_COUNTRIES.length,
             ongoing: [...ongoing].sort(),
           };
+          break;
+        }
+        case "gdelt_gkg": {
+          // News signals are counts by place, not observations, so they go to their own endpoint.
+          const files = gdeltFiles(
+            response.text,
+            source.config.stream as GdeltStream,
+            before.news_files,
+          );
+          newsFiles = (before.news_files ?? []).filter((stamp) =>
+            files.recent.includes(stamp),
+          );
+          let unavailable = 0,
+            ingested = 0;
+          // A file that 404s doesn't use up the run's quota, so a lagging listing still yields the newest fetchable files.
+          for (const file of files.pending) {
+            if (ingested >= Number(source.config.max_files ?? 2)) break;
+            let data;
+            try {
+              data = await fetchSource(
+                file.url,
+                {},
+                {
+                  ...options,
+                  fetch: fetcher,
+                  binary: true,
+                  accept: "application/zip",
+                  maxBytes: Number(source.config.max_bytes) || options.maxBytes,
+                },
+              );
+            } catch (error) {
+              // A listed file can 404 for a while; it stays eligible until it leaves the newest eight.
+              if ((error as Error).message !== "source_http_404") throw error;
+              unavailable++;
+              continue;
+            }
+            const { batch } = await gkgBatch(source.id, file.file_at, data.bytes!);
+            await request("/api/news/ingest", batch);
+            newsFiles.push(file.stamp);
+            ingested++;
+            received += batch.places.reduce((n, p) => n + p.articles.length, 0);
+          }
+          if (unavailable && !ingested) throw Error("gdelt_files_unavailable");
           break;
         }
         case "paris_json": {
@@ -604,6 +649,7 @@ export async function collectSources(
               ...response.state,
               ...(routing ? { routing } : {}),
               accepted_items: acceptedItems,
+              news_files: newsFiles,
               admission,
               pending_hash: undefined,
               pending_offset: undefined,

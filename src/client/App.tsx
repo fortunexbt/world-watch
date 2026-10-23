@@ -2,6 +2,8 @@ import MediaPanel from "./MediaPanel";
 import RollingBrief from "./RollingBrief";
 import GeospatialPanel from "./GeospatialPanel";
 import type {GeospatialCatalog} from "../shared/geospatial";
+import type {NewsSignalCatalog} from "../shared/news";
+import { NEWS_COLOR, NewsCoverageNote, NewsGlyph, NewsSignalPanel, NewsSignalRow } from "./NewsSignals";
 import type {PublicCameraCatalog} from "../shared/media";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
 import { independence, memberLinks, situations, type Situation } from "../shared/fusion";
@@ -56,7 +58,7 @@ type Snapshot = {
   sources: any[];
   limited?: boolean;
 };
-type Surface = "geospatial" | "media" | "feed" | "health" | "search" | "watches" | "replay" | "country";
+type Surface = "geospatial" | "media" | "news" | "feed" | "health" | "search" | "watches" | "replay" | "country";
 const txt = {
   en: {
     feed: "Observed activity",
@@ -136,6 +138,7 @@ async function api(path: string, options: RequestInit = {}) {
 }
 export default function App() {
   const [showCameras,setShowCameras]=useState(new URLSearchParams(location.search).get("layer")==="cameras" || new URLSearchParams(location.search).has("camera")),[density,setDensity]=useState(false),[cameraCatalog,setCameraCatalog]=useState<PublicCameraCatalog|null>(null),[selectedCamera,setSelectedCamera]=useState<string|null>(new URLSearchParams(location.search).get("camera")),[mediaError,setMediaError]=useState(""),[mediaLoading,setMediaLoading]=useState(false);
+  const [news,setNews]=useState<NewsSignalCatalog|null>(null),[newsError,setNewsError]=useState(""),[selectedSignal,setSelectedSignal]=useState<string|null>(null);
   const [geoLayers,setGeoLayers]=useState<string[]>([]),[geoCatalog,setGeoCatalog]=useState<GeospatialCatalog|null>(null),[selectedGeo,setSelectedGeo]=useState<string|null>(null),[geoError,setGeoError]=useState(""),[geoLoading,setGeoLoading]=useState(false);
   const [clock, setClock] = useState(Date.now);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -305,6 +308,9 @@ export default function App() {
   }, [load]);
   useEffect(()=>{if(surface!=="feed"&&window.matchMedia("(max-width: 760px)").matches)setSheet("half");},[surface]);
   useEffect(()=>{if(!ready||!showCameras)return;const controller=new AbortController();const timer=window.setInterval(()=>{if(document.hidden)return;fetch("/api/cameras",{credentials:"same-origin",signal:controller.signal}).then(async r=>{if(!r.ok)throw Error("Context source unavailable ("+r.status+")");return r.json();}).then(v=>{setCameraCatalog(v);setMediaError("");}).catch(e=>{if(!controller.signal.aborted)setMediaError(String(e));});},600000);return()=>{controller.abort();window.clearInterval(timer);};},[ready,showCameras]);
+  const newsActive=filter==="news";
+  // News signals are read only while their filter is on; the server answers from a one-minute memo.
+  useEffect(()=>{if(!newsActive||!ready)return;let active=true;const load=()=>{if(document.hidden)return;api("/api/news-signals"+(scope==="Map area"&&bbox?"?"+new URLSearchParams({bbox}):"")).then(value=>{if(active){setNews(value);setNewsError("");}}).catch(e=>{if(active)setNewsError(String(e));});};load();const timer=window.setInterval(load,300000);return()=>{active=false;window.clearInterval(timer);};},[newsActive,ready,scope,scope==="Map area"?bbox:""]);
   const geoActive=geoLayers.length>0;
   // One request per settled viewport: rapid successive moves cancel the pending and in-flight read, and the server answers every bbox from its ten-minute upstream cache.
   useEffect(()=>{if(!geoActive||!ready)return;const controller=new AbortController();const load=()=>{if(document.hidden)return;setGeoLoading(true);fetch("/api/geospatial"+(bbox?"?"+new URLSearchParams({bbox}):""),{credentials:"same-origin",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])}).then(async r=>{if(!r.ok)throw Error("Geospatial context unavailable ("+r.status+")");return r.json();}).then(value=>{setGeoCatalog(value);setGeoError("");setGeoLoading(false);}).catch(e=>{if(controller.signal.aborted)return;setGeoError(String(e));setGeoLoading(false);});};const settle=window.setTimeout(load,400),timer=window.setInterval(load,600000);return()=>{controller.abort();window.clearTimeout(settle);window.clearInterval(timer);};},[geoActive,ready,bbox]);
@@ -659,7 +665,7 @@ export default function App() {
   }, [selected, at, visible]);
   const fused = situations(snapshot.incidents);
   const incidents = fused.filter((i) =>
-    filter === "all" || filter === "demonstrations"
+    filter === "news" ? false : filter === "all" || filter === "demonstrations"
       ? filter === "all" ||
         i.activity.includes("demonstration") ||
         i.activity === "gathering"
@@ -698,7 +704,14 @@ export default function App() {
       document.querySelector<HTMLElement>(".detail h1")?.focus(),
     );
   };
+  const selectSignal = (id: string) => {
+    setFilter("news");
+    setSelected(null);
+    setSelectedSignal(id);
+    setSurface("news");
+  };
   const back = () => {
+    setSelectedSignal(null);
     if(surface==="geospatial"&&selectedGeo){setSelectedGeo(null);return;}
     setSelectedGeo(null);
     if(surface==="media"&&selectedCamera){setSelectedCamera(null);return;}
@@ -805,6 +818,9 @@ export default function App() {
         density={density}
         selectedCamera={selectedCamera}
         onCamera={id=>{setSelected(null);setSelectedCamera(id);setSurface("media");}}
+        newsSignals={newsActive ? news?.signals ?? [] : []}
+        selectedSignal={selectedSignal}
+        onSignal={selectSignal}
       />
       <header className="topbar">
         <a className="brand" href="/" aria-label={tr("World Watch home")}>
@@ -850,6 +866,12 @@ export default function App() {
           >
             {tr("Hazards")}
           </button>
+          <button
+            aria-pressed={filter === "news"}
+            onClick={() => setFilter("news")}
+          >
+            {tr("News signals")}
+          </button>
         </div>
         <label className="time-control">
           <Clock3 size={15} />
@@ -889,7 +911,7 @@ export default function App() {
           <SlidersHorizontal size={18} />
         </button>
       </header>
-      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select}/>
+      <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select} onSignal={selectSignal}/>
       <aside
         id="activity"
         tabIndex={-1}
@@ -1263,6 +1285,8 @@ export default function App() {
           </section>
         ) : surface === "geospatial" ? (
           <GeospatialPanel language={language} catalog={geoCatalog} selected={selectedGeo} onSelect={setSelectedGeo} error={geoError} loading={geoLoading}/>
+        ) : surface === "news" ? (
+          <NewsSignalPanel catalog={news} selected={selectedSignal} language={language}/>
         ) : surface === "media" ? (
           <MediaPanel catalog={cameraCatalog} selected={selectedCamera} onSelect={setSelectedCamera} language={language} error={mediaError} loading={mediaLoading}/>
         ) : surface === "health" ? (
@@ -1693,7 +1717,7 @@ export default function App() {
           <>
             <div className="feed-heading">
               <div>
-                <h1>{incoming ? t.reports : tr("Live reports")}<small className="feed-peek-count">{incoming ? snapshot.incoming.length : incidents.length}</small></h1>
+                <h1>{incoming ? t.reports : newsActive ? tr("News signals") : tr("Live reports")}<small className="feed-peek-count">{incoming ? snapshot.incoming.length : newsActive ? news?.signals.length ?? 0 : incidents.length}</small></h1>
               </div>
               <button
                 className="icon-button"
@@ -1724,15 +1748,21 @@ export default function App() {
               <span>
                 {ready ? (
                   <>
-                    {incoming ? snapshot.incoming.length : incidents.length}{" "}
-                    {tr("observed")} {tr(incoming ? "reports" : "incidents")}
+                    {incoming ? snapshot.incoming.length : newsActive ? news?.signals.length ?? 0 : incidents.length}{" "}
+                    {newsActive && !incoming ? tr("news signals") : <>{tr("observed")} {tr(incoming ? "reports" : "incidents")}</>}
                   </>
                 ) : (
                   "—"
                 )}
               </span>
             </div>
-            {ready && !incoming && (
+            {ready && !incoming && newsActive && news && (
+              <NewsCoverageNote catalog={news} language={language} />
+            )}
+            {newsError && newsActive && !incoming && (
+              <p className="error" role="status">{newsError}</p>
+            )}
+            {ready && !incoming && !newsActive && (
               <p className="map-coverage-note">
                 <MapPin size={12} />
                 {incidents.filter((i) => i.location).length} {tr("on map")}
@@ -1831,6 +1861,12 @@ export default function App() {
                         </a>
                       </li>
                     ))
+                  : newsActive
+                    ? (news?.signals ?? []).map((signal) => (
+                        <li key={signal.id}>
+                          <NewsSignalRow signal={signal} language={language} onSelect={selectSignal} />
+                        </li>
+                      ))
                   : incidents.map((i) => (
                       <li key={i.id}>
                         <button
@@ -1892,7 +1928,14 @@ export default function App() {
                       </li>
                     ))}
               </ol>
-              {ready &&
+              {ready && newsActive && !incoming && news?.signals.length === 0 && (
+                <div className="empty">
+                  <Radio size={24} />
+                  <h2>{tr("No news signals in the last six hours")}</h2>
+                  <p>{tr("GDELT coverage is counted as the collector reads each 15-minute file.")}</p>
+                </div>
+              )}
+              {ready && !newsActive &&
                 (incoming ? snapshot.incoming.length : incidents.length) ===
                   0 && (
                   <div className="empty">
@@ -1972,6 +2015,14 @@ export default function App() {
             <i className="area-swatch" />
             {tr("approximate area")}
           </span>
+          {newsActive && (
+            <span>
+              <span style={{ color: NEWS_COLOR, display: "inline-flex" }}>
+                <NewsGlyph size={13} />
+              </span>
+              {tr("news coverage, not an event")}
+            </span>
+          )}
         </div>
       </div>
       <button

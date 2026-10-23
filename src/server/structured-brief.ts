@@ -1,5 +1,7 @@
 import type { IncidentView } from "../shared/contracts";
 import { situations, type Situation } from "../shared/fusion";
+import type { NewsCategory, NewsSignal } from "../shared/news";
+import { WINDOW_HOURS } from "./news";
 
 /** The headline budget of the model brief contract. */
 const WORDS = 30;
@@ -25,6 +27,23 @@ const list = (items: string[]) =>
   items.length > 1
     ? items.slice(0, -1).join(", ") + " and " + items.at(-1)
     : (items[0] ?? "");
+
+const COVERAGE: Record<NewsCategory, string> = {
+  protest: "protests",
+  strike: "strikes",
+  armed_conflict: "armed conflict",
+  attack: "attacks and explosions",
+  coup: "coup plotting",
+  displacement: "displacement",
+  evacuation: "evacuations",
+  emergency_measures: "curfews and emergency measures",
+  disaster: "disasters",
+};
+/** "Lima, Lima, Peru" reads as "Lima, Peru". */
+const placeName = (name: string) => {
+  const parts = name.split(", ");
+  return parts.length > 1 ? `${parts[0]}, ${parts.at(-1)}` : name;
+};
 
 /** Structured adapters store the issuer's record as a JSON excerpt. */
 function issuer(view: IncidentView): Record<string, any> {
@@ -66,12 +85,14 @@ function countries(codes: unknown) {
  * A model-free headline from issuer fields alone: one statement per issuer alert, one per
  * activity for the rest, each citing the incidents it counts. A fused situation counts once and
  * cites every record in it. Statements follow their most important incident and stop at the
- * first that would exceed the word budget.
+ * first that would exceed the word budget. A news signal is stated after them only once it has
+ * a baseline and has risen well above it, citing the signal rather than any incident.
  */
 export function structuredBrief(
   views: IncidentView[],
   hours: number,
   clock = Date.now(),
+  signals: NewsSignal[] = [],
 ) {
   const live = situations(
     views.filter(
@@ -85,8 +106,13 @@ export function structuredBrief(
         !(v.expires_at && Date.parse(v.expires_at) <= clock),
     ),
   ).sort(order);
-  if (!live.length) return null;
-  const statements: { text: string; incidents: Situation[] }[] = [],
+  const rising = signals.filter((s) => s.rising).slice(0, 2);
+  if (!live.length && !rising.length) return null;
+  const statements: {
+      text: string;
+      incidents: Situation[];
+      signals?: NewsSignal[];
+    }[] = [],
     groups = new Map<string, Situation[]>();
   for (const v of live) {
     const records = (v.members ?? [v]).map(issuer),
@@ -173,13 +199,21 @@ export function structuredBrief(
     });
   }
   statements.sort((a, b) => order(a.incidents[0], b.incidents[0]));
+  statements.push(
+    ...rising.map((s) => ({
+      text: `News coverage of ${COVERAGE[s.category]} in ${placeName(s.place.name)} rose sharply in the last ${WINDOW_HOURS} hours.`,
+      incidents: [],
+      signals: [s],
+    })),
+  );
   const cited = statements.slice(0, 1);
   for (const s of statements.slice(1)) {
     if (words([...cited, s].map((c) => c.text).join(" ")) > WORDS) break;
     cited.push(s);
   }
   const incidents = cited.flatMap((s) => s.incidents),
-    records = (list: Situation[]) => list.flatMap((v) => v.members ?? [v]);
+    records = (list: Situation[]) => list.flatMap((v) => v.members ?? [v]),
+    news = cited.flatMap((s) => s.signals ?? []);
   return {
     kind: "structured" as const,
     id: "structured:" + iso(clock),
@@ -187,11 +221,16 @@ export function structuredBrief(
     statements: cited.map((s) => ({
       text: s.text,
       incident_ids: records(s.incidents).map((v) => v.id),
+      ...(s.signals ? { signal_ids: s.signals.map((v) => v.id) } : {}),
     })),
     references: records(incidents).map((v) => ({
       incident_id: v.id,
       headline: v.headline,
       version: v.version,
+    })),
+    signals: news.map((s) => ({
+      signal_id: s.id,
+      headline: cited.find((c) => c.signals?.includes(s))!.text,
     })),
     pins: incidents
       .filter((v) => (RANK[v.impact] ?? 0) >= RANK.significant)

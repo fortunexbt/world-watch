@@ -1,5 +1,6 @@
 import {claimBrief,renewBrief,completeBrief,failBrief,currentBrief,pruneBrief} from "./brief";
 import { structuredBrief } from "./structured-brief";
+import { ingestNews, newsCatalog, type NewsContext } from "./news";
 import { sourceEligibility } from "../collector/index";
 import { stableBundlePayload } from "./bundling";
 import { FUSION_RULE, fusionCandidates, relink, sameEvent, withLinks } from "./fusion";
@@ -145,6 +146,10 @@ function stmt(e: Env, sql: string, ...values: any[]) {
 async function rows<T = any>(e: Env, sql: string, ...values: any[]) {
   return (await stmt(e, sql, ...values).all<T>()).results;
 }
+const newsContext = (e: Env): NewsContext => ({
+  stmt: (sql, ...values) => stmt(e, sql, ...values),
+  batch: (statements) => measuredBatch(e, statements as Stmt[]),
+});
 async function cookie(e: Env) {
   return hash(`europe-watch-session:${e.EUROPE_WATCH_OWNER_TOKEN}`);
 }
@@ -1811,6 +1816,13 @@ async function routes(r: Request, e: Env) {
       analysis_mode: e.ANALYSIS_MODE ?? "local-codex",
       ...(who === "owner" ? { status: await status(e) } : {}),
     });
+  if (p === "/api/news-signals" && r.method === "GET") {
+    if (who !== "owner") return json({ error: "forbidden" }, 403);
+    const bbox = u.searchParams.get("bbox")?.split(",").map(Number) ?? null;
+    if (bbox && (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))))
+      throw Error("invalid_bbox");
+    return json(await memoRead(e, "news-signals:" + bbox, 60000, () => newsCatalog(newsContext(e), bbox)));
+  }
   if (p.startsWith("/api/worker/") && who !== "worker" && who !== "owner")
     return json({ error: "forbidden" }, 403);
   if (p === "/api/brief" && r.method === "GET") {
@@ -1823,7 +1835,7 @@ async function routes(r: Request, e: Env) {
     const current=await memoRead(e,"structured-brief:"+hours,300000,async()=>{
       const rights=await currentRights(e);
       const views=(await liveHead(e,await liveScope(e,hours))).map(v=>parse(v.view) as IncidentView);
-      return structuredBrief(views.filter(i=>permittedView(i,rights)&&defaultSignalEligible(i)&&incidentInWindow(i,hours)),hours);
+      return structuredBrief(views.filter(i=>permittedView(i,rights)&&defaultSignalEligible(i)&&incidentInWindow(i,hours)),hours,Date.now(),(await newsCatalog(newsContext(e))).signals);
     });
     return json({current,pending:false,updated_at:null});
   }
@@ -1974,6 +1986,10 @@ async function routes(r: Request, e: Env) {
     if (!collectorAllowed) return json({ error: "forbidden" }, 403);
     const b = (await r.json()) as any;
     return json(await ingest(e, b.observations));
+  }
+  if (p === "/api/news/ingest" && r.method === "POST") {
+    if (!collectorAllowed) return json({ error: "forbidden" }, 403);
+    return json(await ingestNews(newsContext(e), await r.json()));
   }
   if (p === "/api/sources" && r.method === "POST") {
     if (!collectorAllowed) return json({ error: "forbidden" }, 403);

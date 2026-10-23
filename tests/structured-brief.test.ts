@@ -485,8 +485,8 @@ test("the structured brief reuses the snapshot's live read and then answers poll
     assert.ok(first.rowsRead <= snapshot.rowsRead, `brief ${first.rowsRead} rows, snapshot ${snapshot.rowsRead}`);
     assert.deepEqual(
       cold.map((r) => r.sql.match(/FROM (\w+)/)?.[1]),
-      ["brief_windows", "brief_windows", "workers", "sources"],
-      "beyond the shared head the cold brief reads only brief state, the worker check and source rights",
+      ["brief_windows", "brief_windows", "workers", "sources", "sources"],
+      "beyond the shared head the cold brief reads only brief state, the worker check, source rights and the GDELT sources' rights",
     );
   } finally {
     s.db.close();

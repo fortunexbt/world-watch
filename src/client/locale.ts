@@ -497,6 +497,58 @@ Object.assign(italian, {
   "Let the rule decide again": "Lascia decidere di nuovo la regola",
   "Separate with audit reason": "Separa con motivazione",
   "Restore the rule decision": "Ripristina la decisione della regola",
+  "News signals": "Segnali dalla stampa",
+  "news signals": "segnali dalla stampa",
+  "News signal": "Segnale dalla stampa",
+  "Rising news signal": "Segnale dalla stampa in aumento",
+  "Open news signal": "Apri il segnale dalla stampa",
+  "Last 6 hours": "Ultime 6 ore",
+  Protests: "Proteste",
+  Strikes: "Scioperi",
+  "Armed conflict": "Conflitto armato",
+  "Attacks and explosions": "Attacchi ed esplosioni",
+  "Coup plotting": "Tentativi di colpo di Stato",
+  Displacement: "Sfollamenti",
+  Evacuations: "Evacuazioni",
+  "Curfews and emergency measures": "Coprifuoco e misure di emergenza",
+  Disasters: "Disastri",
+  "No baseline yet": "Ancora nessun livello di riferimento",
+  "{ratio}× its usual coverage": "{ratio}× la copertura abituale",
+  "{articles} articles from {sources} sources": "{articles} articoli da {sources} fonti",
+  "{articles} articles from at least {sources} sources":
+    "{articles} articoli da almeno {sources} fonti",
+  "News signals count GDELT's machine-geocoded news mentions by place. They show where coverage is unusual, not verified events.":
+    "I segnali dalla stampa contano per luogo le menzioni giornalistiche geolocalizzate automaticamente da GDELT. Indicano dove la copertura è insolita, non eventi verificati.",
+  "Baseline building: changes are stated once each GDELT stream has 12 hours of files.":
+    "Livello di riferimento in costruzione: le variazioni vengono indicate quando ogni flusso GDELT ha 12 ore di file.",
+  "Baseline from {files} earlier GDELT files.":
+    "Livello di riferimento da {files} file GDELT precedenti.",
+  "This news signal is no longer in the six-hour window or is unavailable.":
+    "Questo segnale dalla stampa non rientra più nella finestra di sei ore o non è disponibile.",
+  "Machine-geocoded mentions in news coverage from GDELT, not a verified event. GDELT's place, theme and translation tagging is automatic and is often wrong, and syndicated copies of one story count once per outlet.":
+    "Menzioni giornalistiche geolocalizzate automaticamente da GDELT, non un evento verificato. Luoghi, temi e traduzioni di GDELT sono automatici e spesso errati, e le copie dello stesso articolo ripreso da più testate contano una volta per testata.",
+  Window: "Finestra",
+  Change: "Variazione",
+  Themes: "Temi",
+  "Average tone": "Tono medio",
+  Place: "Luogo",
+  "Top sources": "Fonti principali",
+  Articles: "Articoli",
+  "{stories} distinct headlines": "{stories} titoli distinti",
+  "about {expected} headlines expected from {files} earlier GDELT files":
+    "circa {expected} titoli attesi in base a {files} file GDELT precedenti",
+  "GDELT document tone, negative to positive":
+    "Tono del documento secondo GDELT, da negativo a positivo",
+  "City-level point from GDELT's geocoder, not the location of an event":
+    "Punto a livello di città dal geocodificatore di GDELT, non il luogo di un evento",
+  "Not queued for analysis. World Watch keeps only links, headlines and GDELT metadata, and publisher rights for model use of these articles are not established.":
+    "Non messo in coda per l’analisi. World Watch conserva solo collegamenti, titoli e metadati GDELT, e i diritti degli editori per l’uso di questi articoli da parte di un modello non sono accertati.",
+  "No news signals in the last six hours": "Nessun segnale dalla stampa nelle ultime sei ore",
+  "GDELT coverage is counted as the collector reads each 15-minute file.":
+    "La copertura GDELT viene contata man mano che il raccoglitore legge ogni file di 15 minuti.",
+  "news coverage, not an event": "copertura giornalistica, non un evento",
+  "Built from issuer fields and GDELT news coverage counts, no model":
+    "Composta dai campi degli enti emittenti e dai conteggi di copertura GDELT, senza modello",
 });
 export function translate(language: Language, text: string) {
   return language === "it"
