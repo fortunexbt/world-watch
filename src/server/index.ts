@@ -1539,7 +1539,8 @@ async function snapshot(e: Env, u: URL) {
       ? await rows(
           e,
           `SELECT i.view FROM incidents i JOIN incidents_fts f ON f.incident_id=i.id WHERE incidents_fts MATCH ? AND i.deleted_at IS NULL${scope.where} ORDER BY rank LIMIT 1000`,
-          fts,
+          // incident_id is indexed only so revisions can drop their old row without a scan.
+          `search_text : (${fts})`,
           ...scope.params,
         )
       : await liveHead(e, scope);

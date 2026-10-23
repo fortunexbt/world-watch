@@ -212,7 +212,7 @@ export function fusionCandidates(view: IncidentView) {
   if (s.hazard === "tropical_cyclone")
     return {
       sql: "SELECT i.view FROM incidents_fts f JOIN incidents i ON i.id=f.incident_id WHERE incidents_fts MATCH ? AND i.deleted_at IS NULL AND json_extract(i.view,'$.activity')='tropical_cyclone' AND i.id<>? LIMIT 20",
-      params: ['"' + s.name!.replaceAll("-", " ") + '"', view.id],
+      params: ['search_text : "' + s.name!.replaceAll("-", " ") + '"', view.id],
     };
   const band = QUAKE_REACH_KM / 111,
     window = QUAKE_POSSIBLE_SECONDS * 1000,
