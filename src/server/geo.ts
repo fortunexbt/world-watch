@@ -169,31 +169,6 @@ export function resolveClaimLocation(
   const namedCities = new Set(claim.places.flatMap(p=>cityCandidates(p)).map(c=>c.id));
   return locations.length === 1 && namedCities.size <= 1 ? locations[0] : null;
 }
-/** Bounding boxes are [west, south, east, north]; west > east crosses the antimeridian. */
-export function inBbox(location: IncidentView["location"], bbox: number[]) {
-  if (!location) return false;
-  const radius = location.radius_km / 111;
-  const lonRadius =
-    radius / Math.max(0.05, Math.cos((location.lat * Math.PI) / 180));
-  return (
-    location.lat + radius >= bbox[1] &&
-    location.lat - radius <= bbox[3] &&
-    lonOverlaps(location.lon, lonRadius, bbox[0], bbox[2])
-  );
-}
-/** Whether lon ± reach meets the span running east from west to east, across the antimeridian if needed. */
-export function lonOverlaps(
-  lon: number,
-  reach: number,
-  west: number,
-  east: number,
-) {
-  const width = east >= west ? east - west : east - west + 360;
-  const offset = (((lon - west) % 360) + 360) % 360;
-  return (
-    width + 2 * reach >= 360 || offset <= width + reach || offset >= 360 - reach
-  );
-}
 export const locationRadius = "json_extract(view,'$.location.radius_km')";
 const latitude = "json_extract(view,'$.location.lat')",
   longitude = "json_extract(view,'$.location.lon')",

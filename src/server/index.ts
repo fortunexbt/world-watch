@@ -20,10 +20,10 @@ import {
 } from "../shared/contracts";
 import {
   resolveClaimLocation,
-  inBbox,
   bboxCandidates,
   locationRadius,
 } from "./geo";
+import { textMatch, viewFilter } from "../shared/view";
 import {
   alertDecision,
   alertMaterialityProjection,
@@ -1537,34 +1537,9 @@ async function snapshot(e: Env, u: URL) {
       })),
     }));
   if (!at && !u.searchParams.get("source") && u.searchParams.get("include_routine") !== "1") incidents = incidents.filter(defaultSignalEligible);
-  const query = (
-    u.searchParams.get("query") ?? u.searchParams.get("q")
-  )?.toLocaleLowerCase();
-  if (query && at)
-    incidents = incidents.filter((i) =>
-      JSON.stringify([i.headline, i.summary_en, i.location, i.reports])
-        .toLocaleLowerCase()
-        .includes(query),
-    );
-  for (const [key, match] of [
-    ["activity", (i: IncidentView, v: string) => i.activity === v],
-    ["evidence", (i: IncidentView, v: string) => i.evidence_status === v],
-    [
-      "source",
-      (i: IncidentView, v: string) =>
-        i.reports.some((r: any) => r.source_id === v),
-    ],
-    [
-      "language",
-      (i: IncidentView, v: string) =>
-        i.reports.some((r: any) => r.original_language === v),
-    ],
-  ] as const) {
-    const value = u.searchParams.get(key);
-    if (value) incidents = incidents.filter((i) => match(i, value));
-  }
-  if (hours > 0 && !at) incidents=incidents.filter(i=>incidentInWindow(i,hours));
-  if (bbox) incidents = incidents.filter((i) => inBbox(i.location, bbox));
+  const query = u.searchParams.get("query") ?? u.searchParams.get("q");
+  if (query && at) incidents = incidents.filter((i) => textMatch(i, query));
+  incidents = incidents.filter(viewFilter(u.searchParams, bbox));
   const incoming =
     at || u.searchParams.get("include_incoming") === "0"
       ? []

@@ -7,7 +7,7 @@ import {
   type NewsSignal,
   type NewsSignalCatalog,
 } from "../shared/news";
-import { lonOverlaps } from "./geo";
+import { lonOverlaps } from "../shared/view";
 type Statement = {
   bind(...v: any[]): Statement;
   first<T = any>(): Promise<T | null>;

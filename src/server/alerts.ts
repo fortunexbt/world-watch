@@ -1,5 +1,5 @@
 import type { EventClaim, IncidentView } from "../shared/contracts";
-import { lonOverlaps } from "./geo";
+import { lonOverlaps } from "../shared/view";
 
 export type AlertRule = {
   name?: string;
