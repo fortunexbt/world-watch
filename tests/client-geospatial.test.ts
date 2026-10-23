@@ -18,6 +18,8 @@ test("truncation and sensor copy is translated with its placeholders intact", ()
     "Showing {shown} of {total} in this view. Zoom in for complete coverage.",
     "Showing {shown} of at least {total} in this view. Some publisher records were not acquired in this refresh.",
     "{shown} of {total} detections in this view",
+    "Showing {shown} of {total} worldwide, spread across the map. The public demo doesn't add detections when you zoom in.",
+    "{shown} of {total} detections worldwide",
   ]) {
     const italian = translate("it", text);
     assert.notEqual(italian, text);

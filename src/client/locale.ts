@@ -549,6 +549,18 @@ Object.assign(italian, {
   "news coverage, not an event": "copertura giornalistica, non un evento",
   "Built from issuer fields and GDELT news coverage counts, no model":
     "Composta dai campi degli enti emittenti e dai conteggi di copertura GDELT, senza modello",
+  "Public demo. Live public sources. Some layers and analysis disabled.":
+    "Demo pubblica. Fonti pubbliche in diretta. Alcuni livelli e l’analisi sono disattivati.",
+  "Sources and credits": "Fonti e crediti",
+  "Public snapshot": "Istantanea pubblica",
+  Updated: "Aggiornata",
+  "Snapshot generated": "Istantanea generata",
+  "Showing {shown} of {total} worldwide, spread across the map. The public demo doesn't add detections when you zoom in.":
+    "Mostrati {shown} su {total} nel mondo, distribuiti sulla mappa. La demo pubblica non aggiunge rilevamenti quando ingrandisci.",
+  "{shown} of {total} detections worldwide":
+    "{shown} su {total} rilevamenti nel mondo",
+  "This public snapshot is rebuilt from the sources below about every ten minutes. No model analysis runs in it.":
+    "Questa istantanea pubblica viene ricostruita dalle fonti qui sotto circa ogni dieci minuti. Non contiene analisi di modelli.",
 });
 export function translate(language: Language, text: string) {
   return language === "it"

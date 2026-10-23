@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev --port 8787",
     "build": "vite build",
+    "build:public": "vite build --mode public",
     "check": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "collect": "tsx src/collector/cli.ts",
@@ -15,6 +16,7 @@
     "open": "tsx src/operator/preview.ts",
     "demo": "tsx scripts/demo.ts",
     "eval:severity": "tsx scripts/severity-eval/run.ts",
+    "snapshot:public": "tsx scripts/public-snapshot.ts",
     "test:browser": "tsx tests/browser-verify.ts",
     "build:sites": "npm run build && node scripts/build-sites.mjs",
     "audit:public": "node scripts/audit-public.mjs",

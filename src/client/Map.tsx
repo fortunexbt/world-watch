@@ -290,9 +290,13 @@ export default function WorldMap({
         clusterMaxZoom: 10,
         clusterRadius: 40,
         clusterProperties: { rank: ["max", ["get", "rank"]] },
-        // The ODbL asks for this notice wherever its data is shown, not only in the record.
-        attribution:
-          'Contains information from <a href="https://adsb.lol">ADSB.lol</a>, made available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL</a>',
+        // The ODbL asks for this notice wherever its data is shown, not only in the record. The public demo has no ADSB.lol data.
+        ...(__PUBLIC_DEMO__
+          ? {}
+          : {
+              attribution:
+                'Contains information from <a href="https://adsb.lol">ADSB.lol</a>, made available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL</a>',
+            }),
       });
       m.addLayer({
         id: "clusters",
@@ -569,7 +573,8 @@ export default function WorldMap({
       m.addSource("news-signals", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
-        attribution: "GDELT Project",
+        // The public demo has no GDELT data.
+        ...(__PUBLIC_DEMO__ ? {} : { attribution: "GDELT Project" }),
       });
       m.addLayer({
         id: "news-hit",
@@ -660,7 +665,7 @@ export default function WorldMap({
       if (host.current) host.current.dataset.mapReady = "true";
       initialFrame();
       layers();
-      fetch("/countries.geojson", {
+      fetch(import.meta.env.BASE_URL + "countries.geojson", {
         credentials: "same-origin",
         signal: AbortSignal.timeout(10000),
       })
@@ -724,7 +729,7 @@ export default function WorldMap({
           m.once("style.load", () => {
             layers();
             m.jumpTo(camera);
-            fetch("/countries.geojson", {
+            fetch(import.meta.env.BASE_URL + "countries.geojson", {
               credentials: "same-origin",
               signal: AbortSignal.timeout(10000),
             })

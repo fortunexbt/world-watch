@@ -218,7 +218,9 @@ export default function GeospatialPanel({
                 <p className="caution">
                   {s.id === "firms"
                     ? fill(
-                        "Showing {shown} of {total} in this view. Zoom in for complete coverage.",
+                        __PUBLIC_DEMO__
+                          ? "Showing {shown} of {total} worldwide, spread across the map. The public demo doesn't add detections when you zoom in."
+                          : "Showing {shown} of {total} in this view. Zoom in for complete coverage.",
                         { shown: s.features_count, total: s.total_available },
                       )
                     : fill(
@@ -231,7 +233,7 @@ export default function GeospatialPanel({
                 <small key={sensor.id}>
                   {sensor.label} ·{" "}
                   {sensor.status === "ok"
-                    ? fill("{shown} of {total} detections in this view", {
+                    ? fill(__PUBLIC_DEMO__ ? "{shown} of {total} detections worldwide" : "{shown} of {total} detections in this view", {
                         shown: sensor.features_count,
                         total: sensor.total_available,
                       })
