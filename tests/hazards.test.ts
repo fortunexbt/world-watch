@@ -1188,6 +1188,14 @@ test("ECCC colour maps to impact without reaching critical, an ended warning is 
   assert.throws(() => parseEccc(ecccSource, { features: {} }), /invalid_eccc_response/);
 });
 
+test("ECCC's byte cap holds a full page of warnings at the sizes seen live and in the fixture", () => {
+  const cap = Number(ecccSource.config.max_bytes);
+  // A live read on 23 October 2026: 295 warnings in 2,240,665 bytes. One page holds 500.
+  assert.ok(cap >= (2_240_665 / 295) * 500 * 1.5, "half again over a full page at the live size");
+  const fixture = Buffer.byteLength(readFileSync("tests/fixtures/eccc-alerts.json", "utf8"));
+  assert.ok(cap >= (fixture / eccc.features.length) * 500 * 1.5);
+});
+
 test("ECCC collection reads the approved warnings query and admits warnings as structured hazard records", async () => {
   assert.deepEqual(ecccSource.countries, ["CA"]);
   assert.equal(ecccSource.rights.ai, false);

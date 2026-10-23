@@ -561,7 +561,9 @@ export const sourceRegistry: SourceRecord[] = [
     ),
     config: {
       format: "eccc_geojson",
-      max_bytes: 2 * 1024 * 1024,
+      // One page holds up to 500 features. Three reads on 23 October 2026 returned 295 warnings in
+      // 2,240,665 bytes each, 70% of it region polygons, so 500 at that size need 3.8 MB.
+      max_bytes: 6 * 1024 * 1024,
       operational_role: "structured_natural_hazard",
       coverage:
         "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex; the region polygon is kept as the warning's advisory area, simplified to the tolerance stored with it.",
