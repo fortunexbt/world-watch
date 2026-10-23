@@ -411,6 +411,24 @@ export const codexBackend: Backend = async (request) => {
     await rm(dir, { recursive: true, force: true });
   }
 };
+/** Charges one invocation to the local daily allocation before any model call. */
+export async function reserveInvocation(
+  budget: DailyBudget | undefined,
+  payload: unknown,
+) {
+  const invocation_id = randomUUID();
+  if (budget) {
+    try {
+      await budget.reserve(
+        invocation_id,
+        6000 + Math.ceil(Buffer.byteLength(JSON.stringify(payload)) / 3),
+      );
+    } catch (e) {
+      throw new WorkerError("budget", String(e));
+    }
+  }
+  return invocation_id;
+}
 export type BatchAnalysis = {
   accepted: Map<string, AnalysisResult>;
   invalid: Map<string, string>;
@@ -426,17 +444,7 @@ async function analyzeChunk(
   if (Buffer.byteLength(JSON.stringify(inputs)) > 80000)
     throw new WorkerError("invalid", "batch_input_limit");
   const payload = compactInputs(inputs);
-  const invocation_id = randomUUID();
-  if (options.budget) {
-    try {
-      await options.budget.reserve(
-        invocation_id,
-        6000 + Math.ceil(Buffer.byteLength(JSON.stringify(payload)) / 3),
-      );
-    } catch (e) {
-      throw new WorkerError("budget", String(e));
-    }
-  }
+  const invocation_id = await reserveInvocation(options.budget, payload);
   const start = Date.now();
   const { output, run: backendRun } = await (options.backend ?? codexBackend)({
     invocation_id,

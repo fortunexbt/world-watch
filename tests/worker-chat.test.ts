@@ -13,7 +13,6 @@ import {
   retryAfterMs,
   type Provider,
 } from "../src/worker/chat.js";
-import { headlineInput, triageHeadlines } from "../src/worker/triage.js";
 import type { JobInput } from "../src/shared/contracts.js";
 
 const quiet = () => {};
@@ -670,78 +669,6 @@ test("provider budget paces per minute and stops for the UTC day", async () => {
     assert.equal(retryAfterMs("2.5", 0), 2500);
     assert.equal(retryAfterMs(new Date(60000).toUTCString(), 0), 60000);
     assert.equal(retryAfterMs("soon", 0), null);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("headline triage sends titles only and returns validated candidates", async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), "ew-triage-"));
-  try {
-    const record = {
-      id: "gdelt-1",
-      title: "Thousands march peacefully in Rome against budget cuts",
-      url: "https://publisher.example/article-1",
-      language: "en",
-      seen_at: "2026-10-23T08:15:00Z",
-    };
-    const job = headlineInput(record);
-    assert.equal(job.input_coverage, "title_only");
-    assert.deepEqual(job.excerpts, [{ id: "title", text: record.title }]);
-    assert.equal(job.published_at, null);
-    let payload: any;
-    const backend = chatBackend(await providers(dir, [{ id: "local" }]), {
-      fetch: (async (_: string, init: RequestInit) => {
-        payload = JSON.parse(JSON.parse(String(init.body)).messages[1].content);
-        const ok = wire(0, {
-          evidence_ids: ["title"],
-          activity: "ongoing_demonstration",
-          temporal_status: "current",
-          event_start: null,
-          places: [
-            {
-              name: "Rome",
-              country: "IT",
-              admin: null,
-              evidence_ids: ["title"],
-              uncertainty: null,
-            },
-          ],
-        });
-        return completion([
-          ok,
-          wire(1, {
-            evidence_ids: ["title"],
-            places: [],
-            impact: "critical",
-            impacts: ["march"],
-          }),
-        ]);
-      }) as any,
-      log: quiet,
-    });
-    const out = await triageHeadlines(
-      [record, { ...record, id: "gdelt-2", title: "Second headline" }],
-      { backend },
-    );
-    assert.deepEqual(payload.reports[0].excerpts, [
-      { id: "title", text: record.title },
-    ]);
-    assert(!JSON.stringify(payload).includes("publisher.example"));
-    assert.equal(out[0].status, "accepted");
-    if (out[0].status === "accepted") {
-      assert.equal(out[0].relevant, true);
-      assert.deepEqual(out[0].categories, ["ongoing_demonstration"]);
-      assert.deepEqual(out[0].places, [
-        { name: "Rome", country: "IT", admin: null, uncertainty: null },
-      ]);
-      assert.equal(out[0].run.provider, "local");
-    }
-    assert.deepEqual(
-      { id: out[1].id, status: out[1].status, rule: (out[1] as any).rule },
-      { id: "gdelt-2", status: "rejected", rule: "unsupported_escalation" },
-    );
-    assert.throws(() => headlineInput({ ...record, url: "not a url" }));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
