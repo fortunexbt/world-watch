@@ -1,0 +1,449 @@
+{
+ "events": 264,
+ "documents": 1908,
+ "severe_events": 76,
+ "proposers": [
+  {
+   "proposer": "eager",
+   "describe": "Always proposes severe and quotes the first sentence.",
+   "ungated": {
+    "tp": 908,
+    "fp": 1000,
+    "fn": 0,
+    "tn": 0,
+    "precision": {
+     "value": 0.4758909853249476,
+     "ci95": [
+      0.38782608695652177,
+      0.5565988523735003
+     ]
+    },
+    "recall": {
+     "value": 1,
+     "ci95": [
+      1,
+      1
+     ]
+    },
+    "false_escalation_rate": {
+     "value": 1,
+     "ci95": [
+      1,
+      1
+     ]
+    }
+   },
+   "gated": {
+    "tp": 17,
+    "fp": 18,
+    "fn": 891,
+    "tn": 982,
+    "precision": {
+     "value": 0.4857142857142857,
+     "ci95": [
+      0.24242424242424243,
+      0.7192982456140351
+     ]
+    },
+    "recall": {
+     "value": 0.018722466960352423,
+     "ci95": [
+      0.007894736842105263,
+      0.03151862464183381
+     ]
+    },
+    "false_escalation_rate": {
+     "value": 0.018,
+     "ci95": [
+      0.008171603677221655,
+      0.029636711281070746
+     ]
+    }
+   },
+   "false_escalation_change": {
+    "value": -0.982,
+    "ci95": [
+     -0.9918283963227783,
+     -0.9703632887189293
+    ]
+   },
+   "by_language": {
+    "ar": {
+     "documents": 101,
+     "ungated_fer": 1,
+     "gated_fer": 0.034482758620689655,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "bn": {
+     "documents": 23,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "de": {
+     "documents": 69,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "en": {
+     "documents": 221,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0.027777777777777776
+    },
+    "es": {
+     "documents": 162,
+     "ungated_fer": 1,
+     "gated_fer": 0.009900990099009901,
+     "ungated_recall": 1,
+     "gated_recall": 0.01639344262295082
+    },
+    "fa": {
+     "documents": 88,
+     "ungated_fer": 1,
+     "gated_fer": 0.15,
+     "ungated_recall": 1,
+     "gated_recall": 0.0625
+    },
+    "fr": {
+     "documents": 96,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0.08
+    },
+    "hi": {
+     "documents": 26,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "id": {
+     "documents": 105,
+     "ungated_fer": 1,
+     "gated_fer": 0.017857142857142856,
+     "ungated_recall": 1,
+     "gated_recall": 0.02040816326530612
+    },
+    "it": {
+     "documents": 46,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "ja": {
+     "documents": 101,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "ko": {
+     "documents": 166,
+     "ungated_fer": 1,
+     "gated_fer": 0.0196078431372549,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "ms": {
+     "documents": 48,
+     "ungated_fer": 1,
+     "gated_fer": 0.05263157894736842,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "nl": {
+     "documents": 53,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "pt": {
+     "documents": 72,
+     "ungated_fer": 1,
+     "gated_fer": 0.037037037037037035,
+     "ungated_recall": 1,
+     "gated_recall": 0.022222222222222223
+    },
+    "ru": {
+     "documents": 81,
+     "ungated_fer": 1,
+     "gated_fer": 0.08823529411764706,
+     "ungated_recall": 1,
+     "gated_recall": 0.02127659574468085
+    },
+    "th": {
+     "documents": 54,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "tr": {
+     "documents": 45,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    },
+    "uk": {
+     "documents": 58,
+     "ungated_fer": 1,
+     "gated_fer": 0.045454545454545456,
+     "ungated_recall": 1,
+     "gated_recall": 0.027777777777777776
+    },
+    "ur": {
+     "documents": 22,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0.06666666666666667
+    },
+    "vi": {
+     "documents": 97,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0.05405405405405406
+    },
+    "zh": {
+     "documents": 174,
+     "ungated_fer": 1,
+     "gated_fer": 0,
+     "ungated_recall": 1,
+     "gated_recall": 0
+    }
+   }
+  },
+  {
+   "proposer": "lexical-alarm",
+   "describe": "Proposes severe when a sentence contains a consequence keyword and quotes it; no polarity handling.",
+   "ungated": {
+    "tp": 593,
+    "fp": 568,
+    "fn": 315,
+    "tn": 432,
+    "precision": {
+     "value": 0.5107665805340224,
+     "ci95": [
+      0.41539923954372626,
+      0.5993589743589743
+     ]
+    },
+    "recall": {
+     "value": 0.6530837004405287,
+     "ci95": [
+      0.5972568578553616,
+      0.7023411371237458
+     ]
+    },
+    "false_escalation_rate": {
+     "value": 0.568,
+     "ci95": [
+      0.5128205128205128,
+      0.6213592233009708
+     ]
+    }
+   },
+   "gated": {
+    "tp": 568,
+    "fp": 529,
+    "fn": 340,
+    "tn": 471,
+    "precision": {
+     "value": 0.5177757520510483,
+     "ci95": [
+      0.4215991692627207,
+      0.6073567151411463
+     ]
+    },
+    "recall": {
+     "value": 0.6255506607929515,
+     "ci95": [
+      0.5672937771345875,
+      0.677038626609442
+     ]
+    },
+    "false_escalation_rate": {
+     "value": 0.529,
+     "ci95": [
+      0.4730848861283644,
+      0.5841495992876224
+     ]
+    }
+   },
+   "false_escalation_change": {
+    "value": -0.038999999999999924,
+    "ci95": [
+     -0.05307262569832405,
+     -0.02629016553067176
+    ]
+   },
+   "by_language": {
+    "ar": {
+     "documents": 101,
+     "ungated_fer": 0.43103448275862066,
+     "gated_fer": 0.43103448275862066,
+     "ungated_recall": 0.6511627906976745,
+     "gated_recall": 0.5813953488372093
+    },
+    "bn": {
+     "documents": 23,
+     "ungated_fer": 1,
+     "gated_fer": 1,
+     "ungated_recall": 0.9375,
+     "gated_recall": 0.75
+    },
+    "de": {
+     "documents": 69,
+     "ungated_fer": 0.3333333333333333,
+     "gated_fer": 0.2962962962962963,
+     "ungated_recall": 0.47619047619047616,
+     "gated_recall": 0.47619047619047616
+    },
+    "en": {
+     "documents": 221,
+     "ungated_fer": 0.5838926174496645,
+     "gated_fer": 0.5302013422818792,
+     "ungated_recall": 0.7916666666666666,
+     "gated_recall": 0.7638888888888888
+    },
+    "es": {
+     "documents": 162,
+     "ungated_fer": 0.3564356435643564,
+     "gated_fer": 0.3465346534653465,
+     "ungated_recall": 0.45901639344262296,
+     "gated_recall": 0.45901639344262296
+    },
+    "fa": {
+     "documents": 88,
+     "ungated_fer": 0.65,
+     "gated_fer": 0.575,
+     "ungated_recall": 0.7291666666666666,
+     "gated_recall": 0.7083333333333334
+    },
+    "fr": {
+     "documents": 96,
+     "ungated_fer": 0.6086956521739131,
+     "gated_fer": 0.6086956521739131,
+     "ungated_recall": 0.48,
+     "gated_recall": 0.48
+    },
+    "hi": {
+     "documents": 26,
+     "ungated_fer": 0.75,
+     "gated_fer": 0.75,
+     "ungated_recall": 0.9444444444444444,
+     "gated_recall": 0.8333333333333334
+    },
+    "id": {
+     "documents": 105,
+     "ungated_fer": 0.6964285714285714,
+     "gated_fer": 0.6785714285714286,
+     "ungated_recall": 0.7142857142857143,
+     "gated_recall": 0.673469387755102
+    },
+    "it": {
+     "documents": 46,
+     "ungated_fer": 0.3333333333333333,
+     "gated_fer": 0.3333333333333333,
+     "ungated_recall": 0.45161290322580644,
+     "gated_recall": 0.45161290322580644
+    },
+    "ja": {
+     "documents": 101,
+     "ungated_fer": 0.21818181818181817,
+     "gated_fer": 0.18181818181818182,
+     "ungated_recall": 0.391304347826087,
+     "gated_recall": 0.391304347826087
+    },
+    "ko": {
+     "documents": 166,
+     "ungated_fer": 0.6274509803921569,
+     "gated_fer": 0.5882352941176471,
+     "ungated_recall": 0.6875,
+     "gated_recall": 0.640625
+    },
+    "ms": {
+     "documents": 48,
+     "ungated_fer": 0.47368421052631576,
+     "gated_fer": 0.47368421052631576,
+     "ungated_recall": 0.5517241379310345,
+     "gated_recall": 0.5172413793103449
+    },
+    "nl": {
+     "documents": 53,
+     "ungated_fer": 0.6923076923076923,
+     "gated_fer": 0.6923076923076923,
+     "ungated_recall": 0.575,
+     "gated_recall": 0.475
+    },
+    "pt": {
+     "documents": 72,
+     "ungated_fer": 0.6296296296296297,
+     "gated_fer": 0.5925925925925926,
+     "ungated_recall": 0.5333333333333333,
+     "gated_recall": 0.5333333333333333
+    },
+    "ru": {
+     "documents": 81,
+     "ungated_fer": 0.6470588235294118,
+     "gated_fer": 0.6176470588235294,
+     "ungated_recall": 0.8085106382978723,
+     "gated_recall": 0.8085106382978723
+    },
+    "th": {
+     "documents": 54,
+     "ungated_fer": 0.6923076923076923,
+     "gated_fer": 0.5769230769230769,
+     "ungated_recall": 0.6071428571428571,
+     "gated_recall": 0.6071428571428571
+    },
+    "tr": {
+     "documents": 45,
+     "ungated_fer": 0.3333333333333333,
+     "gated_fer": 0.3333333333333333,
+     "ungated_recall": 0.7037037037037037,
+     "gated_recall": 0.6666666666666666
+    },
+    "uk": {
+     "documents": 58,
+     "ungated_fer": 0.7272727272727273,
+     "gated_fer": 0.7272727272727273,
+     "ungated_recall": 0.6944444444444444,
+     "gated_recall": 0.6944444444444444
+    },
+    "ur": {
+     "documents": 22,
+     "ungated_fer": 0.8571428571428571,
+     "gated_fer": 0.8571428571428571,
+     "ungated_recall": 0.7333333333333333,
+     "gated_recall": 0.7333333333333333
+    },
+    "vi": {
+     "documents": 97,
+     "ungated_fer": 0.9833333333333333,
+     "gated_fer": 0.9333333333333333,
+     "ungated_recall": 1,
+     "gated_recall": 0.9459459459459459
+    },
+    "zh": {
+     "documents": 174,
+     "ungated_fer": 0.5636363636363636,
+     "gated_fer": 0.4636363636363636,
+     "ungated_recall": 0.75,
+     "gated_recall": 0.734375
+    }
+   }
+  }
+ ]
+}
