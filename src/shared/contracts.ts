@@ -27,6 +27,7 @@ export const Activity = z.enum([
   "volcanic_eruption",
   "drought",
   "severe_weather",
+  "aviation_emergency",
   "other_unknown",
 ]);
 export const Evidence = z.object({ id: z.string(), text: z.string() }).strict();
@@ -142,6 +143,8 @@ export type ObservationInput = {
     cancelled?: boolean;
     /** The issuer lists the event as current and states no expiry. It stays live until reconciliation of the issuer's complete current list no longer finds it. */
     current_listing?: boolean;
+    /** A self-report relayed by the source, such as a transponder code, that no authority has confirmed. It publishes as unverified, not as an official advisory. */
+    self_reported?: boolean;
     references?: string[];
     message_type?: string;
   };

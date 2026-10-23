@@ -579,7 +579,9 @@ export async function ingest(e: Env, items: ObservationInput[]) {
         summary_it: null,
         activity: item.official.activity ?? "official_advisory",
         impact: item.official.impact ?? "unknown",
-        evidence_status: "official_advisory",
+        evidence_status: item.official.self_reported
+          ? "unverified"
+          : "official_advisory",
         location: g
           ? {
               ...g,
@@ -2017,8 +2019,10 @@ async function routes(r: Request, e: Env) {
       sourceId,
     ).first<any>();
     const source = sourceRow && parse(sourceRow.record);
-    // BBK withdraws warnings from its complete active feed; GDACS ends events it stops listing as current.
-    const listing = source?.config?.format === "gdacs_geojson";
+    // BBK withdraws warnings from its complete active feed; GDACS and ADSB.lol end what they stop listing as current.
+    const listing = ["gdacs_geojson", "adsblol_squawks"].includes(
+      source?.config?.format,
+    );
     if (
       !source ||
       (source.family !== "bbk" && !listing) ||

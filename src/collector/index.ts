@@ -20,6 +20,7 @@ import { parseUsgs } from "./adapters/usgs.js";
 import { GDACS_PAGE_SIZE, parseGdacs } from "./adapters/gdacs.js";
 import { parseNws } from "./adapters/nws.js";
 import { parseEccc } from "./adapters/eccc.js";
+import { parseAdsbLol } from "./adapters/adsblol.js";
 import {
   parseZwaailicht,
   zwaailichtEligibleTitle,
@@ -288,6 +289,13 @@ export async function collectSources(
         case "eccc_geojson":
           observations = parseEccc(source, JSON.parse(response.text));
           break;
+        case "adsblol_squawks":
+          observations = parseAdsbLol(
+            source,
+            JSON.parse(response.text),
+            Object.keys(before.accepted_items ?? {}),
+          );
+          break;
         case "paris_json": {
           const first = JSON.parse(response.text);
           let all = Array.isArray(first.results) ? first.results : [];
@@ -512,8 +520,9 @@ export async function collectSources(
       let complete = offset >= missing.length;
       if (
         complete &&
-        (source.config.format === "bbk" ||
-          source.config.format === "gdacs_geojson")
+        ["bbk", "gdacs_geojson", "adsblol_squawks"].includes(
+          String(source.config.format),
+        )
       ) {
         let more = true;
         while (more && requests < maxRequests - 3) {
@@ -634,6 +643,10 @@ export function sourceEligibility(
     return observation.source_event_id
       ? keep("structured_natural_hazard_record")
       : exclude("missing_hazard_native_identity");
+  if (source.config.operational_role === "self_reported_aviation_signal")
+    return observation.source_event_id
+      ? keep("self_reported_transponder_emergency_code")
+      : exclude("missing_aircraft_episode_identity");
   if (source.id === "fr-paris-public-events") {
     const crowd =
       /\b(?:manifestant\w*|manifestation\w*|rassembl\w*|cortege\w*|foule\w*|greve\w*|emeute\w*|evacuat\w*|incendie\w*|explosion\w*|mouvement social|perimetre de securite)\b/u;

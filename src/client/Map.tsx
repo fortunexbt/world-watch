@@ -256,6 +256,9 @@ export default function WorldMap({
         clusterMaxZoom: 10,
         clusterRadius: 40,
         clusterProperties: { rank: ["max", ["get", "rank"]] },
+        // The ODbL asks for this notice wherever its data is shown, not only in the record.
+        attribution:
+          'Contains information from <a href="https://adsb.lol">ADSB.lol</a>, made available under the <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL</a>',
       });
       m.addLayer({
         id: "clusters",

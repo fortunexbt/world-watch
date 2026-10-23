@@ -11,6 +11,7 @@ import { USGS_FEED_URL } from "./adapters/usgs.js";
 import { GDACS_EVENTS_URL } from "./adapters/gdacs.js";
 import { NWS_ALERTS_URL } from "./adapters/nws.js";
 import { ECCC_ALERTS_URL } from "./adapters/eccc.js";
+import { ADSBLOL_SQUAWK_URL } from "./adapters/adsblol.js";
 const VERIFIED = "2026-10-21T09:05:00Z";
 const rights = (
   basis: string,
@@ -495,6 +496,31 @@ export const sourceRegistry: SourceRecord[] = [
       operational_role: "structured_natural_hazard",
       coverage:
         "Current ECCC warnings, one record per warning per forecast region. Watches, advisories and special weather statements are not collected. Points are region bounding-box centres with a radius to the farthest vertex.",
+    },
+  },
+  {
+    ...base,
+    id: "global-adsblol-emergency-squawks",
+    name: "ADSB.lol: aircraft squawking emergency codes worldwide",
+    owner: "ADSB.lol volunteer ADS-B receiver network",
+    url: ADSBLOL_SQUAWK_URL,
+    docs: "https://api.adsb.lol/docs",
+    countries: ["*"],
+    languages: ["en"],
+    categories: ["aviation", "aviation_emergency"],
+    family: "rss",
+    verified_at: "2026-10-22T23:40:00Z",
+    rights: rights(
+      "Open Database License (ODbL) 1.0, stated for the API and all data ADSB.lol makes public. https://api.adsb.lol/docs ; https://opendatacommons.org/licenses/odbl/1-0/ . Publicly used output needs a notice that it contains ADSB.lol information under the ODbL (4.3); extracted records are a derivative database offered under the ODbL, and this adapter is the published method of making it (4.4, 4.6). The API is free, ADSB.lol asks production users to contact it first and may later require a feeder key, and it limits clients to 500 requests a day. Data provided as is (https://www.adsb.lol/docs/privacy-license). Registrations, owners and Privacy ICAO Address or LADD aircraft are not stored. Deterministic structured publication; no model analysis.",
+      "Contains information from ADSB.lol (https://adsb.lol), made available under the Open Database License (ODbL) 1.0: https://opendatacommons.org/licenses/odbl/1-0/ . Squawk codes are self-reported by flight crews and unconfirmed; impact labels and episodes are World Watch derivations.",
+      false,
+    ),
+    config: {
+      format: "adsblol_squawks",
+      max_bytes: 512 * 1024,
+      operational_role: "self_reported_aviation_signal",
+      coverage:
+        "Aircraft that volunteer receivers hear squawking 7500, 7600 or 7700, one record per aircraft and code while ADSB.lol lists it. Receiver coverage is dense over Europe and North America and thin or absent over oceans, polar routes and much of Africa and Asia. Aircraft without a received position are kept for continuity but not mapped.",
     },
   },
   {

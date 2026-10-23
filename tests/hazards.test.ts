@@ -22,6 +22,11 @@ import {
   ECCC_IMPACT,
   ECCC_ALERTS_URL,
 } from "../src/collector/adapters/eccc.js";
+import {
+  parseAdsbLol,
+  SQUAWK,
+  ADSBLOL_SQUAWK_URL,
+} from "../src/collector/adapters/adsblol.js";
 import { polygonArea } from "../src/collector/adapters/area.js";
 import { collectSources } from "../src/collector/index.js";
 import {
@@ -53,6 +58,25 @@ const nwsSource = sourceRegistry.find((s) => s.id === "us-nws-warnings")!;
 // advisory and a special weather statement from the unfiltered list; the match count is the trimmed one.
 const eccc = JSON.parse(readFileSync("tests/fixtures/eccc-alerts.json", "utf8"));
 const ecccSource = sourceRegistry.find((s) => s.id === "ca-eccc-warnings")!;
+// Trimmed from api.adsb.lol on 2026-10-22: seven aircraft from a 1200,7000 squawk query, chosen for a
+// live ADS-B fix, a multilateration fix, an aircraft on the ground, a lastPosition fix inside and one
+// outside the five-minute limit, a Mode S aircraft with no position and a 7000 squawk. Registrations
+// are removed and the total is the trimmed one. The emergency query listed no aircraft while the
+// fixture was taken, so emergency codes, privacy flags and failures are set on clones below.
+const adsb = JSON.parse(
+  readFileSync("tests/fixtures/adsblol-aircraft.json", "utf8"),
+);
+const adsbSource = sourceRegistry.find(
+  (s) => s.id === "global-adsblol-emergency-squawks",
+)!;
+/** The fixture with every aircraft, or the listed ones, squawking a code. */
+function squawking(code: string, hexes?: string[], payload = adsb) {
+  const copy = structuredClone(payload);
+  copy.ac = copy.ac.filter((a: any) => !hexes || hexes.includes(a.hex));
+  for (const a of copy.ac) a.squawk = code;
+  copy.total = copy.ac.length;
+  return copy;
+}
 const usgsSource = sourceRegistry.find(
   (s) => s.id === "global-usgs-earthquakes",
 )!;
@@ -1103,6 +1127,342 @@ test("ECCC warnings publish without analysis, and ECCC ending a warning revises 
         .map((r) => ({ ...r })),
       [{ state: "blocked", error_kind: "rights" }],
     );
+  } finally {
+    s.db.close();
+  }
+});
+
+test("ADSB.lol squawks keep the aircraft, code and first-seen minute as identity and the last received fix as a point", () => {
+  // 1200 and 7000 are not emergency codes.
+  assert.deepEqual(parseAdsbLol(adsbSource, adsb), []);
+  const rows = parseAdsbLol(adsbSource, squawking("7700"));
+  assert.deepEqual(
+    rows.map((r) => r.native_id),
+    adsb.ac.map((a: any) => `${a.hex}.7700.2026-10-22T23:38Z`),
+  );
+  const ken = byId(rows, "ac7aaa.7700.2026-10-22T23:38Z");
+  assert.equal(ken.source_event_id, ken.native_id);
+  assert.equal(ken.title, "KEN1212 squawking 7700, general emergency");
+  assert.equal(ken.canonical_url, "https://adsb.lol/?icao=ac7aaa");
+  assert.equal(ken.published_at, null);
+  assert.equal(ken.source_updated_at, "2026-10-22T23:38:56.501Z");
+  assert.deepEqual(record(ken), {
+    hex: "ac7aaa",
+    callsign: "KEN1212",
+    squawk: "7700",
+    squawk_meaning: "general emergency",
+    emergency_status: "none",
+    aircraft_type: "C208",
+    military: false,
+    on_ground: false,
+    altitude_ft: 2275,
+    ground_speed_kt: 154.9,
+    track_deg: 313.17,
+    vertical_rate_fpm: -576,
+    position_source: "adsb_icao",
+    position_at: "2026-10-22T23:38:56.477Z",
+    first_seen: "2026-10-22T23:38:00.000Z",
+    notice: record(ken).notice,
+  });
+  assert.match(record(ken).notice, /no authority has confirmed/);
+  assert.match(record(ken).notice, /Open Database License \(ODbL\) 1\.0/);
+  // Near the Canadian border, so no country is derived.
+  assert.deepEqual(ken.source_geo, {
+    lon: -122.912222,
+    lat: 48.411804,
+    name: "KEN1212 reported position",
+    accuracy: "point",
+    radius_km: 1,
+    country: null,
+  });
+  assert.deepEqual(ken.official, {
+    issuer: "ADSB.lol",
+    effective_at: "2026-10-22T23:38:00.000Z",
+    expires_at: null,
+    current_listing: true,
+    self_reported: true,
+    activity: "aviation_emergency",
+    impact: "minor",
+  });
+  const mlat = byId(rows, "a83cf0.7700.2026-10-22T23:38Z");
+  assert.equal(record(mlat).position_source, "mlat");
+  assert.equal(mlat.source_geo?.country, "US");
+  const ground = byId(rows, "a81490.7700.2026-10-22T23:38Z");
+  assert.equal(record(ground).on_ground, true);
+  assert.equal(record(ground).altitude_ft, null);
+  // A Mode S aircraft's last fix, 69 seconds old, with no ground speed: the radius assumes cruise speed.
+  const last = byId(rows, "7cc4f6.7700.2026-10-22T23:38Z");
+  assert.deepEqual(last.source_geo, {
+    lon: 145.000649,
+    lat: -37.238811,
+    name: "R8852 reported position",
+    accuracy: "point",
+    radius_km: 17.7,
+    country: "AU",
+  });
+  assert.equal(record(last).position_at, "2026-10-22T23:37:47.502Z");
+  // A 23-minute-old fix and an aircraft with no position are kept for continuity but not mapped.
+  for (const id of ["7c79fd", "abc759"]) {
+    const row = byId(rows, id + ".7700.2026-10-22T23:38Z");
+    assert.equal(row.source_geo, undefined);
+    assert.equal(record(row).position_at, null);
+  }
+  assert.equal(byId(rows, "44ba76.7700.2026-10-22T23:38Z").source_geo?.country, null);
+  // Registration and owner fields never reach the record.
+  const owned = squawking("7700", ["ac7aaa"]);
+  Object.assign(owned.ac[0], { r: "N12345", ownOp: "Fixture Owner LLC", year: "1999" });
+  assert.deepEqual(record(parseAdsbLol(adsbSource, owned)[0]), record(ken));
+});
+
+test("squawk impact stays low and never severe, privacy-flagged aircraft are skipped and a short or invalid response fails", () => {
+  assert.deepEqual(SQUAWK, {
+    "7500": { meaning: "unlawful interference", impact: "significant" },
+    "7600": { meaning: "radio failure", impact: "informational" },
+    "7700": { meaning: "general emergency", impact: "minor" },
+  });
+  for (const code of Object.keys(SQUAWK)) {
+    const [row] = parseAdsbLol(adsbSource, squawking(code, ["ac7aaa"]));
+    assert.equal(row.official?.impact, SQUAWK[code as keyof typeof SQUAWK].impact);
+    assert.equal(row.title, `KEN1212 squawking ${code}, ${SQUAWK[code as keyof typeof SQUAWK].meaning}`);
+    assert(!["severe", "critical"].includes(row.official!.impact!));
+  }
+  // Privacy ICAO Address and LADD aircraft are dropped; the military flag is kept as a field.
+  const flagged = squawking("7700", ["ac7aaa", "a83cf0", "a81490"]);
+  flagged.ac[0].dbFlags = 4;
+  flagged.ac[1].dbFlags = 8;
+  flagged.ac[2].dbFlags = 1;
+  const kept = parseAdsbLol(adsbSource, flagged);
+  assert.deepEqual(kept.map((r) => r.native_id), ["a81490.7700.2026-10-22T23:38Z"]);
+  assert.equal(record(kept[0]).military, true);
+  // Malformed addresses are dropped and a repeated aircraft is published once.
+  const odd = squawking("7700", ["ac7aaa", "a83cf0"]);
+  odd.ac[1].hex = "not-hex";
+  odd.ac.push(structuredClone(odd.ac[0]));
+  odd.total = 3;
+  assert.deepEqual(
+    parseAdsbLol(adsbSource, odd).map((r) => r.native_id),
+    ["ac7aaa.7700.2026-10-22T23:38Z"],
+  );
+  const short = squawking("7700");
+  short.total = 8;
+  assert.throws(() => parseAdsbLol(adsbSource, short), /adsblol_response_truncated/);
+  assert.throws(() => parseAdsbLol(adsbSource, { msg: "No error" }), /invalid_adsblol_response/);
+  assert.throws(() => parseAdsbLol(adsbSource, { ...adsb, now: "soon" }), /invalid_adsblol_response/);
+});
+
+test("a squawk episode keeps its ID and start while listed, and a new code or a later sighting opens another", () => {
+  const first = parseAdsbLol(adsbSource, squawking("7700", ["ac7aaa"]));
+  const moved = squawking("7700", ["ac7aaa"]);
+  moved.now += 10 * 60000;
+  moved.ac[0].lat += 0.2;
+  const active = first.map((r) => r.native_id);
+  const [later] = parseAdsbLol(adsbSource, moved, active);
+  assert.equal(later.native_id, "ac7aaa.7700.2026-10-22T23:38Z");
+  assert.equal(later.official?.effective_at, "2026-10-22T23:38:00.000Z");
+  assert.equal(later.source_geo?.lat, 48.611804);
+  assert.equal(later.source_updated_at, "2026-10-22T23:48:56.501Z");
+  // Not listed by the previous complete read: a new episode starting now.
+  assert.equal(
+    parseAdsbLol(adsbSource, moved)[0].native_id,
+    "ac7aaa.7700.2026-10-22T23:48Z",
+  );
+  // Another code from the same aircraft is another episode.
+  const radio = squawking("7600", ["ac7aaa"], moved);
+  assert.equal(
+    parseAdsbLol(adsbSource, radio, active)[0].native_id,
+    "ac7aaa.7600.2026-10-22T23:48Z",
+  );
+  assert.equal(
+    parseAdsbLol(adsbSource, moved, ["ac7aaa.7700.unknown"])[0].native_id,
+    "ac7aaa.7700.2026-10-22T23:48Z",
+  );
+});
+
+test("ADSB.lol collection reads one approved query, carries episodes forward and reconciles the complete list", async () => {
+  assert.deepEqual(adsbSource.countries, ["*"]);
+  assert.equal(adsbSource.rights.ai, false);
+  assert.equal(adsbSource.rights.redistribute, true);
+  assert.match(adsbSource.rights.attribution, /Open Database License \(ODbL\) 1\.0/);
+  assert(configuredRegistry({ countries: ["IT"] }).includes(adsbSource));
+  const checkpoints = new Map<string, any>();
+  const accepted: ObservationInput[] = [];
+  const requested: string[] = [];
+  const reconciled: unknown[] = [];
+  // The fetch layer stamps success with the wall clock, so the run clock starts there.
+  let clock = Date.now();
+  let payload = squawking("7700", ["ac7aaa", "a83cf0"]);
+  const run = () =>
+    collectSources(
+      {
+        EW_API_URL: "https://isolated.invalid",
+        EW_COLLECTOR_TOKEN: "isolated-fixture",
+      },
+      {
+        sources: [adsbSource],
+        register: async () => {},
+        checkpoint: async (id) => checkpoints.get(id) ?? {},
+        recordHealth: async (id, h) => {
+          checkpoints.set(id, h.checkpoint);
+        },
+        ingest: async (rows) => {
+          accepted.push(...rows);
+        },
+        fetch: async (url, init) => {
+          requested.push(String(url));
+          if (String(url).endsWith("/reconcile")) {
+            reconciled.push(JSON.parse(String(init?.body)).active_native_ids);
+            return Response.json({ changed: 0, more: false });
+          }
+          return Response.json(payload);
+        },
+        maxRequests: 40,
+        now: () => clock,
+      },
+    );
+  assert.deepEqual(
+    (await run()).map((r) => [r.source_id, r.status, r.received]),
+    [["global-adsblol-emergency-squawks", "ok", 2]],
+  );
+  assert.deepEqual(requested, [
+    ADSBLOL_SQUAWK_URL,
+    "https://isolated.invalid/api/sources/global-adsblol-emergency-squawks/reconcile",
+  ]);
+  assert(
+    accepted.every(
+      (x) => x.eligibility?.reason === "self_reported_transponder_emergency_code",
+    ),
+  );
+  // One poll on, one aircraft has moved and the other has cleared its code.
+  clock += 6 * 60000;
+  payload = squawking("7700", ["ac7aaa"]);
+  payload.now += 6 * 60000;
+  payload.ac[0].lat += 0.1;
+  accepted.length = 0;
+  await run();
+  assert.deepEqual(accepted.map((o) => o.native_id), ["ac7aaa.7700.2026-10-22T23:38Z"]);
+  assert.deepEqual(reconciled, [
+    ["ac7aaa.7700.2026-10-22T23:38Z", "a83cf0.7700.2026-10-22T23:38Z"],
+    ["ac7aaa.7700.2026-10-22T23:38Z"],
+  ]);
+  // An empty list is still a complete read, and it ends every episode.
+  clock += 6 * 60000;
+  payload = squawking("7700", []);
+  await run();
+  assert.deepEqual(reconciled.at(-1), []);
+});
+
+test("emergency squawks publish unverified without analysis, revise as the aircraft moves and end without cancellation when the code clears", async () => {
+  const s = fixtureServer();
+  try {
+    let clock = Date.now();
+    const checkpoints = new Map<string, any>();
+    const response = (
+      codes: Record<string, string>,
+      moved: Record<string, number> = {},
+    ) => {
+      const copy = structuredClone(adsb);
+      copy.ac = copy.ac.filter((a: any) => codes[a.hex]);
+      for (const a of copy.ac) {
+        a.squawk = codes[a.hex];
+        a.lat += moved[a.hex] ?? 0;
+      }
+      copy.total = copy.ac.length;
+      copy.now = clock;
+      return copy;
+    };
+    let payload = response({ ac7aaa: "7700", a83cf0: "7600", a81490: "7500" });
+    const run = () =>
+      collectSources(
+        {
+          EW_API_URL: "https://isolated.invalid",
+          EW_COLLECTOR_TOKEN: "isolated-fixture",
+        },
+        {
+          sources: [adsbSource],
+          register: (sources) =>
+            s.api("/api/sources", { sources }, "fixture-collector"),
+          checkpoint: async (id) => checkpoints.get(id) ?? {},
+          recordHealth: async (id, h) => {
+            checkpoints.set(id, h.checkpoint);
+          },
+          request: async (path, body) => {
+            const r = await s.api(path, body, "fixture-collector");
+            if (r.status !== 200) throw Error(`fixture_api_${r.status}`);
+            return r.body;
+          },
+          fetch: async () => Response.json(payload),
+          now: () => clock,
+        },
+      );
+    const incidents = async () =>
+      (await s.api("/api/snapshot?hours=24&include_incoming=0")).body
+        .incidents as IncidentView[];
+    const find = (list: IncidentView[], callsign: string) =>
+      list.find((i) => i.headline.startsWith(callsign + " "))!;
+    await s.api("/api/alert-rules", { id: "any", rule: { allow_unverified: true } });
+
+    assert.equal((await run())[0].received, 3);
+    let live = await incidents();
+    assert.equal(live.length, 3);
+    for (const i of live) {
+      assert.equal(i.activity, "aviation_emergency");
+      assert.equal(i.evidence_status, "unverified");
+      assert.equal(i.current_listing, true);
+      assert.equal(i.location?.accuracy, "point");
+      assert.equal(i.reports[0].rights.attribution, adsbSource.rights.attribution);
+    }
+    assert.deepEqual(
+      ["KEN1212", "REH91", "STT62"].map((c) => find(live, c).impact),
+      ["minor", "informational", "significant"],
+    );
+    // No analysis worker has connected, so the brief is built from the records alone.
+    assert.equal(
+      (await s.api("/api/brief?hours=24")).body.current.headline,
+      "1 aircraft reported squawking 7500 (unlawful interference). 1 aircraft reported squawking 7700 (general emergency). 1 aircraft reported squawking 7600 (radio failure).",
+    );
+    assert.deepEqual(
+      s.db
+        .prepare("SELECT DISTINCT state,error_kind FROM analysis_jobs")
+        .all()
+        .map((r) => ({ ...r })),
+      [{ state: "blocked", error_kind: "rights" }],
+    );
+    assert.equal(
+      (await s.api("/api/worker/claim", { worker_id: "mac" }, "fixture-worker"))
+        .body.leases.length,
+      0,
+    );
+
+    // One poll on, STT62 has moved, REH91 has cleared 7600 and KEN1212 is listed again where it was.
+    const before = find(live, "STT62");
+    clock += 6 * 60000;
+    payload = response({ ac7aaa: "7700", a81490: "7500" }, { a81490: 0.1 });
+    await run();
+    live = await incidents();
+    const hijack = find(live, "STT62");
+    assert.equal(hijack.id, before.id);
+    assert.equal(hijack.version, 2);
+    assert.ok(Math.abs(hijack.location!.lat - 42.826299) < 1e-9);
+    assert.equal(hijack.event_start, before.event_start);
+    // A new response time is a new fix time, so every listed aircraft revises.
+    assert.equal(find(live, "KEN1212").version, 2);
+    assert.equal(find(live, "KEN1212").location?.lat, 48.411804);
+    // Not official and not severe: no urgent alert, even for a rule that accepts unverified records.
+    assert.deepEqual(
+      { ...s.db.prepare("SELECT state,reason FROM alert_deliveries WHERE incident_id=? AND incident_version=2").get(hijack.id) },
+      { state: "suppressed", reason: "no_current_urgent_claim" },
+    );
+    const cleared = find(live, "REH91");
+    assert.equal(cleared.version, 2);
+    assert.equal(cleared.current_listing, false);
+    assert.equal(cleared.cancelled, false);
+    assert.equal(cleared.evidence_status, "unverified");
+    assert.ok(Date.parse(cleared.expires_at!) <= Date.now());
+    // Exports carry the records with their ODbL notice, as the licence's share-alike asks.
+    const exported = (await s.api("/api/export")).body;
+    assert.equal(exported.incidents.length, 3);
+    assert.equal(exported.excluded_for_rights, 0);
+    assert(exported.incidents.every((i: IncidentView) => /ODbL/.test(i.reports[0].rights.attribution)));
   } finally {
     s.db.close();
   }

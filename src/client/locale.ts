@@ -35,7 +35,7 @@ export const italian: Record<string, string> = {
   "Search events, places and sources": "Cerca eventi, luoghi e fonti",
   "All activity": "Tutte le attività",
   Gatherings: "Raduni",
-  Hazards: "Rischi naturali",
+  Hazards: "Rischi",
   "structured source": "fonte strutturata",
   "Structured source record, published without model analysis.":
     "Record di fonte strutturata, pubblicato senza analisi del modello.",
@@ -198,6 +198,7 @@ export const italian: Record<string, string> = {
   volcanic_eruption: "eruzione vulcanica",
   drought: "siccità",
   severe_weather: "maltempo intenso",
+  aviation_emergency: "codice di emergenza aereo",
   worldwide: "tutto il mondo",
   unverified: "non verificato",
   corroborated: "con riscontri",

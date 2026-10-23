@@ -23,6 +23,7 @@ export const APPROVED_HOSTS = new Set([
   "www.gdacs.org",
   "api.weather.gov",
   "api.weather.gc.ca",
+  "api.adsb.lol",
 ]);
 function idmcFilestore(u: URL) {
   return (

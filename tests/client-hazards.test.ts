@@ -16,6 +16,7 @@ import { parseUsgs } from "../src/collector/adapters/usgs.js";
 import { parseGdacs } from "../src/collector/adapters/gdacs.js";
 import { parseNws } from "../src/collector/adapters/nws.js";
 import { parseEccc } from "../src/collector/adapters/eccc.js";
+import { parseAdsbLol } from "../src/collector/adapters/adsblol.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import { Impact } from "../src/shared/contracts.js";
 
@@ -38,6 +39,14 @@ const warnings = [
     JSON.parse(readFileSync("tests/fixtures/eccc-alerts.json", "utf8")),
   ),
 ];
+const squawks = JSON.parse(
+  readFileSync("tests/fixtures/adsblol-aircraft.json", "utf8"),
+);
+for (const a of squawks.ac) a.squawk = "7700";
+const aircraft = parseAdsbLol(
+  source("global-adsblol-emergency-squawks"),
+  squawks,
+);
 
 test("earthquake markers grow with magnitude between a floor and a ceiling", () => {
   assert.equal(markerScale(null), 1);
@@ -70,7 +79,7 @@ test("magnitude comes from the USGS record and nothing else", () => {
 
 test("every hazard the structured adapters publish has a glyph, a map image per impact and both interface languages", () => {
   assert.deepEqual(Object.keys(glyphs), [...HAZARDS]);
-  for (const row of [...usgs, ...gdacs, ...warnings])
+  for (const row of [...usgs, ...gdacs, ...warnings, ...aircraft])
     assert.ok(isHazard(row.official?.activity ?? ""), row.native_id);
   for (const hazard of HAZARDS) {
     assert.match(glyphs[hazard], /^M[\d\s.,a-zA-Z-]+$/);

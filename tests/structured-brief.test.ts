@@ -7,6 +7,7 @@ import { parseUsgs } from "../src/collector/adapters/usgs.js";
 import { parseGdacs } from "../src/collector/adapters/gdacs.js";
 import { parseNws } from "../src/collector/adapters/nws.js";
 import { parseEccc } from "../src/collector/adapters/eccc.js";
+import { parseAdsbLol } from "../src/collector/adapters/adsblol.js";
 import { sourceRegistry } from "../src/collector/registry.js";
 import server, { type Env } from "../src/server/index.js";
 import type { IncidentView } from "../src/shared/contracts.js";
@@ -195,6 +196,33 @@ test("NWS and ECCC warnings are counted per issuer, hazard and country", () => {
     b.statements.flatMap((s) => s.incident_ids).sort(),
     [...nws.filter((v) => !v.cancelled), ...eccc].map((v) => v.id).sort(),
   );
+});
+
+test("ADSB.lol aircraft are counted per squawk code as unverified reports, the most serious code first", () => {
+  const source = sourceRegistry.find((s) => s.id === "global-adsblol-emergency-squawks")!;
+  const fixture = JSON.parse(readFileSync("tests/fixtures/adsblol-aircraft.json", "utf8"));
+  const codes = ["7700", "7600", "7700", "7500", "7700", "7600", "7700"];
+  fixture.ac.forEach((a: any, i: number) => (a.squawk = codes[i]));
+  const aircraft = parseAdsbLol(source, fixture).map((row) =>
+    view(JSON.parse(row.excerpts[0].text), {
+      activity: row.official!.activity!,
+      impact: row.official!.impact!,
+      evidence_status: "unverified",
+    }),
+  );
+  const b = brief(aircraft);
+  assert.deepEqual(
+    b.statements.map((s) => s.text),
+    [
+      "1 aircraft reported squawking 7500 (unlawful interference).",
+      "4 aircraft reported squawking 7700 (general emergency).",
+      "2 aircraft reported squawking 7600 (radio failure).",
+    ],
+  );
+  // 7500 maps to significant, the only level that pins; nothing reaches severe.
+  assert.deepEqual(b.pins.map((p) => [p.impact, p.evidence_status]), [["significant", "unverified"]]);
+  // An analysed unverified record is model output, never a structured one.
+  assert.equal(structuredBrief(aircraft.map((v) => ({ ...v, analyzed_at: "2026-10-22T11:00:00Z" })), 168, clock), null);
 });
 
 test("affected countries are named with articles, deduplicated and capped, with the issuer text as fallback", () => {

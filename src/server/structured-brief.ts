@@ -77,7 +77,9 @@ export function structuredBrief(
     views.filter(
       (v) =>
         !v.analyzed_at &&
-        v.evidence_status === "official_advisory" &&
+        // Self-reported records, such as transponder codes, publish unverified.
+        (v.evidence_status === "official_advisory" ||
+          v.evidence_status === "unverified") &&
         !v.cancelled &&
         !v.superseded_by &&
         !(v.expires_at && Date.parse(v.expires_at) <= clock),
@@ -112,9 +114,12 @@ export function structuredBrief(
       const warning = warningIssuer(record);
       const key = warning
         ? `warning|${warning}|${v.activity}|${v.location?.country ?? ""}`
-        : v.activity === "earthquake" && Number.isFinite(record.magnitude)
-          ? "magnitude"
-          : v.activity;
+        : typeof record.squawk === "string" &&
+            typeof record.squawk_meaning === "string"
+          ? `squawk|${record.squawk}|${record.squawk_meaning}`
+          : v.activity === "earthquake" && Number.isFinite(record.magnitude)
+            ? "magnitude"
+            : v.activity;
       groups.set(key, [...(groups.get(key) ?? []), v]);
     }
   }
@@ -125,6 +130,14 @@ export function structuredBrief(
         where = countries([country]);
       statements.push({
         text: `${n} ${by} ${activity.replaceAll("_", " ")} ${n === 1 ? "warning" : "warnings"}${where ? " in " + where : ""}.`,
+        incidents,
+      });
+      continue;
+    }
+    if (key.startsWith("squawk|")) {
+      const [, code, meaning] = key.split("|");
+      statements.push({
+        text: `${incidents.length} aircraft reported squawking ${code} (${meaning}).`,
         incidents,
       });
       continue;

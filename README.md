@@ -2,7 +2,7 @@
 
 ![World Watch showing live earthquakes and a Red typhoon alert on a world map](docs/media/world.jpg)
 
-World Watch puts what's happening in the world on one flat map, and each marker links back to the public record behind it. Earthquakes from USGS, disaster alerts from GDACS, US storm and flood warnings from the National Weather Service, Canadian weather warnings from Environment and Climate Change Canada, heat detections from three NASA satellites and Copernicus emergency mapping areas reach the map without a language model in the loop. News and other narrative reports take a separate path, where a model extracts claims and the host checks each claim against the text it cites before anything is published.
+World Watch puts what's happening in the world on one flat map, and each marker links back to the public record behind it. Earthquakes from USGS, disaster alerts from GDACS, US storm and flood warnings from the National Weather Service, Canadian weather warnings from Environment and Climate Change Canada, aircraft emergency squawks heard by ADSB.lol's volunteer receivers, heat detections from three NASA satellites and Copernicus emergency mapping areas reach the map without a language model in the loop. News and other narrative reports take a separate path, where a model extracts claims and the host checks each claim against the text it cites before anything is published.
 
 It started as Europe Watch, a Europe-only prototype that wasn't useful enough. Routine notices crowded its feed. This version covers the world and is built as a hackathon showcase. The hosted deployment stays paused.
 
@@ -17,7 +17,7 @@ npm ci
 npm run demo
 ```
 
-The demo starts a throwaway local server and database, pulls the live USGS, GDACS, NWS and ECCC feeds and opens a signed-in view at `http://127.0.0.1:4319/?hours=168`. It refreshes every five minutes. It makes its own random tokens and config in a temporary directory. It doesn't read your private files or call a model. Ctrl-C stops the demo's processes and deletes its data.
+The demo starts a throwaway local server and database, pulls the live USGS, GDACS, NWS, ECCC and ADSB.lol feeds and opens a signed-in view at `http://127.0.0.1:4319/?hours=168`. It refreshes every five minutes. It makes its own random tokens and config in a temporary directory. It doesn't read your private files or call a model. Ctrl-C stops the demo's processes and deletes its data.
 
 On the evening of 22 October 2026 a run published 56 incidents. They included 21 earthquakes, among them an M7.0 quake 191 km east-northeast of Nagqu in China. GDACS issued a Red earthquake alert for China and a Red alert for Typhoon CHAMPI-26 affecting the Philippines, Guam, Japan and Taiwan. The other 34 were NWS and Environment Canada flood and storm warnings, including a blizzard warning for Resolute. The structured brief summed it up from issuer fields alone, and turning on the thermal layer loaded 196,952 detections from the last 24 hours across NOAA-20, NOAA-21 and Suomi NPP.
 
@@ -34,7 +34,7 @@ Screenshots show data from USGS (public domain), GDACS and the European Commissi
 ```mermaid
 flowchart LR
   subgraph Sources
-    S1[USGS, GDACS, NWS, ECCC<br/>structured records]
+    S1[USGS, GDACS, NWS, ECCC,<br/>ADSB.lol structured records]
     S2[News and local<br/>narrative reports]
     S3[NASA FIRMS, Copernicus EMS<br/>on demand]
   end
@@ -52,7 +52,7 @@ flowchart LR
 
 The parts worth a closer look:
 
-- A structured hazard publishes the moment the collector accepts it. Its impact comes from the issuer's own level. USGS PAGER and GDACS alert levels map to minor, significant and severe, and never to critical, because those levels are modelled loss estimates rather than reported harm. GDACS mixes archived events into its Orange and Red list (62 of 63 on 22 October), so only events it marks as current reach the map.
+- A structured hazard publishes the moment the collector accepts it. Its impact comes from the issuer's own level. USGS PAGER and GDACS alert levels map to minor, significant and severe, and never to critical, because those levels are modelled loss estimates rather than reported harm. GDACS mixes archived events into its Orange and Red list (62 of 63 on 22 October), so only events it marks as current reach the map. An aircraft squawking 7700, 7600 or 7500 publishes as unverified, because the crew sets the code and nobody confirms it, and its impact stays at significant or below.
 - One occurrence published by two issuers shows as one marker and one feed row, marked "2 sources", with both records in the detail panel. Earthquakes match on origin times within 30 seconds, epicentres within 25 km (wider above M6) and magnitudes within 0.5. Cyclones match on the storm name and season. A GDACS earthquake alert that names NEIC as its source republishes the USGS solution, so the row says "one origin" rather than counting it as independent corroboration. A near miss stays a "possibly the same event" note on two separate markers, and an operator can separate any pair without changing either record. A watch rule hears about a fused event once, unless a later record escalates it or changes materially.
 - A model can't escalate a claim to severe or critical on its own say-so. The claim has to quote an affirmed consequence from its own cited evidence, such as "120 homes destroyed", or a matching official directive. Negated, hypothetical and drill wording is rejected within the same clause, using 22 lexicon tables that cover 23 languages. Chinese, Japanese and Thai, which don't put spaces between words, use substring matching. Anything the tables don't recognise fails closed. [An offline evaluation](docs/severity-evaluation.md) measures the gate on 1,908 Wikipedia excerpts about 264 earthquakes.
 - When a source corrects or retracts an event, each watch rule that received the original alert gets the correction, even if the corrected location has left their watch area. A new alert fires only when a versioned projection of location, timing, instructions, severity or evidence changes. A reworded headline doesn't count.
@@ -70,8 +70,9 @@ The map, the structured hazard path and the satellite layers work live, as the d
 - The five-minute model brief and narrative claims need the local Codex worker. Until a worker has connected, the brief panel shows a structured brief built only from issuer fields, such as GDACS alert levels, affected countries and USGS magnitudes. It is labelled as built without a model, and each statement cites the records it counts.
 - The severity gate has been measured, narrowly. On 1,908 real excerpts in 23 languages, scored against USGS PAGER alert levels, it cuts an always-escalating proposer's false-escalation rate from 100% to 1.8% (95% CI 0.8 to 3.0). Against a keyword proposer it removes only 3.9 points (56.8% to 52.9%), mostly because PAGER models loss while the text reports real deaths. These are deterministic stand-ins, not a model, and cover earthquakes only. The method, licences and limits are in [the evaluation](docs/severity-evaluation.md); reproduce it with `npm run eval:severity`. Recall, relevance precision and a real model's severity accuracy haven't been measured.
 - Most earthquakes show impact unknown, because USGS only issues PAGER alerts for damaging quakes.
-- GDACS events stay live while GDACS lists them as current and end when it stops, which relies on the collector reading GDACS. A stopped collector leaves the last current set on the map.
-- Only USGS and GDACS feed the map worldwide today. NWS and ECCC add polygon warnings for the United States and Canada, and the other enabled sources are European city and agency feeds.
+- GDACS events and ADSB.lol squawk episodes stay live while their source lists them as current and end when it stops, which relies on the collector reading them. A stopped collector leaves the last current set on the map.
+- ADSB.lol hears only aircraft near its volunteer receivers, so an emergency over most oceans and much of Africa and Asia never appears. Its public API is free but marked deprecated, and a resumed hosted deployment should contact ADSB.lol first and may need a feeder key.
+- Only USGS, GDACS and ADSB.lol feed the map worldwide today. NWS and ECCC add polygon warnings for the United States and Canada, and the other enabled sources are European city and agency feeds.
 - No week-long endurance run, restore drill or production capacity measurement has been done. Read [the handoff](docs/HANDOFF.md) and [verification notes](docs/verification.md) before resuming anything.
 
 ## Source atlas

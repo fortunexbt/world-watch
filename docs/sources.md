@@ -14,6 +14,7 @@ The executable inventory is [`src/collector/registry.ts`](../src/collector/regis
 | Satellite/context                   | NASA FIRMS, Copernicus Emergency Management Service                | Thermal observations and emergency mapping areas; neither establishes incident severity or affected population.                           |
 | Worldwide natural hazards           | USGS earthquakes, GDACS alerts                                     | Structured records published without a model. Points are epicentres or alert centroids, not impact footprints.                            |
 | Regional hazard warnings            | NWS storm-based warnings, ECCC warnings                            | Issuer warnings published without a model. Points are polygon centres with a radius covering the warned area, not exact locations.        |
+| Aviation emergency signals          | ADSB.lol emergency squawks                                         | Transponder codes set by flight crews and heard by volunteer receivers, published unverified. Receiver coverage has large gaps.          |
 
 Passenger-train circulation and institutional-announcement feeds were disabled after they overwhelmed the feed. Fire/thermal coverage can still dominate. Adding more endpoints without a usefulness test would repeat that failure.
 
@@ -78,6 +79,36 @@ The [ECCC Data Services End-use Licence](https://eccc-msc.github.io/open-data/li
 | None        | unknown     |
 
 ECCC's colour is its own rating of expected impact, not observed harm. Red, ECCC's "very dangerous" level, still maps to severe and never to critical. Hurricane and tropical storm warnings map to the `tropical_cyclone` activity, storm surge warnings to `flood`, and every other warning, including rainfall, wind, blizzard, heat and cold, to `severe_weather`. A rainfall warning forecasts heavy rain and does not state flooding, so it isn't mapped to `flood`.
+
+## Aviation emergency squawks
+
+ADSB.lol supplies the aircraft its volunteer receivers hear squawking 7500, 7600 or 7700 through `api.adsb.lol/v2/sqk`. The endpoint accepts a comma-separated list, so one request covers all three codes: on 22 October 2026 a `1200,7000` query returned both codes in one response. Each response carries a `total` count, and one that differs from the aircraft returned fails visibly. On 22 and 23 October the API answered with rate limits of 4 requests a second, 60 a minute and 500 a day. A five-minute poll makes 288 requests a day.
+
+A squawk is a four-digit transponder code that the flight crew sets. 7700 declares a general emergency, 7600 a radio failure and 7500 unlawful interference. Crews also set these codes by mistake, for example while dialling another code, or as a precaution, and many 7700 flights are medical diversions or precautionary landings that end normally. Air traffic control knows whether an emergency is real, and nothing in this feed confirms one. The records therefore publish with evidence status `unverified`, never `official_advisory`. Urgent alerts need severe impact and supported evidence, so these records never raise one.
+
+Each record is one aircraft, identified by its ICAO 24-bit address (`hex`), and one code. Its ID adds the UTC minute World Watch first saw the pair, and the collector carries that ID forward while the previous complete read still listed the aircraft with the code. Each later position is a revision of the same incident, and the start stays at the first sighting, which can trail the crew's change by up to one poll. When ADSB.lol stops listing the aircraft with the code, the collector's complete current list no longer contains it and the incident ends as GDACS events do: `current_listing` is cleared and the expiry records when World Watch saw it go, without marking it cancelled. That happens when the crew clears the code, and also when the aircraft lands and switches off or leaves receiver coverage, which the feed can't tell apart. A later sighting opens a new episode, and an aircraft that changes from 7700 to 7600 ends one episode and opens another.
+
+The point is the position in the response, or readsb's `lastPosition` when the live position is more than 60 seconds old. Its accuracy is `point`, and the radius covers the ground the aircraft could have covered between that fix and the response at its reported ground speed, with a floor of 1 km for multilateration error. The aircraft keeps moving between polls, and the record states the time of the fix. The country is derived from the point and the map's own boundaries, as for USGS epicentres, and stays empty over the sea or near a border. An aircraft listed without any position is stored so its episode continues, but it isn't mapped.
+
+Each record keeps the address, callsign, code and its meaning, readsb's ADS-B emergency status, aircraft type designator, ground flag, barometric altitude, ground speed, track, vertical rate, the military database flag, the position source (ADS-B, multilateration or TIS-B), the position time and the first and latest sightings. It leaves out the registration and any owner or operator field. Aircraft flagged with a Privacy ICAO Address or on the FAA LADD list are skipped, because their operators asked not to be shown publicly. A private aircraft's callsign can still be its registration.
+
+| Code | Meaning               | Impact        |
+| ---- | --------------------- | ------------- |
+| 7500 | unlawful interference | significant   |
+| 7700 | general emergency     | minor         |
+| 7600 | radio failure         | informational |
+
+The impact is a cautious reading of a self-reported code, not a report of harm. A genuine 7500 would be grave, but the code alone is unconfirmed and often set in error, so it stays at significant unless an issuer confirms it, and no issuer feed is integrated. 7700 declares an abnormal situation and says nothing about harm. 7600 starts a lost-communications procedure.
+
+The [API documentation](https://api.adsb.lol/docs) (checked 22 October 2026) states that the API "as well as all data ADSB.lol makes public" is licensed under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/). It says the API is free to use, that "in the future, you will require an API key which you can get by feeding to adsb.lol", and asks production users to get in touch first. The [docs page](https://www.adsb.lol/docs/open-data/api/) marks the public API deprecated in favour of re-api, which only feeders can reach from their station's address. The [privacy and licence page](https://www.adsb.lol/docs/privacy-license) provides the data as is, asks users to indemnify ADSB.lol against third-party claims arising from non-conforming use, and gives `info [at] adsb.lol` as the contact. A resumed hosted deployment should contact ADSB.lol first and expect to need a feeder key.
+
+The ODbL permits storage, display and redistribution with these conditions:
+
+- A publicly used produced work, such as the map, needs a notice that it contains information from the database under the ODbL (section 4.3). The map's attribution line and each record's attribution carry that notice with links to ADSB.lol and the licence, and the record text repeats it.
+- The extracted records form a derivative database that must stay under the ODbL when publicly used (4.4). Exports, which already carry each record's attribution and licence basis, therefore include them, and they mustn't be relicensed. The rest of World Watch's database is a collective database the ODbL doesn't reach (4.5a), since aviation records aren't merged with records from other sources.
+- Whoever receives the derivative database or a produced work must be offered the derivative database or the method that made it (4.6). The export is the first and this adapter, in a public repository, is the second. Sign-in is allowed if it doesn't restrict those rights (4.7c).
+
+Coverage depends on where volunteers run receivers. It is dense over Europe and North America and thin or absent over the oceans, polar routes and much of Africa and Asia. An emergency outside coverage never appears, and an empty list doesn't mean no aircraft is squawking an emergency code. On the evening of 22 October 2026 the list was empty at 23:37 UTC, while the same endpoint returned 1,044 aircraft squawking 1200.
 
 ## Reviewed and not integrated
 
