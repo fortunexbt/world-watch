@@ -153,11 +153,37 @@ Chromium at 1,000 incidents, medians of three alternating runs at a load average
 
 WebKit at 1,000 incidents: the burst's component renders fell from 61,006 to 4,803 and its wall time from 3.7 to 1.8 s, and pan p99 from 29 to 18 ms. At 5,000 incidents (Chromium, load 60 to 200, two or three runs; some runs timed out clicking the layer control) pan script time fell from 1,237 to 184 ms and LoAF blocking from 1,045 to 0 ms, and the burst's task time from 14.2 to 1.1 s. Frame p95 stayed at one display frame in Chromium in every scene before and after: the costs were long frames around each settled view and SSE arrival, not steady panning. The end-of-run JS heap varied from 40 to 79 MB between runs with no consistent direction. An attempt at 20,000 incidents closed the page in the baseline build before the restart; its log was lost and it is not in the tables.
 
+### List views and SSE views (after the rebase)
+
+These ran on the rebased branch, which includes fusion, news signals and the public demo. The rebase renumbered the cell and search-index migrations to 0010 and 0011 (drizzle 0006 and 0007) and moved fusion's earthquake candidate read to `incidents_cell`: it seeks the cells within reach and window keys from the origin-time window on, and `tests/fusion.test.ts` asserts that plan. Each comparison alternates the commit before a change with the commit after it on the same store, at a load average of 6 to 9.
+
+The client now asks for `view=list` snapshots. A list view keeps every field the feed, map, filters and situation grouping read, the quake excerpt the marker size comes from and the per-report rights flags, and drops summaries, other evidence text and rights wording, which the detail read of a selected incident already supplies (`tests/snapshot-list.test.ts`). Without `view=list` the snapshot is unchanged, so the public snapshot builder still publishes full views. On a 100,000-incident store reseeded on the rebased branch (two rounds each):
+
+| Snapshot            | Bytes before | after     | Gzip before | after   | Handler CPU before | after |
+| ------------------- | ------------ | --------- | ----------- | ------- | ------------------ | ----- |
+| World, 168 h        | 4,684,811    | 1,751,374 | 553,345     | 236,737 | 31 ms              | 26 ms |
+| Europe, 24 h        | 3,970,346    | 1,383,532 | 268,992     | 196,883 | 30 ms              | 22 ms |
+| Contiguous US, 24 h | 5,825,258    | 1,573,915 | 550,717     | 217,007 | 46 ms              | 29 ms |
+| Japan, 24 h         | 1,225,126    | 820,768   | 91,250      | 83,051  | 15 ms              | 15 ms |
+
+USGS-heavy views shrink least because the quake excerpt stays. In-process latency did not change measurably: local D1 time dominates it and varied more between rounds (Europe 24 h median 128 to 393 ms) than between commits. The savings are transfer and the client's JSON parse, which the in-process harness does not see. Every median was under 500 ms at this load, but single runs reached 0.8 s (contiguous US) and 1.6 s (search), so the 500 ms p95 gate is still not established, and not at all on Cloudflare.
+
+Created, updated and escalated SSE events now carry the incident's list view, checked against current source rights and the default monitoring filter once per tick for all streams in an isolate; an event whose view the compact detail read would refuse stays bare, and the client reads it back as before (`tests/sse-views.test.ts`, `tests/client-render-budget.test.ts`). Ten clients, each in its own isolate, catching up 98 incident events on a 20,000-incident store, three rounds:
+
+| Measure                                                   | Before | After  |
+| --------------------------------------------------------- | ------ | ------ |
+| Detail reads                                              | 980    | 0      |
+| D1 queries                                                | 2,001  | 40     |
+| D1 rows read                                              | 4,001  | 3,100  |
+| Handler CPU                                               | 746 ms | 69 ms  |
+| Handler CPU per event per stream, stream only, one stream | 54 µs  | 111 µs |
+
+A stream that never reads details costs more per event, for parsing and sending the view, and each isolate reads the 103 source records once per tick that has incident events.
+
 ### Remaining costs, largest first
 
-- Snapshot shape. A 1,000-incident world snapshot is 4.65 MB (546 KB gzip) and needs 33 to 126 ms of handler CPU, mostly view JSON. That misses Workers Free's 10 ms and is why the 500 ms gate fails for full views. A list shape without excerpts, summaries and per-report rights text, with the detail endpoint serving the rest, needs a client audit first.
-- SSE fan-out. Every incident event makes every client read its compact detail: ten clients and 100 events made 900 to 1,000 requests and about 0.5 to 1.6 ms of handler CPU per event per client. Rights-checked compact views in the event would remove those requests.
-- Search reads every match before ranking (15,320 rows for "earthquake"), and all-time area views read every row in their cells (10,329 for Fiji).
+- Snapshot handler CPU. A list-view world snapshot still parses 1,000 full views from D1 (26 to 30 ms of handler CPU), above Workers Free's 10 ms. Trimming in SQL, or storing a list projection beside each view, would cut the parse.
+- Search reads every match before ranking (14,876 rows for "earthquake"), and all-time area views read every row in their cells (10,337 for Fiji).
 - Each three-record ingest still reads about 500 rows, mostly the alert delivery ledger, and the store grows to 4.7 GB at 100,000 incidents, 1.24 million rows of it alert deliveries from 20 rules, which needs checking against D1's per-database size limit.
 - The first geospatial request in an isolate parses about 30 MB of FIRMS text.
 - No phone was measured. iPhone claims need Safari Web Inspector timelines on a physical device with the same scene.
