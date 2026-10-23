@@ -296,8 +296,8 @@ test("the snapshot already carries every input coverage and latency need, with n
       [enabled.length, sources.length],
       "the status health read and the source list join, nothing per source",
     );
-    // Incidents, the source registry, queued reports, the cursor and status, then the source list.
-    assert.equal(reads.length, 10, reads.map((r) => r.sql).join("\n"));
+    // Incidents, the source registry, queued reports, the cursor and status, the source list, then the history start.
+    assert.equal(reads.length, 11, reads.map((r) => r.sql).join("\n"));
     assert(!reads.some((r) => /issuer_lag|news_files|json_extract\(h\./.test(r.sql)));
     const incidents: IncidentView[] = snapshot.body.incidents;
     assert.equal(incidents.length, rows.length);

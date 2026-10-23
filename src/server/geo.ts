@@ -183,6 +183,12 @@ const CELL = 10,
 /** incidents_cell keys on (locationCell, windowKey); both texts must match its migration exactly. */
 export const locationCell = `CAST((${latitude}+90)/${CELL} AS INTEGER)*${COLUMNS}+CAST((${longitude}+180)/${CELL} AS INTEGER)`;
 /**
+ * A revision whose window key lies more than LASTING_MS after its knowledge time: issuer-current,
+ * timeless or long-lived. revisions_lasting holds only these, under exactly this text.
+ */
+export const LASTING_MS = 3 * 86400000,
+  lastingRevision = `${windowKey}>strftime('%Y-%m-%dT%H:%M:%fZ',known_at,'+3 days')`;
+/**
  * SQL superset of inBbox over incidents.view, without trigonometry in SQL, and the grid cells
  * holding every location that can reach the bbox. `cells` is null when they cover the whole grid.
  */

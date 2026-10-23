@@ -247,9 +247,25 @@ Two follow-ups, each alternated with the commit before it:
 - The catalogue load now builds the tile index, so the first tile request after a refresh only encodes its tile. In process with the 200,000 synthetic detections, nine runs each at a load average of 10 to 17, the first zoom 0 tile fell from a median of 104 ms (57 to 124) of handler CPU to 15 ms (7 to 22), and the cold catalogue request rose from 648 ms (421 to 778) to 755 ms (589 to 952). Encoding the world tile still aggregates every detection.
 - MapLibre asks for a tile once for each world copy on screen, all at once, and neither it nor the browser cache merges those requests. Owner and public tiles now load through one `thermal` protocol (`src/client/thermal-tiles.ts`) that shares one read between them. On the real-day client scene above, re-downloaded on 23 October 2026 (three alternating runs, load average 10 to 23), turning the layer on sent 2 requests (4.7 kB) instead of 4 (12.6 kB), the session 80 to 83 instead of 84 to 87 (288 to 291 kB instead of 305 to 308 kB), and the largest single request's handler CPU fell from 74 to 108 ms to 11 to 14 ms with the index change. Frame p99 stayed 16.7 to 16.8 ms. The shared reads are not aborted when a tile leaves the view.
 
+### Replay at a past time
+
+`npm run perf:load -- --store=<saved 100,000-incident store> --runs=3` now also replays seven viewports at an hour, a day, a week and three weeks before the store's last revision (163,041 revisions). Medians of three runs, the base commit and then this branch on copies of one store, at a load average of 13 and then 5 to 6, so only rows and counts compare fairly. Before, every replay read the newest 1,000 held revisions through a correlated subquery and filtered area, search and window afterwards (the window was ignored altogether), so its counts were wrong as well as costly.
+
+| Replay, 1 h / 21 d back | Rows read before | after | Incidents before | after | Handler CPU after |
+| ----------------------- | ---------------- | ----- | ---------------- | ----- | ----------------- |
+| World, 168 h | 4,864 / 4,990 | 1,392 / 1,425 | 1,000 / 1,000 | 1,000 / 1,000 | 30 ms |
+| Europe, 24 h | 4,864 / 4,990 | 8,648 / 14,995 | 73 / 93 | 986 / 975 | 20 ms |
+| Contiguous US, 24 h | 4,864 / 4,990 | 10,048 / 16,188 | 336 / 298 | 1,000 / 999 | 31 to 35 ms |
+| Fiji across the dateline, 24 h | 4,864 / 4,990 | 1,606 / 2,507 | 46 / 52 | 178 / 199 | 9 to 10 ms |
+| Sahara (quiet), 168 h | 4,864 / 4,990 | 1,655 / 1,777 | 1 / 0 | 26 / 26 | 4 ms |
+| Search "earthquake", 168 h | 4,864 / 4,990 | 3,649 / 3,551 | 428 / 452 | 1,000 / 1,000 | 26 to 27 ms |
+
+A day and a week back fall between these. Live snapshots read the same rows as before. A busy area reads the revisions whose window keys fall within its window and three days after T, and every lasting revision with a later key; Europe's synthetic GDACS events are mostly lasting, so its three-week replay reads more than the live view (5,642). Applying migration 0014 to the store took 40 s locally (it backfills `superseded_at` and builds three indexes over every revision). A three-record ingest wrote 358 rows instead of 351 and read 12,098 instead of 12,000. `tests/replay-budget.test.ts` holds a 6,150-incident store to its read budget through local D1, and `tests/replay.test.ts` compares replay with an independent oracle over 80 random times, areas, windows and searches.
+
 ### Remaining costs, largest first
 
 - Snapshot handler CPU. A list-view world snapshot still parses 1,000 full views from D1 (26 to 30 ms of handler CPU), above Workers Free's 10 ms. Trimming in SQL, or storing a list projection beside each view, would cut the parse.
+- A replay of a busy area reads every lasting revision with a window key past T, including later ones; Europe three weeks back read 14,995 rows.
 - Search reads every match before ranking (14,876 rows for "earthquake"), and all-time area views read every row in their cells (10,337 for Fiji).
 - Each three-record ingest still reads about 500 rows, mostly the alert delivery ledger, and the store grows to 4.7 GB at 100,000 incidents, 1.24 million rows of it alert deliveries from 20 rules, which needs checking against D1's per-database size limit.
 - The first geospatial request in an isolate parses about 30 MB of FIRMS text and indexes every detection, 0.6 to 0.95 s of CPU on the synthetic day.

@@ -35,7 +35,7 @@ for versions in (10, 100, 1000):
         db.executescript(migration.read_text())
     db.execute('INSERT INTO incidents(id,version,view,updated_at) VALUES(?,?,?,?)', ('incident-fixture', versions, json.dumps({'id': 'incident-fixture','version': versions}), '2026-10-21T12:00:00Z'))
     for v in range(1, versions+1):
-        db.execute('INSERT INTO incident_revisions VALUES(?,?,?,?,?)', ('incident-fixture',v,json.dumps({'id':'incident-fixture','version':v}),'2026-10-21T12:00:00Z','synthetic query fixture'))
+        db.execute('INSERT INTO incident_revisions(incident_id,version,view,known_at,reason) VALUES(?,?,?,?,?)', ('incident-fixture',v,json.dumps({'id':'incident-fixture','version':v}),'2026-10-21T12:00:00Z','synthetic query fixture'))
         for rule in range(10):
             eligible = rule != 9 or v == 1
             db.execute('INSERT INTO alert_deliveries VALUES(?,?,?,?,?,?,?,?)', (f'd-{v}-{rule}','incident-fixture',v,f'rule-{rule}',1,'eligible_ui' if eligible else 'suppressed','synthetic only',f'2026-10-21T12:00:00.{v:06d}Z'))

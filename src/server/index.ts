@@ -22,6 +22,8 @@ import {
   resolveClaimLocation,
   bboxCandidates,
   eventTime,
+  LASTING_MS,
+  lastingRevision,
   locationCell,
   locationRadius,
   windowKey,
@@ -1609,14 +1611,21 @@ async function complete(
   if (accepted) await settleBundles(e);
   return json({ accepted: !!accepted, analysis_id: aid });
 }
-function defaultSignalEligible(incident: IncidentView) {
+function defaultSignalEligible(incident: IncidentView, at = Date.now()) {
   if(incident.superseded_by)return false;
   return !incident.reports.length || incident.reports.some((report: any) => {
     const contextual = report.source_id === "fr-sncf-siri" || report.source_id?.startsWith("fcdo-") || report.source_id?.startsWith("it-dpc-") || report.source_id === "de-dwd";
     if (!contextual) return true;
     // Retained transport/weather/admin records remain accessible through explicit source context.
-    return report.source_id !== "fr-sncf-siri" && ["severe", "critical"].includes(incident.impact) && incident.claims.some(c => temporalStatus(c) === "current");
+    return report.source_id !== "fr-sncf-siri" && ["severe", "critical"].includes(incident.impact) && incident.claims.some(c => temporalStatus(c, at) === "current");
   });
+}
+/** A replay time from a query string, in the form known_at is stored in so the two compare as text. */
+function knownAt(u: URL) {
+  const at = u.searchParams.get("at");
+  if (!at) return null;
+  if (!Number.isFinite(Date.parse(at))) throw Error("invalid_time");
+  return new Date(at).toISOString();
 }
 /**
  * Index-backed supersets of incidentInWindow and inBbox, applied before LIMIT so a busy region or
@@ -1624,14 +1633,16 @@ function defaultSignalEligible(incident: IncidentView) {
  * with a window, only the window's keys within each cell, so it reads its own area's live rows
  * rather than a whole latitude band. Without a bbox, or when the cells cover the whole grid, the
  * recency index stops after LIMIT matches. The exact checks in snapshot still decide membership.
+ * With `at`, the same predicates address incident_revisions through revisions_cell, and the window
+ * is relative to that time.
  */
-async function liveScope(e: Env, hours: number, bbox?: number[]) {
+async function liveScope(e: Env, hours: number, bbox?: number[], at?: string) {
   const where: string[] = [],
     params: (string | number)[] = [];
   let index = "";
   // Day-aligned bounds with a day of slack cover UTC offsets and date-only values and keep the memo key stable.
   const day = 86400000,
-    today = Math.floor(Date.now() / day) * day,
+    today = Math.floor((at ? Date.parse(at) : Date.now()) / day) * day,
     after = new Date(today - hours * 3600000 - day),
     before = new Date(today + hours * 3600000 + 2 * day);
   if (
@@ -1645,17 +1656,20 @@ async function liveScope(e: Env, hours: number, bbox?: number[]) {
     params.push(after.toISOString(), before.toISOString());
   }
   if (bbox) {
-    const reach = await memoRead(e, "incident-reach", 1000, () =>
+    // A replay reaches as far as any retained revision, which a later correction may have narrowed.
+    const reach = await memoRead(e, at ? "revision-reach" : "incident-reach", 1000, () =>
       stmt(
         e,
-        `SELECT max(${locationRadius}) AS km FROM incidents WHERE deleted_at IS NULL`,
+        at
+          ? `SELECT max(${locationRadius}) AS km FROM incident_revisions`
+          : `SELECT max(${locationRadius}) AS km FROM incidents WHERE deleted_at IS NULL`,
       ).first<{ km: number | null }>(),
     );
     const candidates = bboxCandidates(bbox, reach?.km ?? 0);
     if (candidates.cells) {
       // Integers computed here, inlined because a whole hemisphere exceeds D1's 100 bound parameters.
       where.push(`${locationCell} IN(${candidates.cells.join(",")})`);
-      index = " INDEXED BY incidents_cell";
+      index = at ? " INDEXED BY revisions_cell" : " INDEXED BY incidents_cell";
     }
     where.push(candidates.sql);
     params.push(...candidates.params);
@@ -1678,9 +1692,35 @@ function liveHead(e: Env, scope: Awaited<ReturnType<typeof liveScope>>) {
     ),
   );
 }
+/**
+ * What the platform held at `at`: each incident's latest revision known by then, in area, window
+ * and text, most recently known first. A revision is held from its known_at until superseded_at,
+ * when a later version became known, so area, window and text are judged on the view held then,
+ * never on an earlier or later one, and nothing known after `at` reaches the result. Without a
+ * bbox the knowledge-time index stops after LIMIT matches. In an area, revisions_cell seeks window
+ * keys up to LASTING_MS past `at`, so it passes over only the revisions known in those few days
+ * after; a held revision with a later key is a lasting one (its key is more than LASTING_MS past
+ * its own known_at, which precedes `at`), and revisions_lasting holds those apart.
+ */
+function replayHead(e: Env, at: string, scope: Awaited<ReturnType<typeof liveScope>>, text: string) {
+  // An ASCII needle is a superset of textMatch's case-insensitive substring test; SQLite lowers ASCII only.
+  const needle = /^[\x20-\x7e]+$/.test(text) ? text.toLowerCase() : "";
+  const held = `known_at<=? AND (superseded_at IS NULL OR superseded_at>?)${scope.where}${needle ? " AND instr(lower(view),?)>0" : ""}`,
+    params = [at, at, ...scope.params, ...(needle ? [needle] : [])];
+  if (!scope.index)
+    return rows(e, `SELECT view FROM incident_revisions WHERE ${held} ORDER BY known_at DESC LIMIT 1000`, ...params);
+  const edge = new Date(Date.parse(at) + LASTING_MS).toISOString();
+  return rows(
+    e,
+    `SELECT view,known_at FROM incident_revisions${scope.index} WHERE ${held} AND ${windowKey}<=? UNION ALL SELECT view,known_at FROM incident_revisions INDEXED BY revisions_lasting WHERE ${held} AND ${windowKey}>? AND ${lastingRevision} ORDER BY known_at DESC LIMIT 1000`,
+    ...params,
+    edge,
+    ...params,
+    edge,
+  );
+}
 async function snapshot(e: Env, u: URL) {
-  const at = u.searchParams.get("at");
-  if (at && !Number.isFinite(Date.parse(at))) throw Error("invalid_time");
+  const at = knownAt(u);
   const searchText = (
     u.searchParams.get("query") ??
     u.searchParams.get("q") ??
@@ -1695,14 +1735,9 @@ async function snapshot(e: Env, u: URL) {
   const bbox = u.searchParams.get("bbox")?.split(",").map(Number);
   if (bbox && (bbox.length !== 4 || bbox.some((v) => !Number.isFinite(v))))
     throw Error("invalid_bbox");
-  const scope = await liveScope(e, at ? 0 : hours, at ? undefined : bbox);
+  const scope = await liveScope(e, hours, bbox, at ?? undefined);
   const records = at
-    ? await rows(
-        e,
-        "SELECT view FROM incident_revisions r WHERE known_at<=? AND version=(SELECT max(version) FROM incident_revisions WHERE incident_id=r.incident_id AND known_at<=?) ORDER BY known_at DESC LIMIT 1000",
-        at,
-        at,
-      )
+    ? await replayHead(e, at, scope, searchText)
     : fts
       ? await rows(
           e,
@@ -1712,7 +1747,9 @@ async function snapshot(e: Env, u: URL) {
           ...scope.params,
         )
       : await liveHead(e, scope);
-  const rights = await currentRights(e);
+  const rights = await currentRights(e),
+    time = at ? Date.parse(at) : Date.now();
+  // Rights are always today's: a source whose permission was withdrawn stays hidden in replay.
   let incidents = records
     .map((v) => parse(v.view) as IncidentView)
     .filter((i) => permittedView(i, rights))
@@ -1720,10 +1757,10 @@ async function snapshot(e: Env, u: URL) {
       ...refreshRights(i, rights),
       claims: i.claims.map((c) => ({
         ...c,
-        temporal_status: temporalStatus(c, at ? Date.parse(at) : Date.now()),
+        temporal_status: temporalStatus(c, time),
       })),
     }));
-  if (!at && !u.searchParams.get("source") && u.searchParams.get("include_routine") !== "1") incidents = incidents.filter(defaultSignalEligible);
+  if (!u.searchParams.get("source") && u.searchParams.get("include_routine") !== "1") incidents = incidents.filter((i) => defaultSignalEligible(i, time));
   const query = u.searchParams.get("query") ?? u.searchParams.get("q");
   if (query && at) incidents = incidents.filter((i) => textMatch(i, query));
   incidents = incidents.filter(viewFilter(u.searchParams, bbox));
@@ -1785,6 +1822,12 @@ async function snapshot(e: Env, u: URL) {
       },
     })),
     historical_at: at,
+    // The earliest knowledge time retention has kept, so a time control knows how far back it reaches.
+    history_from: (
+      await memoRead(e, "history-from", 60000, () =>
+        stmt(e, "SELECT min(known_at) AS first FROM incident_revisions").first<{ first: string | null }>(),
+      )
+    )?.first ?? null,
     limited: records.length >= 1000,
   };
 }
@@ -2035,15 +2078,18 @@ async function routes(r: Request, e: Env) {
     return json({ error: "forbidden" }, 403);
   if (p === "/api/brief" && r.method === "GET") {
     if (who!=="owner")return json({error:"forbidden"},403);
-    const brief=await currentBrief({stmt:(sql,...values)=>stmt(e,sql,...values)});
+    const at=knownAt(u),time=at?Date.parse(at):Date.now();
+    const brief=await currentBrief({stmt:(sql,...values)=>stmt(e,sql,...values)},time,at??undefined);
     // A model brief always wins; issuer fields stand in only while no analysis worker has ever connected.
-    if(brief.current||await stmt(e,"SELECT id FROM workers LIMIT 1").first())return json(brief);
+    // In replay, issuer fields stand in for any time whose model brief retention has dropped or that had none.
+    if(brief.current||!at&&await stmt(e,"SELECT id FROM workers LIMIT 1").first())return json(brief);
     const hours=Number(u.searchParams.get("hours"));
     // Viewers poll every minute; one build per five minutes keeps the live read off that cadence.
-    const current=await memoRead(e,"structured-brief:"+hours,300000,async()=>{
-      const rights=await currentRights(e);
-      const views=(await liveHead(e,await liveScope(e,hours))).map(v=>parse(v.view) as IncidentView);
-      return structuredBrief(views.filter(i=>permittedView(i,rights)&&defaultSignalEligible(i)&&incidentInWindow(i,hours)),hours,Date.now(),(await newsCatalog(newsContext(e))).signals);
+    const current=await memoRead(e,`structured-brief:${hours}:${at}`,300000,async()=>{
+      const rights=await currentRights(e),scope=await liveScope(e,hours,undefined,at??undefined);
+      const views=(await (at?replayHead(e,at,scope,""):liveHead(e,scope))).map(v=>parse(v.view) as IncidentView);
+      // News signals keep no history, so a replayed brief is built from issuer fields alone.
+      return structuredBrief(views.filter(i=>permittedView(i,rights)&&defaultSignalEligible(i,time)&&incidentInWindow(i,hours,time)),hours,time,at?[]:(await newsCatalog(newsContext(e))).signals);
     });
     return json({current,pending:false,updated_at:null});
   }
@@ -2801,24 +2847,32 @@ async function routes(r: Request, e: Env) {
   }
   const detail = p.match(/^\/api\/incidents\/([^/]+)$/);
   if (detail) {
-    const i = await stmt(
-      e,
-      "SELECT view FROM incidents WHERE id=? AND deleted_at IS NULL",
-      detail[1],
+    // With `at`, the revision held then, with only the history, shared evidence and origins known by then.
+    const at = knownAt(u),
+      time = at ? Date.parse(at) : Date.now();
+    const i = await (at
+      ? stmt(e, "SELECT view FROM incident_revisions WHERE incident_id=? AND known_at<=? ORDER BY version DESC LIMIT 1", detail[1], at)
+      : stmt(e, "SELECT view FROM incidents WHERE id=? AND deleted_at IS NULL", detail[1])
     ).first<any>();
     if (!i) return json({ error: "not_found" }, 404);
     const item = parse(i.view) as IncidentView;
-    if (u.searchParams.get("compact") === "1" && !defaultSignalEligible(item)) return json({error:"outside_default_monitoring"},404);
+    if (u.searchParams.get("compact") === "1" && !defaultSignalEligible(item, time)) return json({error:"outside_default_monitoring"},404);
     if (u.searchParams.get("compact") !== "1") {
-      const linked = await rows(e, "SELECT r.input FROM evidence_links l JOIN observation_revisions r ON r.report_id=l.report_id AND r.revision=l.revision JOIN observations o ON o.id=l.report_id JOIN analysis_jobs j ON j.report_id=l.report_id AND j.revision=l.revision WHERE l.incident_id=? AND j.state='bundled' AND j.completed_at IS NOT NULL AND o.deleted_at IS NULL AND o.latest_revision=l.revision ORDER BY j.created_at LIMIT 50", detail[1]);
+      const linked = await rows(
+        e,
+        `SELECT r.input FROM evidence_links l JOIN observation_revisions r ON r.report_id=l.report_id AND r.revision=l.revision JOIN observations o ON o.id=l.report_id JOIN analysis_jobs j ON j.report_id=l.report_id AND j.revision=l.revision WHERE l.incident_id=? AND j.state='bundled' AND j.completed_at IS NOT NULL AND o.deleted_at IS NULL AND ${at ? "j.completed_at<=? AND r.ingested_at<=? AND NOT EXISTS(SELECT 1 FROM observation_revisions x WHERE x.report_id=l.report_id AND x.ingested_at>r.ingested_at AND x.ingested_at<=?)" : "o.latest_revision=l.revision"} ORDER BY j.created_at LIMIT 50`,
+        detail[1],
+        ...(at ? [at, at, at] : []),
+      );
       item.reports.push(...linked.map(v => ({...parse(v.input), analysis_reused: true, shared_content: true})).filter(v => !item.reports.some(r => r.report_id === v.report_id)));
     }
     const historical =
       u.searchParams.get("compact") !== "1"
         ? await rows(
             e,
-            "SELECT version,known_at,reason,view FROM incident_revisions WHERE incident_id=? ORDER BY version",
+            `SELECT version,known_at,reason,view FROM incident_revisions WHERE incident_id=?${at ? " AND known_at<=?" : ""} ORDER BY version`,
             detail[1],
+            ...(at ? [at] : []),
           )
         : [];
     const sourceIds = [
@@ -2837,7 +2891,7 @@ async function routes(r: Request, e: Env) {
           ...item,
           claims: item.claims.map((c) => ({
             ...c,
-            temporal_status: temporalStatus(c),
+            temporal_status: temporalStatus(c, time),
           })),
         },
         rights,
@@ -2848,11 +2902,13 @@ async function routes(r: Request, e: Env) {
       evidence_origins:
         u.searchParams.get("compact") === "1"
           ? []
-          : await rows(
-              e,
-              "SELECT o.*,l.report_id FROM origin_groups o JOIN evidence_links l ON l.origin_id=o.id WHERE l.incident_id=?",
-              detail[1],
-            ),
+          : (
+              await rows(
+                e,
+                "SELECT o.*,l.report_id FROM origin_groups o JOIN evidence_links l ON l.origin_id=o.id WHERE l.incident_id=?",
+                detail[1],
+              )
+            ).filter((o) => !at || item.reports.some((r) => r.report_id === o.report_id)),
     });
   }
   const deletion = p.match(/^\/api\/sources\/([^/]+)$/);

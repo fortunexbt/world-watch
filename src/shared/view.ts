@@ -44,16 +44,18 @@ const FIELDS = [
       i.reports.some((r: any) => r.original_language === v),
   ],
 ] as const;
-/** The snapshot query's field, time-window and area filters. A replay (`at`) has no live window. */
+/** The snapshot query's field, time-window and area filters. A replay's window is around its `at`. */
 export function viewFilter(params: URLSearchParams, bbox?: number[]) {
   const fields = FIELDS.flatMap(([key, match]) => {
       const value = params.get(key);
       return value ? [(i: IncidentView) => match(i, value)] : [];
     }),
-    hours = params.get("at") ? 0 : Number(params.get("hours"));
+    hours = Number(params.get("hours")),
+    at = params.get("at"),
+    time = at ? Date.parse(at) : Date.now();
   return (i: IncidentView) =>
     fields.every((match) => match(i)) &&
-    (!(hours > 0) || incidentInWindow(i, hours)) &&
+    (!(hours > 0) || incidentInWindow(i, hours, time)) &&
     (!bbox || inBbox(i.location, bbox));
 }
 

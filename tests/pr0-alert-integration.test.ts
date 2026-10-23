@@ -132,7 +132,7 @@ function seedNotice(s: ReturnType<typeof fixtureStore>, priorEligible = true) {
     )
     .run(view.id, 1, JSON.stringify(view), view.updated_at);
   s.db
-    .prepare("INSERT INTO incident_revisions VALUES(?,?,?,?,?)")
+    .prepare("INSERT INTO incident_revisions(incident_id,version,view,known_at,reason) VALUES(?,?,?,?,?)")
     .run(
       view.id,
       1,
@@ -273,7 +273,7 @@ test("material comparison uses the last eligible revision across an intervening 
       .prepare("UPDATE incidents SET version=2,view=? WHERE id=?")
       .run(JSON.stringify(second), first.id);
     s.db
-      .prepare("INSERT INTO incident_revisions VALUES(?,?,?,?,?)")
+      .prepare("INSERT INTO incident_revisions(incident_id,version,view,known_at,reason) VALUES(?,?,?,?,?)")
       .run(
         first.id,
         2,

@@ -260,6 +260,23 @@ try {
       failed: failures[name]?.length ?? 0,
     };
 
+  // Replay: what the store knew an hour, a day, a week and three weeks before its last revision.
+  log("replay snapshots");
+  const known = await d1.prepare("SELECT max(known_at) AS last FROM incident_revisions").first();
+  const replays = ["world 168h", "world 24h", "europe 24h", "conus 24h", "fiji dateline 24h", "sahara quiet 168h", "search earthquake 168h"];
+  for (const [label, back] of [["1 h", 3600000], ["1 d", 86400000], ["7 d", 7 * 86400000], ["21 d", 21 * 86400000]] as const) {
+    const at = new Date(Date.parse((known as any).last) - back).toISOString();
+    for (const name of replays) {
+      const samples: Sample[] = [];
+      for (let run = 0; run < settings.runs; run++) {
+        const { text, sample } = await call(snapshotPath(`${viewports[name]}&at=${at}`));
+        const body = JSON.parse(text);
+        samples.push({ ...sample, incidents: body.incidents.length, limited: body.limited ? 1 : 0 });
+      }
+      results[`replay ${label} back, ${name}`] = summarise(samples);
+    }
+  }
+
   log("first snapshot in a new isolate");
   const first: Sample[] = [];
   for (let run = 0; run < settings.runs; run++) {
