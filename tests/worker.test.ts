@@ -640,13 +640,32 @@ import {
   WireResult,
   WireBatch,
 } from "../src/worker/wire.js";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 import { validEventTime } from "../src/shared/contracts.js";
 test("Luna output schema requires day precision or an explicit offset for all four time fields", () => {
-  const schema: any = zodToJsonSchema(WireBatch, {
-    $refStrategy: "none",
-    target: "openAi",
+  const schema: any = z.toJSONSchema(WireBatch, {
+    target: "draft-7",
+    reused: "inline",
   });
+  // The CLI needs inline, closed objects with every property required.
+  const checkObjects = (node: any) => {
+    assert.equal(node.$ref, undefined);
+    if (node.type === "object") {
+      assert.equal(node.additionalProperties, false);
+      assert.deepEqual(
+        node.required.slice().sort(),
+        Object.keys(node.properties).sort(),
+      );
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value))
+        value.forEach((item) => {
+          if (item && typeof item === "object") checkObjects(item);
+        });
+      else if (value && typeof value === "object") checkObjects(value);
+    }
+  };
+  checkObjects(schema);
   const claim =
     schema.properties.results.items.properties.claims.items.properties;
   const instruction = claim.official_instruction.anyOf[0].properties;

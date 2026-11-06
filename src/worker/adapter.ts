@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 import {
   Batch,
   CONTRACT_VERSION,
@@ -305,9 +305,9 @@ async function analyzeChunk(
     const schema = path.join(dir, "schema.json"),
       out = path.join(dir, "result.json");
     const payload = compactInputs(inputs);
-    const jsonSchema: any = zodToJsonSchema(WireBatch, {
-      $refStrategy: "none",
-      target: "openAi",
+    const jsonSchema: any = z.toJSONSchema(WireBatch, {
+      target: "draft-7",
+      reused: "inline",
     });
     jsonSchema.properties.results.items.properties.index.enum = inputs.map(
       (_, i) => i,
