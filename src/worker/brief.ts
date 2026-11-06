@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 import {
   BRIEF_CONTRACT_VERSION,
   BriefInputSchema,
@@ -70,9 +70,9 @@ export async function analyzeBrief(
   try {
     const schema = path.join(dir, "schema.json"),
       out = path.join(dir, "result.json");
-    const jsonSchema: any = zodToJsonSchema(BriefResultSchema, {
-      $refStrategy: "none",
-      target: "openAi",
+    const jsonSchema: any = z.toJSONSchema(BriefResultSchema, {
+      target: "draft-7",
+      reused: "inline",
     });
     jsonSchema.properties.references.items.enum = input.incidents.map(
       (i) => i.index,

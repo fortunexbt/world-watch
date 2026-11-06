@@ -1,3 +1,4 @@
+import { z } from "zod";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, utimes } from "node:fs/promises";
@@ -5,6 +6,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import {
   BriefInputSchema,
+  BriefResultSchema,
   validateBriefResult,
   type BriefInput,
 } from "../src/shared/brief.js";
@@ -356,4 +358,20 @@ test("authority stale completion409 discards only the obsolete brief derivative 
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("brief output JSON Schema preserves strict required fields and bounds", () => {
+  const schema: any = z.toJSONSchema(BriefResultSchema, {
+    target: "draft-7",
+    reused: "inline",
+  });
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, ["headline", "references", "pinned"]);
+  assert.equal(schema.properties.headline.minLength, 1);
+  assert.equal(schema.properties.headline.maxLength, 300);
+  assert.equal(schema.properties.references.minItems, 1);
+  assert.equal(schema.properties.references.maxItems, 12);
+  assert.equal(schema.properties.pinned.maxItems, 3);
+  assert.equal(schema.properties.references.items.type, "integer");
+  assert.equal(schema.properties.pinned.items.type, "integer");
 });
