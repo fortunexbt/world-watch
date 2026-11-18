@@ -326,7 +326,7 @@ test(
       assert.equal(new URLSearchParams(briefQuery).get("hours"), "168");
       assert.equal(
         await brief.innerText(),
-        "Structured brief\n15 Oct, 12:00 – 22 Oct, 12:00 UTC\n\nRed tropical cyclone alert for CHAMPI-26 affecting the Philippines.\n\nBuilt from issuer fields, no model · Generated 12:00 UTC\n2 further records outside this brief\nsevere · official advisory\nIsolated fixture b\nEvidence · 1",
+        "Structured brief\n15 Oct, 12:00 – 22 Oct, 12:00 UTC\n\nRed tropical cyclone alert for CHAMPI-26 affecting the Philippines.\n\nBuilt from issuer fields, no model. Generated 12:00 UTC\n2 further records outside this brief\nIsolated fixture b\nsevere\nEvidence (1)",
       );
       await page
         .getByRole("button", {
@@ -454,7 +454,7 @@ test(
       );
       assert.equal(
         await brief.locator(".brief-footnote").first().innerText(),
-        "Composta dai campi degli enti emittenti, senza modello · Generata alle 12:00 UTC",
+        "Composta dai campi degli enti emittenti, senza modello. Generata alle 12:00 UTC",
       );
       await page.setViewportSize({ width: 390, height: 844 });
       await page

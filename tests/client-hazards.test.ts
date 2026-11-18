@@ -222,7 +222,7 @@ test(
       );
       await page.addStyleTag({
         content:
-          ".topbar,.rolling-brief,.panel,.legend,.health-pill,.maplibregl-control-container{visibility:hidden!important}",
+          ".ledger,.legend,.maplibregl-control-container{visibility:hidden!important}",
       });
       const shot = (await page.screenshot()).toString("base64");
       const [small, large] = await page.evaluate(async (data: string) => {
@@ -238,9 +238,9 @@ test(
         const counts = [0, 0];
         for (let i = 0; i < px.length; i += 4)
           if (
-            Math.abs(px[i] - 0xed) < 14 &&
-            Math.abs(px[i + 1] - 0x75) < 14 &&
-            Math.abs(px[i + 2] - 0x75) < 14
+            Math.abs(px[i] - 0xc7) < 14 &&
+            Math.abs(px[i + 1] - 0x31) < 14 &&
+            Math.abs(px[i + 2] - 0x2a) < 14
           )
             counts[i / 4 / img.width < 490 ? 0 : 1]++;
         return counts;

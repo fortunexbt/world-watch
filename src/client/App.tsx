@@ -4,13 +4,13 @@ import GeospatialPanel from "./GeospatialPanel";
 import type {GeospatialCatalog} from "../shared/geospatial";
 import type {PublicCameraCatalog} from "../shared/media";
 import { incidentInWindow, temporalStatus } from "../shared/temporal";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Search,
   VolumeX,
   Volume2,
   ArrowLeft,
-  ArrowUpRight,
+  ExternalLink,
   SlidersHorizontal,
   Activity,
   Radio,
@@ -97,6 +97,16 @@ try {
   apiQuotaBlocked = sessionStorage.getItem("ew-database-quota") === "paused";
 } catch {}
 /** Records from sources that never go to a model are complete without analysis. */
+/** Registry names read "USGS — earthquakes M4.5+ …"; the part before the dash names the issuer. */
+const issuer = (r: any) =>
+  String(r?.source_name || r?.source_id || "").split(" — ")[0];
+const host = (url?: string) => {
+  try {
+    return url ? new URL(url).host.replace(/^www\./, "") : "";
+  } catch {
+    return "";
+  }
+};
 const structuredOnly = (i: IncidentView) =>
   i.reports.length > 0 && i.reports.every((r: any) => r.rights?.ai === false);
 function quotaResponse(body: string) {
@@ -794,53 +804,26 @@ export default function App() {
         selectedCamera={selectedCamera}
         onCamera={id=>{setSelected(null);setSelectedCamera(id);setSurface("media");}}
       />
+      <div className="ledger">
       <header className="topbar">
         <a className="brand" href="/" aria-label={tr("World Watch home")}>
-          <span className="brand-symbol">
-            <Globe2 size={21} />
+          <span className="brand-symbol" aria-hidden="true">
+            <Globe2 size={20} strokeWidth={1.75} />
           </span>
-          <span>
-            World<span className="brand-light"> Watch</span>
-          </span>
+          World Watch
         </a>
         <div className="search-wrap">
-          <Search size={17} />
+          <Search size={16} />
           <input
             aria-label={tr("Search events, places and sources")}
             placeholder={t.search}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <kbd>⌘ K</kbd>
-        </div>
-        <div className="quick-filters">
-          <button
-            aria-pressed={filter === "all"}
-            onClick={() => setFilter("all")}
-          >
-            {tr("All activity")}
-          </button>
-          <button
-            aria-pressed={filter === "demonstrations"}
-            onClick={() => setFilter("demonstrations")}
-          >
-            {tr("Gatherings")}
-          </button>
-          <button
-            aria-pressed={filter === "disruptions"}
-            onClick={() => setFilter("disruptions")}
-          >
-            {tr("Disruption")}
-          </button>
-          <button
-            aria-pressed={filter === "hazards"}
-            onClick={() => setFilter("hazards")}
-          >
-            {tr("Hazards")}
-          </button>
+          <kbd>⌘K</kbd>
         </div>
         <label className="time-control">
-          <Clock3 size={15} />
+          <Clock3 size={14} />
           <select
             aria-label={tr("Time window")}
             value={windowHours}
@@ -876,6 +859,34 @@ export default function App() {
         >
           <SlidersHorizontal size={18} />
         </button>
+        <div className="filter-row">
+          <div className="quick-filters">
+            <button
+              aria-pressed={filter === "all"}
+              onClick={() => setFilter("all")}
+            >
+              {tr("All activity")}
+            </button>
+            <button
+              aria-pressed={filter === "demonstrations"}
+              onClick={() => setFilter("demonstrations")}
+            >
+              {tr("Gatherings")}
+            </button>
+            <button
+              aria-pressed={filter === "disruptions"}
+              onClick={() => setFilter("disruptions")}
+            >
+              {tr("Disruption")}
+            </button>
+            <button
+              aria-pressed={filter === "hazards"}
+              onClick={() => setFilter("hazards")}
+            >
+              {tr("Hazards")}
+            </button>
+          </div>
+        </div>
       </header>
       <RollingBrief ready={ready&&!auth&&!at} analysis={!!snapshot.status.worker_last_seen} hours={windowHours} language={language} request={api} onSelect={select}/>
       <aside
@@ -973,12 +984,32 @@ export default function App() {
         ) : incident ? (
           <section className="panel-content detail">
             <div className="detail-meta">
-              <span style={{ color: colors[incident.impact] }}>
-                {symbols[incident.impact]} {tr(incident.impact)}
+              <span
+                className="impact-label"
+                style={{ "--impact": colors[incident.impact] } as CSSProperties}
+              >
+                {tr(incident.impact)}
               </span>
               <span>{tr(incident.evidence_status)}</span>
             </div>
             <h1 tabIndex={-1}>{incident.headline}</h1>
+            {incident.reports[0]?.canonical_url && (
+              <a
+                className="record-link"
+                href={incident.reports[0].canonical_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span>
+                  <strong>{issuer(incident.reports[0])}</strong>
+                  <small>{host(incident.reports[0].canonical_url)}</small>
+                </span>
+                <span className="record-action">
+                  {tr("Open the public record")}
+                  <ExternalLink size={15} aria-hidden="true" />
+                </span>
+              </a>
+            )}
             {incident.analyzed_at === null && (
               <p className="notice">
                 {structuredOnly(incident) ? (
@@ -999,7 +1030,7 @@ export default function App() {
               <MapPin size={15} />
               {incident.location?.name || tr("Location unresolved")}
               {incident.location && incident.location.accuracy !== "point"
-                ? " · " + tr("approximate")
+                ? ", " + tr("approximate")
                 : ""}
             </p>
             <div className="lead">
@@ -1055,7 +1086,7 @@ export default function App() {
                 <p>
                   {[...new Set(incident.claims.flatMap((c) => c.impacts || []))]
                     .map(tr)
-                    .join(" · ")}
+                    .join(", ")}
                 </p>
               )}
               {[
@@ -1103,10 +1134,10 @@ export default function App() {
               </p>
               <p>
                 <strong>{tr("Reported conditions")}: </strong>
-                {tr(incident.impact)} · {tr(incident.evidence_status)}
+                {tr(incident.impact)}, {tr(incident.evidence_status)}
               </p>
               <p>
-                {when(incident.event_start)} ·{" "}
+                {when(incident.event_start)},{" "}
                 {incident.location?.name ?? tr("Unlocated")}
               </p>
               <h2>{tr("Evidence links")}</h2>
@@ -1119,7 +1150,7 @@ export default function App() {
                   rel="noreferrer"
                 >
                   {r.title ?? r.source_name ?? r.source_id}
-                  <ArrowUpRight size={14} />
+                  <ExternalLink size={14} />
                 </a>
               ))}
               <p className="caution">
@@ -1145,15 +1176,16 @@ export default function App() {
                   rel="noreferrer"
                 >
                   {r.title || r.source_id || tr("Original report")}
-                  <ArrowUpRight size={15} />
+                  <ExternalLink size={15} />
                 </a>
-                <small>
-                  {r.source_id} · {tr(r.input_coverage ?? "unknown")} ·{" "}
-                  {when(r.published_at)}
+                <small className="record-meta">
+                  <span>{issuer(r)}</span>
+                  <span>{tr(r.input_coverage ?? "unknown")}</span>
+                  <span>{when(r.published_at)}</span>
                 </small>
                 {r.source_metadata?.publisher_generated && <small className="caution">{tr("Publisher-generated dispatch interpretation; incident not independently confirmed")}</small>}
                 {r.analysis_reused && <small>{tr("Shared analysis of identical source evidence")}</small>}
-                {r.source_reports?.length > 1 && <details><summary>{r.source_reports.length} {tr("publisher updates bundled")}</summary>{r.source_reports.map((v: any) => <a className="brief-link" key={v.native_id} href={v.canonical_url} target="_blank" rel="noreferrer">{when(v.published_at)} <ArrowUpRight size={14} /></a>)}</details>}
+                {r.source_reports?.length > 1 && <details><summary>{r.source_reports.length} {tr("publisher updates bundled")}</summary>{r.source_reports.map((v: any) => <a className="brief-link" key={v.native_id} href={v.canonical_url} target="_blank" rel="noreferrer">{when(v.published_at)} <ExternalLink size={14} /></a>)}</details>}
                 {r.rights?.attribution && (
                   <small className="rights">{r.rights.attribution}</small>
                 )}
@@ -1283,7 +1315,7 @@ export default function App() {
               <article className="source" key={s.id}>
                 <a href={s.url} target="_blank" rel="noreferrer">
                   {s.name || s.id}
-                  <ArrowUpRight size={14} />
+                  <ExternalLink size={14} />
                 </a>
                 <small>
                   {tr(s.status)} ·{" "}
@@ -1443,7 +1475,7 @@ export default function App() {
                 }}
               >
                 {v.name}
-                <ArrowUpRight size={15} />
+                <ExternalLink size={15} />
               </button>
             ))}
             <h2>{tr("Preferences")}</h2>
@@ -1700,26 +1732,27 @@ export default function App() {
                   ))}
                 </select>
               </label>
-              <span>
-                {ready ? (
-                  <>
-                    {incoming ? snapshot.incoming.length : incidents.length}{" "}
-                    {tr("observed")} {tr(incoming ? "reports" : "incidents")}
-                  </>
-                ) : (
-                  "—"
-                )}
-              </span>
+              {ready && !incoming ? (
+                <span className="map-coverage-note">
+                  <MapPin size={12} aria-hidden="true" />
+                  <span>{incidents.filter((i) => i.location).length} {tr("on map")}</span>
+                  <span>
+                    {incidents.filter((i) => !i.location).length}{" "}
+                    {tr("location unresolved")}
+                  </span>
+                </span>
+              ) : (
+                <span>
+                  {ready ? (
+                    <>
+                      {snapshot.incoming.length} {tr("observed")} {tr("reports")}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </span>
+              )}
             </div>
-            {ready && !incoming && (
-              <p className="map-coverage-note">
-                <MapPin size={12} />
-                {incidents.filter((i) => i.location).length} {tr("on map")}
-                <span>·</span>
-                {incidents.filter((i) => !i.location).length}{" "}
-                {tr("location unresolved")}
-              </p>
-            )}
             {at && (
               <div className="historical">
                 {tr("Historical")} · {when(at)}
@@ -1819,29 +1852,26 @@ export default function App() {
                           aria-label={`${i.headline}, ${isHazard(i.activity) ? tr(i.activity) + ", " : ""}${tr(i.impact)}, ${tr(i.evidence_status)}`}
                         >
                           <div
-                            className="incident-symbol"
-                            style={{ color: colors[i.impact] }}
+                            className={`incident-symbol impact-${i.impact}`}
+                            style={{ "--impact": colors[i.impact] } as CSSProperties}
                           >
                             {isHazard(i.activity) ? (
-                              <HazardGlyph hazard={i.activity} size={16} />
+                              <HazardGlyph hazard={i.activity} size={15} />
                             ) : (
                               symbols[i.impact]
                             )}
                           </div>
                           <div className="feed-item-body">
                             <span className="report-meta">
-                              {i.location?.name || tr("Location unresolved")}
+                              {i.reports[0] && <span className="issuer">{issuer(i.reports[0])}</span>}
+                              <span className="place">{i.location?.name || tr("Location unresolved")}</span>
                               <time>{age(i.updated_at)}</time>
                             </span>
                             <h2>{i.reports.length===1&&i.reports[0].source_id==="de-demos-assemblies" ? i.reports[0].title : i.headline}</h2>
-                            <p>
-                              {when(i.event_start || i.published_at)}
-                              {!i.event_start ? " · " + tr("publication") : ""}
-                            </p>
                             <span className="item-label">
                               <span
                                 className="impact-label"
-                                style={{ color: colors[i.impact] }}
+                                style={{ "--impact": colors[i.impact] } as CSSProperties}
                               >
                                 {tr(
                                   i.impact === "unknown"
@@ -1849,10 +1879,14 @@ export default function App() {
                                     : i.impact,
                                 )}
                               </span>
+                              <span>
+                                {when(i.event_start || i.published_at)}
+                                {!i.event_start ? ", " + tr("publication") : ""}
+                              </span>
                               <span className="evidence-state">
                                 {tr(i.evidence_status)}
                                 {i.analyzed_at === null
-                                  ? " · " +
+                                  ? ", " +
                                     tr(
                                       structuredOnly(i)
                                         ? "structured source"
@@ -1893,6 +1927,33 @@ export default function App() {
           </>
         )}
       </aside>
+      <button
+        className="health-pill"
+        onClick={() => {
+          setSurface("health");
+          setSelected(null);
+        }}
+      >
+        <span
+          className={`connection-dot ${connection === "Connected" ? "" : "offline"}`}
+        />
+        <span>
+          {quotaPaused
+            ? language === "it"
+              ? "Aggiornamenti sospesi"
+              : "Updates paused"
+            : tr(connection)}
+        </span>
+        <span title={when(snapshot.status.worker_last_seen)}>
+          {tr("AI")}: {tr(snapshot.status.worker_state ?? "Awaiting status")}
+        </span>
+        <Activity size={13} aria-hidden="true" />
+        <span>
+          {snapshot.status.pending_count ?? snapshot.status.pending ?? "—"}{" "}
+          {tr("pending")}
+        </span>
+      </button>
+      </div>
       <div className="mobile-attribution">
         <a
           href="https://www.openstreetmap.org/copyright"
@@ -1900,12 +1961,10 @@ export default function App() {
           rel="noreferrer"
         >
           © OpenStreetMap
-        </a>{" "}
-        ·{" "}
+        </a>
         <a href="https://openfreemap.org" target="_blank" rel="noreferrer">
           OpenFreeMap
-        </a>{" "}
-        ·{" "}
+        </a>
         <a
           href="https://www.naturalearthdata.com"
           target="_blank"
@@ -1948,35 +2007,6 @@ export default function App() {
           </span>
         </div>
       </div>
-      <button
-        className="health-pill"
-        onClick={() => {
-          setSurface("health");
-          setSelected(null);
-        }}
-      >
-        <span
-          className={`connection-dot ${connection === "Connected" ? "" : "offline"}`}
-        />
-        <span>
-          {quotaPaused
-            ? language === "it"
-              ? "Aggiornamenti sospesi"
-              : "Updates paused"
-            : tr(connection)}
-        </span>
-        <span className="health-divider" />
-        <span title={when(snapshot.status.worker_last_seen)}>
-          {tr("AI")}: {tr(snapshot.status.worker_state ?? "Awaiting status")}
-        </span>
-        <span className="health-divider" />
-        <Activity size={13} />
-        <span>
-          {snapshot.status.pending_count ?? snapshot.status.pending ?? "—"}{" "}
-          {tr("pending")}
-        </span>
-        <ArrowUpRight size={13} />
-      </button>
       <div className="sr-only" role="status" aria-live="polite">
         {updates
           ? `${updates} ${tr("updates available. Activate new updates to refresh the feed.")}`

@@ -1,6 +1,6 @@
 # World Watch
 
-![World Watch showing live earthquakes and a Red typhoon alert on a world map](docs/media/world.jpg)
+![World Watch on 18 November 2026, with US flood warnings, Canadian snowfall warnings, worldwide earthquakes and an Orange cyclone alert for India on a pale world chart](docs/media/world.jpg)
 
 World Watch puts what's happening in the world on one flat map, and each marker links back to the public record behind it. Earthquakes from USGS, disaster alerts from GDACS, US storm and flood warnings from the National Weather Service, Canadian weather warnings from Environment and Climate Change Canada, heat detections from three NASA satellites and Copernicus emergency mapping areas reach the map without a language model in the loop. News and other narrative reports take a separate path, where a model extracts claims and the host checks each claim against the text it cites before anything is published.
 
@@ -23,11 +23,11 @@ On the evening of 22 October 2026 a run published 56 incidents. They included 21
 
 ![Thermal detections from three satellites across every continent, with Copernicus mapping areas listed](docs/media/thermal.jpg)
 
-![The typhoon's detail panel with its GDACS record shown as readable fields](docs/media/detail.jpg)
+![Tropical Cyclone AKVAN-26 open in the detail panel, led by a link to its GDACS record and followed by the record's fields](docs/media/detail.jpg)
 
 <img src="docs/media/mobile.jpg" alt="The same view on a phone" width="300">
 
-Screenshots show data from USGS (public domain), GDACS and the European Commission Joint Research Centre (CC BY 4.0), NASA FIRMS, the Copernicus Emergency Management Service and OpenFreeMap with OpenStreetMap contributors.
+The screenshots come from a later run on 18 November 2026. They show data from USGS and the US National Weather Service (public domain), Environment and Climate Change Canada (ECCC Data Services End-use Licence), GDACS and the European Commission Joint Research Centre (CC BY 4.0), NASA FIRMS, the Copernicus Emergency Management Service and OpenFreeMap with OpenStreetMap contributors.
 
 ## How it works
 

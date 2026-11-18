@@ -13,14 +13,21 @@ import type { GeoFeature } from "../shared/geospatial";
 import type { IncidentView } from "../shared/contracts";
 import { viewportBounds } from "./bounds";
 import { glyphs, HAZARDS, magnitude, markerIcon, markerScale } from "./hazards";
+/** Issuer-style hazard inks, chosen to read on the pale chart and on paper. */
 export const colors: Record<string, string> = {
-  informational: "#73B6E6",
-  minor: "#E4D06C",
-  significant: "#EDAB61",
-  severe: "#ED7575",
-  critical: "#C55064",
-  unknown: "#9BA9B3",
+  informational: "#2E72B3",
+  minor: "#D9A514",
+  significant: "#E06A16",
+  severe: "#C7312A",
+  critical: "#6E0F2E",
+  unknown: "#76848D",
 };
+const INK = "#13202A",
+  PAPER = "#FFFFFF",
+  OCEAN = "#C7D6DE",
+  LAND = "#F4F5F1";
+/** Glyphs sit in white on the darker inks and in ink on the light yellow. */
+const glyphInk = (impact: string) => (impact === "minor" ? INK : PAPER);
 /** Ascending severity; a cluster takes the colour of its most severe member. */
 const severity = [
   "unknown",
@@ -30,6 +37,37 @@ const severity = [
   "severe",
   "critical",
 ];
+/** Severe records stand out by size as well as colour, so hierarchy survives colour-blindness and print. */
+const severityScale: Record<string, number> = {
+  unknown: 0.82,
+  informational: 0.86,
+  minor: 0.9,
+  significant: 1.04,
+  severe: 1.22,
+  critical: 1.34,
+};
+/** A 30° graticule, as on a printed chart, so position reads without labels. */
+const graticule = {
+  type: "FeatureCollection" as const,
+  features: [
+    ...Array.from({ length: 13 }, (_, n) => -180 + n * 30).map((lon) => ({
+      type: "Feature" as const,
+      properties: {},
+      geometry: {
+        type: "LineString" as const,
+        coordinates: Array.from({ length: 35 }, (_, k) => [lon, -85 + k * 5]),
+      },
+    })),
+    ...[-60, -30, 0, 30, 60].map((lat) => ({
+      type: "Feature" as const,
+      properties: { equator: lat === 0 },
+      geometry: {
+        type: "LineString" as const,
+        coordinates: Array.from({ length: 73 }, (_, k) => [-180 + k * 5, lat]),
+      },
+    })),
+  ],
+};
 /** Traces an impact shape on a 32-unit box centred on the origin. */
 function traceImpact(ctx: CanvasRenderingContext2D, impact: string) {
   ctx.beginPath();
@@ -83,19 +121,19 @@ const fallback: StyleSpecification = {
     {
       id: "ocean",
       type: "background",
-      paint: { "background-color": "#0D151C" },
+      paint: { "background-color": OCEAN },
     },
     {
       id: "land",
       type: "fill",
       source: "countries",
-      paint: { "fill-color": "#192730" },
+      paint: { "fill-color": LAND },
     },
     {
       id: "borders",
       type: "line",
       source: "countries",
-      paint: { "line-color": "#354650", "line-width": 0.65 },
+      paint: { "line-color": "#A9B6BD", "line-width": 0.6 },
     },
   ],
 };
@@ -167,7 +205,7 @@ export default function WorldMap({
           color: colors[i.impact],
           rank: severity.indexOf(i.impact),
           icon: markerIcon(i),
-          scale: markerScale(magnitude(i)),
+          scale: markerScale(magnitude(i)) * (severityScale[i.impact] ?? 1),
           selected: i.id === selected ? 1 : 0,
           approx: i.location!.accuracy !== "point",
         },
@@ -175,6 +213,10 @@ export default function WorldMap({
     (m.getSource("events") as GeoJSONSource).setData({
       type: "FeatureCollection",
       features,
+    });
+    (m.getSource("selected-event") as GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: features.filter((f) => f.properties.selected),
     });
     (m.getSource("report-density") as GeoJSONSource | undefined)?.setData({
       type: "FeatureCollection",
@@ -240,15 +282,29 @@ export default function WorldMap({
     const initialFrame = () =>
       m.fitBounds(worldFrame, {
         padding: {
-          left: innerWidth > 760 ? 420 : 24,
-          right: 40,
-          top: 100,
-          bottom: innerWidth > 760 ? 70 : innerHeight * 0.45,
+          left: 24,
+          right: 24,
+          top: innerWidth > 760 ? 24 : 80,
+          bottom: innerWidth > 760 ? 24 : innerHeight * 0.45,
         },
         duration: 0,
       });
     const layers = () => {
       if (m.getSource("events")) return;
+      m.addSource("graticule", { type: "geojson", data: graticule });
+      m.addLayer(
+        {
+          id: "graticule",
+          type: "line",
+          source: "graticule",
+          paint: {
+            "line-color": "#6F8D9C",
+            "line-opacity": ["case", ["boolean", ["get", "equator"], false], 0.5, 0.28],
+            "line-width": 0.7,
+          },
+        },
+        m.getStyle().layers.find((l) => l.type === "symbol")?.id,
+      );
       m.addSource("events", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -266,13 +322,13 @@ export default function WorldMap({
           "circle-radius": [
             "step",
             ["get", "point_count"],
-            22,
-            20,
-            25,
-            100,
-            32,
+            14,
+            10,
+            17,
+            40,
+            21,
           ],
-          "circle-color": "#304854",
+          "circle-color": PAPER,
           "circle-stroke-color": [
             "to-color",
             [
@@ -281,7 +337,7 @@ export default function WorldMap({
               ["literal", severity.map((impact) => colors[impact])],
             ],
           ],
-          "circle-stroke-width": 1.5,
+          "circle-stroke-width": 3.5,
         },
       });
       m.addLayer({
@@ -292,9 +348,9 @@ export default function WorldMap({
         layout: {
           "text-field": ["get", "point_count_abbreviated"],
           "text-size": 12,
-          "text-font": ["Noto Sans Regular"],
+          "text-font": ["Noto Sans Bold"],
         },
-        paint: { "text-color": "#E7EDF1" },
+        paint: { "text-color": INK },
       });
       // GDACS and other area records are centroids, so a soft ring stands in for an unknown footprint.
       m.addLayer({
@@ -305,33 +361,10 @@ export default function WorldMap({
         paint: {
           "circle-radius": ["*", ["get", "scale"], 30],
           "circle-color": ["get", "color"],
-          "circle-opacity": 0.14,
-          "circle-blur": 0.6,
+          "circle-opacity": 0.13,
           "circle-stroke-color": ["get", "color"],
-          "circle-stroke-opacity": 0.35,
+          "circle-stroke-opacity": 0.55,
           "circle-stroke-width": 1,
-        },
-      });
-      m.addLayer({
-        id: "points-halo",
-        type: "circle",
-        source: "events",
-        filter: ["!", ["has", "point_count"]],
-        paint: {
-          "circle-radius": [
-            "*",
-            ["get", "scale"],
-            ["case", ["==", ["get", "selected"], 1], 15, 9],
-          ],
-          "circle-color": ["get", "color"],
-          "circle-opacity": 0.12,
-          "circle-stroke-color": ["get", "color"],
-          "circle-stroke-width": [
-            "case",
-            ["==", ["get", "selected"], 1],
-            2,
-            0.5,
-          ],
         },
       });
       for (const [impact, color] of Object.entries(colors)) {
@@ -340,10 +373,10 @@ export default function WorldMap({
             "impact-" + impact,
             canvasImage(48, (ctx) => {
               traceImpact(ctx, impact);
-              ctx.fillStyle = color;
-              ctx.strokeStyle = impact === "unknown" ? color : "#0D151C";
-              ctx.lineWidth = impact === "unknown" ? 4 : 3;
-              if (impact !== "unknown") ctx.fill();
+              ctx.fillStyle = impact === "unknown" ? PAPER : color;
+              ctx.strokeStyle = impact === "unknown" ? color : PAPER;
+              ctx.lineWidth = 4;
+              ctx.fill();
               ctx.stroke();
             }),
             { pixelRatio: 2 },
@@ -354,30 +387,35 @@ export default function WorldMap({
           if (!m.hasImage(`hazard-${hazard}-${impact}`))
             m.addImage(
               `hazard-${hazard}-${impact}`,
-              canvasImage(64, (ctx) => {
+              canvasImage(72, (ctx) => {
                 const hollow = impact === "unknown";
+                // A faint ink edge keeps white-rimmed discs crisp on pale land.
+                ctx.beginPath();
+                ctx.arc(0, 0, 25.5, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(19,32,42,0.28)";
+                ctx.fill();
                 ctx.beginPath();
                 ctx.arc(0, 0, 22, 0, Math.PI * 2);
-                ctx.fillStyle = hollow ? "#0D151C" : color;
-                ctx.strokeStyle = hollow ? color : "#0D151C";
-                ctx.lineWidth = hollow ? 4 : 3;
+                ctx.fillStyle = hollow ? PAPER : color;
+                ctx.strokeStyle = hollow ? color : PAPER;
+                ctx.lineWidth = hollow ? 4.5 : 4;
                 ctx.fill();
                 ctx.stroke();
                 ctx.save();
-                ctx.scale(1.4, 1.4);
+                ctx.scale(1.3, 1.3);
                 ctx.translate(-12, -12);
-                ctx.lineWidth = 2.3;
+                ctx.lineWidth = 2.4;
                 ctx.lineCap = ctx.lineJoin = "round";
-                ctx.strokeStyle = hollow ? color : "#0D151C";
+                ctx.strokeStyle = hollow ? color : glyphInk(impact);
                 ctx.stroke(new Path2D(glyphs[hazard]));
                 ctx.restore();
                 if (hollow) return;
-                ctx.translate(20, -20);
-                ctx.scale(0.45, 0.45);
+                ctx.translate(21, -21);
+                ctx.scale(0.42, 0.42);
                 traceImpact(ctx, impact);
                 ctx.fillStyle = color;
-                ctx.strokeStyle = "#0D151C";
-                ctx.lineWidth = 6;
+                ctx.strokeStyle = PAPER;
+                ctx.lineWidth = 7;
                 ctx.stroke();
                 ctx.fill();
               }),
@@ -394,7 +432,7 @@ export default function WorldMap({
           "circle-opacity": 0,
           "circle-color": ["get", "color"],
           "circle-stroke-width": 0,
-          "circle-stroke-color": "#0D151C",
+          "circle-stroke-color": INK,
         },
       });
       m.addLayer({
@@ -426,7 +464,7 @@ export default function WorldMap({
           type: "fill",
           source: "geospatial-context",
           filter: ["==", ["get", "kind"], "mapping_aoi"],
-          paint: { "fill-color": "#8CAEBE", "fill-opacity": 0.09 },
+          paint: { "fill-color": "#1F5A8C", "fill-opacity": 0.08 },
         },
         "clusters",
       );
@@ -437,9 +475,9 @@ export default function WorldMap({
           source: "geospatial-context",
           filter: ["==", ["get", "kind"], "mapping_aoi"],
           paint: {
-            "line-color": "#98BAC7",
-            "line-width": 1.5,
-            "line-opacity": 0.8,
+            "line-color": "#1F5A8C",
+            "line-width": 1.4,
+            "line-opacity": 0.85,
             "line-dasharray": [3, 3],
           },
         },
@@ -452,11 +490,13 @@ export default function WorldMap({
           source: "geospatial-context",
           filter: ["==", ["get", "kind"], "thermal_detection"],
           paint: {
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 3, 10, 6],
-            "circle-color": "#D8B28E",
-            "circle-opacity": 0.32,
-            "circle-stroke-color": "#E2C19C",
-            "circle-stroke-width": 1.2,
+            // Magenta keeps heat measurements apart from the severity inks.
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 2.2, 10, 5],
+            "circle-color": "#A12C7B",
+            "circle-opacity": 0.55,
+            "circle-stroke-color": "#FFFFFF",
+            "circle-stroke-width": 0.6,
+            "circle-stroke-opacity": 0.7,
           },
         },
         "clusters",
@@ -495,13 +535,13 @@ export default function WorldMap({
               ["linear"],
               ["heatmap-density"],
               0,
-              "rgba(80,160,185,0)",
+              "rgba(31,90,140,0)",
               0.3,
-              "rgba(80,160,185,0.35)",
+              "rgba(31,90,140,0.25)",
               0.7,
-              "#82C9CB",
+              "rgba(31,90,140,0.5)",
               1,
-              "#D1E3CB",
+              "rgba(19,32,42,0.7)",
             ],
           },
         },
@@ -520,10 +560,10 @@ export default function WorldMap({
         source: "public-cameras",
         filter: ["has", "point_count"],
         paint: {
-          "circle-radius": 22,
-          "circle-color": "#1C3943",
-          "circle-stroke-color": "#78B8C4",
-          "circle-stroke-width": 1,
+          "circle-radius": 18,
+          "circle-color": PAPER,
+          "circle-stroke-color": "#1F5A8C",
+          "circle-stroke-width": 2,
         },
       });
       m.addLayer({
@@ -540,7 +580,7 @@ export default function WorldMap({
           "text-size": 11,
           "text-font": ["Noto Sans Regular"],
         },
-        paint: { "text-color": "#D6EDF1" },
+        paint: { "text-color": "#1F5A8C" },
       });
       m.addLayer({
         id: "camera-points",
@@ -561,9 +601,38 @@ export default function WorldMap({
           "text-allow-overlap": true,
         },
         paint: {
-          "text-color": ["case", ["get", "selected"], "#FFFFFF", "#8BC0CB"],
-          "text-halo-color": "#0D151C",
+          "text-color": ["case", ["get", "selected"], INK, "#1F5A8C"],
+          "text-halo-color": PAPER,
           "text-halo-width": 2,
+        },
+      });
+      // The open record is drawn again above clusters with an ink registration
+      // ring, so it stays visible even when its neighbours are grouped.
+      m.addSource("selected-event", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      m.addLayer({
+        id: "selected-ring",
+        type: "circle",
+        source: "selected-event",
+        paint: {
+          "circle-radius": ["*", ["get", "scale"], 20],
+          "circle-color": PAPER,
+          "circle-opacity": 0.85,
+          "circle-stroke-color": INK,
+          "circle-stroke-width": 2.5,
+        },
+      });
+      m.addLayer({
+        id: "selected-symbol",
+        type: "symbol",
+        source: "selected-event",
+        layout: {
+          "icon-image": ["get", "icon"],
+          "icon-size": ["get", "scale"],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
         },
       });
       update();
@@ -592,7 +661,7 @@ export default function WorldMap({
         });
       const styleUrl =
         (import.meta as any).env.VITE_MAP_STYLE ||
-        "https://tiles.openfreemap.org/styles/dark";
+        "https://tiles.openfreemap.org/styles/positron";
       fetch(styleUrl, { signal: AbortSignal.timeout(8000) })
         .then((r) => {
           if (!r.ok) throw Error("tiles");
@@ -615,11 +684,23 @@ export default function WorldMap({
           style.sources = { ...style.sources, countries: boundaries };
           style.layers = style.layers.map((layer: any) => {
             if (layer.id === "water")
-              layer.paint = { ...layer.paint, "fill-color": "#0D151C" };
-            if (layer.id === "boundary_state")
+              layer.paint = { ...layer.paint, "fill-color": OCEAN };
+            if (layer.id === "park")
+              layer.paint = { ...layer.paint, "fill-color": LAND };
+            if (layer.id === "boundary_3")
               layer.minzoom = Math.max(5, layer.minzoom ?? 0);
-            if (layer.id.startsWith("boundary_country"))
-              layer.paint = { ...layer.paint, "line-color": "#465C69" };
+            if (layer.id === "boundary_2")
+              layer.paint = { ...layer.paint, "line-color": "#9AA8B0" };
+            if (layer.id.startsWith("label_country"))
+              layer.paint = {
+                ...layer.paint,
+                "text-color": "#4B5A63",
+                "text-halo-color": LAND,
+                "text-halo-width": 1.4,
+                "text-halo-blur": 0,
+              };
+            if (/^water_name/.test(layer.id))
+              layer.paint = { ...layer.paint, "text-color": "#5B7A8B" };
             if (
               layer.type === "symbol" &&
               /state|province|subplace/.test(layer.id)
@@ -657,7 +738,7 @@ export default function WorldMap({
       const canvas = document.createElement("canvas");
       canvas.width = canvas.height = 12;
       const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#A6B5BE";
+      ctx.fillStyle = "#8597A1";
       ctx.beginPath();
       ctx.arc(6, 6, 3, 0, 2 * Math.PI);
       ctx.fill();
@@ -786,6 +867,26 @@ export default function WorldMap({
     selectedCamera,
     geoFeatures,
   ]);
+  // Opening a record off-screen brings it into view without changing the zoom.
+  useEffect(() => {
+    const m = map.current,
+      i = incidents.find((x) => x.id === selected);
+    if (!m || !i?.location) return;
+    const point = m.project([i.location.lon, i.location.lat]),
+      canvas = m.getCanvas(),
+      inset = 60;
+    if (
+      point.x > inset &&
+      point.y > inset &&
+      point.x < canvas.clientWidth - inset &&
+      point.y < canvas.clientHeight - inset
+    )
+      return;
+    m.easeTo({
+      center: [i.location.lon, i.location.lat],
+      duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 900,
+    });
+  }, [selected]);
   useEffect(() => {
     if (!follow || !pulse.length || document.hidden) return;
     const i = incidents.find((x) => x.id === pulse[0]);
@@ -830,7 +931,7 @@ export default function WorldMap({
       />
       {reduced && (
         <div className="map-fallback">
-          Map detail unavailable · bundled boundaries remain available
+          Map detail unavailable. Bundled country boundaries are still shown.
         </div>
       )}
     </>

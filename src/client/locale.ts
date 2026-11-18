@@ -21,6 +21,7 @@ export const italian: Record<string, string> = {
   "Newer evidence available":"Sono disponibili evidenze più recenti",
   "Open evidence":"Apri le evidenze",
   Evidence:"Evidenze",
+  "Open the public record":"Apri il documento pubblico",
 
   "Loading observed activity…": "Caricamento delle attività osservate…",
   "Awaiting status": "Stato in attesa",

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GeospatialCatalog } from "../shared/geospatial";
 import { translate, type Language } from "./locale";
+import { ExternalLink } from "lucide-react";
 
 export default function GeospatialPanel({
   catalog,
@@ -115,10 +116,11 @@ export default function GeospatialPanel({
           target="_blank"
           rel="noreferrer"
         >
-          {tr("Open publisher source")} ↗
+          {tr("Open publisher source")}
+          <ExternalLink size={14} aria-hidden="true" />
         </a>
         <p className="rights">
-          {feature.attribution} ·{" "}
+          {feature.attribution},{" "}
           <a href={feature.license_url} target="_blank" rel="noreferrer">
             {tr("Data reuse terms")}
           </a>
@@ -161,7 +163,7 @@ export default function GeospatialPanel({
             {number(
               catalog.features.filter((f) => f.layer === "thermal").length,
             )}{" "}
-            {tr("thermal detections")} ·{" "}
+            {tr("thermal detections")},{" "}
             {number(
               catalog.features.filter((f) => f.layer === "emergency_mapping")
                 .length,
@@ -188,8 +190,8 @@ export default function GeospatialPanel({
                 <small>
                   {f.layer === "thermal"
                     ? tr("Thermal detection")
-                    : tr("Mapping area")}{" "}
-                  · {timestamp(f.observed_at)}
+                    : tr("Mapping area")}
+                  , {timestamp(f.observed_at)}
                 </small>
               </button>
             ))}
@@ -229,14 +231,14 @@ export default function GeospatialPanel({
               )}
               {s.sensors?.map((sensor) => (
                 <small key={sensor.id}>
-                  {sensor.label} ·{" "}
+                  {sensor.label},{" "}
                   {sensor.status === "ok"
                     ? fill("{shown} of {total} detections in this view", {
                         shown: sensor.features_count,
                         total: sensor.total_available,
                       })
                     : tr("Sensor unavailable")}
-                  {sensor.error && ` · ${tr(sensor.error)}`}
+                  {sensor.error && `, ${tr(sensor.error)}`}
                 </small>
               ))}
               {s.error && (
@@ -245,12 +247,12 @@ export default function GeospatialPanel({
                 </p>
               )}
               <small>
-                {tr("Checked")} {timestamp(s.checked_at)} ·{" "}
+                {tr("Checked")} {timestamp(s.checked_at)},{" "}
                 {tr("Catalog cached for")} {number(s.cadence_seconds / 60)}{" "}
                 {tr("minutes")}
               </small>
               <p className="rights">
-                {s.attribution} ·{" "}
+                {s.attribution},{" "}
                 <a href={s.license_url} target="_blank" rel="noreferrer">
                   {tr("Data reuse terms")}
                 </a>
