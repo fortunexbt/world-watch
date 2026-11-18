@@ -867,23 +867,15 @@ export default function WorldMap({
     selectedCamera,
     geoFeatures,
   ]);
-  // Opening a record off-screen brings it into view without changing the zoom.
+  // Opening a record centres it on the map without changing the zoom.
   useEffect(() => {
     const m = map.current,
       i = incidents.find((x) => x.id === selected);
     if (!m || !i?.location) return;
-    const point = m.project([i.location.lon, i.location.lat]),
-      canvas = m.getCanvas(),
-      inset = 60;
-    if (
-      point.x > inset &&
-      point.y > inset &&
-      point.x < canvas.clientWidth - inset &&
-      point.y < canvas.clientHeight - inset
-    )
-      return;
     m.easeTo({
       center: [i.location.lon, i.location.lat],
+      // On phones the sheet covers the lower map, so the record sits higher.
+      offset: innerWidth <= 760 ? [0, -innerHeight * 0.22] : [0, 0],
       duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 900,
     });
   }, [selected]);
