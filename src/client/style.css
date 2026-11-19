@@ -944,8 +944,6 @@ kbd {
 .notice {
   background: var(--paper-2);
   color: var(--ink-2);
-  border-left: 3px solid var(--ink-3);
-  border-radius: 0 6px 6px 0;
 }
 .historical {
   margin: 8px 20px;
