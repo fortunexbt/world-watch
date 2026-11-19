@@ -187,12 +187,12 @@ test(
         )
         .waitFor();
       await page
-        .getByText("NOAA-20 VIIRS · 1,000 of 3,000 detections in this view", {
+        .getByText("NOAA-20 VIIRS, 1,000 of 3,000 detections in this view", {
           exact: true,
         })
         .waitFor();
       await page
-        .getByText("Suomi NPP VIIRS · Sensor unavailable · source http 403", {
+        .getByText("Suomi NPP VIIRS, Sensor unavailable, source http 403", {
           exact: true,
         })
         .waitFor();
